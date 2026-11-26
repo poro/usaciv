@@ -108,8 +108,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const load = (n) => JSON.parse(readFileSync(new URL(`../../web/data/${n}.json`, import.meta.url)));
   const pool = buildPool(load("cities"));
   const data = { citizens: load("citizens"), districts: load("districts"), nation: load("nation"), pool };
-  const res = ambiguity(pool, (c) => buildClues(c, data), 3);
-  console.log(JSON.stringify(summarize(res, 3), null, 1));
+  const res = ambiguity(pool, (c) => buildClues(c, data), 4);
+  console.log(JSON.stringify(summarize(res, 4), null, 1));
   console.log("top 10:", res.slice(0, 10).map((r) => `${r.name} ${r.counts.join("/")}`).join(" · "));
   console.log("unique after clue 1:", res.filter((r) => r.counts[0] === 1).map((r) => r.name).join(", ") || "none");
+  console.log("unique after clues 1-2:", res.filter((r) => r.counts[1] === 1).map((r) => r.name).join(", ") || "none");
 }

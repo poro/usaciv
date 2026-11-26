@@ -89,28 +89,31 @@ function workforceClue(city, citizens, nation) {
   return { id: "workforce", title: "Who works here", source: "Employed residents by industry (ACS)", bars };
 }
 
+// Clue 2 keeps the facts that many metros share: age, families, driving and schooling. Transit and the
+// foreign-born share single out the biggest metros (New York's 28% transit, Miami's 41% born abroad), and
+// work-from-home and born-in-state were the last cuts that left most metros alone after two clues, so transit and
+// birthplace moved to clue 3 and the other two were dropped. With these five, clues 1-2 leave a median of about
+// 9 metros plausible and none of the 10 biggest alone (tests/js/whichMetro.ambiguity.mjs).
+function citizenFact(facts, label, v, nv, fmt = pctTxt) {
+  if (v == null) return;
+  facts.push({ label, value: fmt(v), note: nv != null ? `US ${fmt(nv)}` : null, dir: dirOf(v, nv) });
+}
+
 function peopleClue(city, citizens) {
   const r = citizens?.cities?.[city.id] || {};
   const n = citizens?.national || {};
   const facts = [];
-  const add = (label, v, nv, fmt = pctTxt) => {
-    if (v == null) return;
-    facts.push({ label, value: fmt(v), note: nv != null ? `US ${fmt(nv)}` : null, dir: dirOf(v, nv) });
-  };
+  const add = (label, v, nv, fmt) => citizenFact(facts, label, v, nv, fmt);
   add("Median age", r.age?.median, n.age?.median, (x) => x.toFixed(1));
   add("Aged 65 and over", r.age?.shares?.elder, n.age?.shares?.elder);
   add("Children under 18", r.age?.shares?.child, n.age?.shares?.child);
   add("Drive to work alone", r.commute?.shares?.drove_alone, n.commute?.shares?.drove_alone);
-  add("Take public transit", r.commute?.shares?.transit, n.commute?.shares?.transit, (x) => pctTxt(x, 1));
-  add("Work from home", r.commute?.shares?.home, n.commute?.shares?.home);
   add("Bachelor's degree or more", r.education?.bachelors_plus, n.education?.bachelors_plus);
-  add("Born in another country", r.nativity?.foreign_born, n.nativity?.foreign_born);
-  add("Born in the same state", r.nativity?.born_in_state, n.nativity?.born_in_state);
   if (!facts.length) {
     add("Unemployment", city.unemployment, null, (x) => pctTxt(x, 1));
     add("Rent burden", city.rent_burden, null);
   }
-  return { id: "people", title: "How people live", source: `Age, commute, schooling and birthplace, ${citizens?.vintage || "ACS"}`, facts };
+  return { id: "people", title: "How people live", source: `Age, commute and schooling, ${citizens?.vintage || "ACS"}`, facts };
 }
 
 function economyClue(city, districts) {
@@ -156,10 +159,15 @@ export const popBand = (n) => (POP_BANDS.find((b) => n >= b.min) || POP_BANDS.at
 
 // Clue 3: one broad size band, then only figures per person (wealth, prices, growth, yields per 1,000 residents),
 // so New York, Los Angeles and Chicago look like the other ten metros of 5 million or more, not like themselves.
-function sizeClue(city, nation) {
+// Transit and the foreign-born share (from clue 2, where they named New York, Chicago and Miami) sit here with size,
+// which they track.
+function sizeClue(city, nation, citizens) {
   const facts = [];
   const nat = nation?.nation || {};
   facts.push({ label: "Population", value: popBand(city.population) });
+  const r = citizens?.cities?.[city.id] || {}, n = citizens?.national || {};
+  citizenFact(facts, "Take public transit", r.commute?.shares?.transit, n.commute?.shares?.transit, (x) => pctTxt(x, 1));
+  citizenFact(facts, "Born in another country", r.nativity?.foreign_born, n.nativity?.foreign_born);
   if (city.gdp && city.population) {
     const v = city.gdp / city.population, nv = nat.gdp && nat.population ? nat.gdp / nat.population : null;
     facts.push({ label: "GDP per resident", value: kDollars(v), note: nv ? `US ${kDollars(nv)}` : null, dir: dirOf(v, nv) });
@@ -182,7 +190,7 @@ function sizeClue(city, nation) {
     chips.push({ label: `${y.emoji || ""} ${y.label}`.trim(), value: `${txt(v)} per 1,000`, note: nv != null ? `US ${txt(nv)}` : null, color: y.color });
   }
   return {
-    id: "size", title: "Size and wealth", source: "Population band (ACS), GDP per resident (BEA), yields per 1,000 residents",
+    id: "size", title: "Size and wealth", source: "Population band, transit and birthplace (ACS), GDP per resident (BEA), yields per 1,000 residents",
     facts, chips, chipsTitle: chips.length ? "Yield workers per 1,000 residents" : null, factsFirst: true,
   };
 }
@@ -210,9 +218,10 @@ export const TIER_ORDER = ["workforce", "people", "size", "economy", "where"];
  * of the 25 biggest), so as tier 3 it left tiers 4 and 5 with little to do. Size is the vaguest tier for mid-sized
  * metros, so it now bridges the gap.
  * Absolute size gives the biggest metros away (only one metro has 20 million people), so no tier shows a count:
- * clue 1 is a five-group job mix, clue 3 a broad population band plus figures per person, clue 4 shares of jobs.
+ * clue 1 is a five-group job mix, clue 2 the facts many metros share (age, driving, schooling), clue 3 a broad
+ * population band plus transit, birthplace and figures per person, clue 4 shares of jobs.
  * tests/js/whichMetro.ambiguity.mjs measures how many metros each clue leaves plausible; the tests keep clue 1
- * from ever singling one out.
+ * from ever singling one out, and clues 1-2 at a median of 4+ plausible metros with none of the 10 biggest alone.
  * data = {citizens, districts, nation, pool}  (any may be missing: each tier then falls back to cities.json)
  */
 export function buildClues(city, data = {}) {
@@ -220,7 +229,7 @@ export function buildClues(city, data = {}) {
   return [
     workforceClue(city, citizens, nation),
     peopleClue(city, citizens),
-    sizeClue(city, nation),
+    sizeClue(city, nation, citizens),
     economyClue(city, districts),
     whereClue(city, pool),
   ];
@@ -247,7 +256,7 @@ export function whyLine(city, data = {}) {
   for (const sp of crow?.specialists || []) {
     const label = groupLabels(citizens, sp.row).get(sp.key) || sp.key;
     const of = sp.row === "commute" ? "of commuters" : sp.row === "workforce" ? "of workers" : sp.row === "age" ? "of residents" : sp.row === "education" ? "of adults" : "of residents";
-    const tier = sp.row === "workforce" ? 1 : 2;
+    const tier = sp.row === "workforce" ? 1 : sp.row === "age" || sp.row === "education" ? 2 : 3;
     const text = sp.ratio >= 1
       ? `${label}: ${pctTxt(sp.share, 1)} ${of}, ${times(sp.ratio)} the US share.`
       : `${label}: only ${pctTxt(sp.share, 1)} ${of}, against ${pctTxt(sp.national, 1)} nationally.`;

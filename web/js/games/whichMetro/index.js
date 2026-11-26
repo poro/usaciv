@@ -2,7 +2,9 @@
 // Contract: games/host.js (start(ctx) → session). Pure logic lives in ./sim/ (unit-tested in tests/js).
 //
 // Map etiquette while a round is open: no highlight, no fly-to, no banners and no hover tooltips
-// (app.setCitiesHidden) and map clicks swallowed, so nothing on the map points at the answer. When a round ends the answer's footprint is outlined and framed and its banner comes back.
+// (app.setCitiesHidden) and map clicks swallowed, so nothing on the map points at the answer. When a round ends the
+// answer's footprint is outlined and framed, and the game's own overlay labels the answer and each wrong guess (with
+// its distance), since a small metro's banner may be culled at that zoom.
 import { loadCss } from "../shared/css.js";
 import { esc } from "../../format.js";
 import {
@@ -71,6 +73,20 @@ export async function start(ctx) {
     }
     return clueCache.get(id);
   };
+
+  // Touch screens leave the guess box unfocused after each guess, so the soft keyboard drops away. An iPad with a
+  // hardware keyboard is "pointer: coarse" too, so the box is refocused when the last input was a physical key:
+  // those name their key in KeyboardEvent.code ("Enter", "KeyA"), while soft keyboards leave it empty (and send
+  // keyCode 229 on Android). A tap resets it.
+  let hardKeys = false;
+  const onKeyIn = (e) => { if (e.code && e.keyCode !== 229 && !e.isComposing) hardKeys = true; };
+  const onPointerIn = (e) => { if (e.pointerType !== "mouse") hardKeys = false; };
+  document.addEventListener("keydown", onKeyIn, true);
+  document.addEventListener("pointerdown", onPointerIn, true);
+  ctx.onCleanup(() => {
+    document.removeEventListener("keydown", onKeyIn, true);
+    document.removeEventListener("pointerdown", onPointerIn, true);
+  });
 
   // --- state -------------------------------------------------------------------------------------------------
   let meta = null;   // {mode, key, seed}
@@ -265,7 +281,7 @@ export async function start(ctx) {
     if (!r.done) {
       const input = body.querySelector(".wm-input");
       wireCombo(input);
-      if (!matchMedia("(pointer: coarse)").matches) input.focus({ preventScroll: true });
+      if (hardKeys || !matchMedia("(pointer: coarse)").matches) input.focus({ preventScroll: true });
     } else {
       body.querySelector("[data-act=next]")?.focus({ preventScroll: true });
     }
@@ -487,43 +503,164 @@ export async function start(ctx) {
     return app.visibleArea().y1 - top;
   }
 
-  function frameCells(cells, ids, { pad = 220, maxScale = 0.55 } = {}) {
+  // Frames the answer's cells; `near` (world points) are wrong guesses close enough to share the view.
+  function frameCells(cells, ids, { pad = 220, maxScale = 0.55, near = [] } = {}) {
     const h = { cells: new Set(cells), cities: new Set(ids), color: HL_COLOR, dimOthers: true };
     app.setHighlight?.(h);
     const b = app.highlightBounds?.(h);
-    if (b && app.fitBounds) app.fitBounds(b.x0 - pad, b.y0 - pad, b.x1 + pad, b.y1 + pad, { maxScale, padBottom: 24 + sheetExtra() });
+    if (!b || !app.fitBounds) return;
+    let { x0, y0, x1, y1 } = b;
+    for (const [x, y] of near) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    app.fitBounds(x0 - pad, y0 - pad, x1 + pad, y1 + pad, { maxScale, padBottom: 24 + sheetExtra() });
   }
 
-  // Name plates for revealed answers, drawn under their city (a small metro may have no banner at this zoom).
-  let plates = [];
-  const PLATE_FONT = '600 13px "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif';
+  // --- map labels ----------------------------------------------------------------------------------------------
+  // While a round is open the map names nothing. At the reveal (and on the results) the game draws its own labels,
+  // since the engine's banner for a small metro may be culled at the reveal's zoom: a gold plate under each answer,
+  // and for each wrong guess a red plate with its distance chip, joined to the answer by a dashed line. They are
+  // drawn in screen space, so they keep their size at any zoom; a guess off the screen gets its plate at the edge
+  // where its line leaves the view. Plates dodge each other. Cleared when the next round opens (syncMap).
+  let marks = { answers: [], misses: [] }; // answers: [city]; misses: [{city, hint, answer}]
+  const setMarks = (answers = [], misses = []) => { marks = { answers, misses }; app.requestDraw?.(); };
+  const NEAR_KM = 600; // wrong guesses this close are framed with the answer; farther ones sit at the view's edge
+  const NAME_FONT = '600 13px "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif';
+  const CHIP_FONT = "600 11px system-ui, -apple-system, \"Segoe UI\", sans-serif";
+  const MISS = { stroke: "rgba(208, 103, 79, 0.95)", line: "rgba(236, 150, 124, 0.85)", text: "#f6d6cc", chip: "#fff1d6" };
+  const PLATE_BG = "rgba(16, 25, 35, 0.94)";
+  const PLATE_H = 20;
+
+  const overlaps = (r, placed) => placed.some((p) => r.x < p.x + p.w && p.x < r.x + r.w && r.y < p.y + p.h && p.y < r.y + r.h);
+  const clampRect = (r, A) => ({ ...r, x: Math.max(A.x0, Math.min(A.x1 - r.w, r.x)), y: Math.max(A.y0, Math.min(A.y1 - r.h, r.y)) });
+  // The first candidate rect (clamped to the view) that overlaps no placed plate, else the first one.
+  function placeRect(cands, A, placed) {
+    const rs = cands.map((r) => clampRect(r, A));
+    const r = rs.find((q) => !overlaps(q, placed)) || rs[0];
+    placed.push({ x: r.x - 3, y: r.y - 3, w: r.w + 6, h: r.h + 6 });
+    return r;
+  }
+  // Where segment p→q leaves rect A (Liang-Barsky): the last point of it inside A, or null when it misses A.
+  function exitPoint(p, q, A) {
+    const dx = q[0] - p[0], dy = q[1] - p[1];
+    let t0 = 0, t1 = 1;
+    const P = [-dx, dx, -dy, dy], Q = [p[0] - A.x0, A.x1 - p[0], p[1] - A.y0, A.y1 - p[1]];
+    for (let i = 0; i < 4; i++) {
+      if (P[i] === 0) { if (Q[i] < 0) return null; continue; }
+      const t = Q[i] / P[i];
+      if (P[i] < 0) { if (t > t1) return null; if (t > t0) t0 = t; } else { if (t < t0) return null; if (t < t1) t1 = t; }
+    }
+    return [p[0] + t1 * dx, p[1] + t1 * dy];
+  }
+  function plateBox(g, r, stroke) {
+    g.beginPath();
+    if (g.roundRect) g.roundRect(r.x, r.y, r.w, r.h, 4); else g.rect(r.x, r.y, r.w, r.h);
+    g.fillStyle = PLATE_BG;
+    g.fill();
+    g.lineWidth = 1.5;
+    g.strokeStyle = stroke;
+    g.stroke();
+  }
+
   ctx.addOverlay({
     id: "answers", z: 110, space: "screen",
     draw(g, cam) {
-      if (!plates.length) return;
+      if (!marks.answers.length && !marks.misses.length) return;
       const grid = app.w?.grid;
       if (!grid) return;
       const R = grid.R * cam.scale;
-      g.font = PLATE_FONT;
-      g.textAlign = "center";
+      const va = app.visibleArea?.() || { x0: 0, y0: 0, x1: cam.w, y1: cam.h };
+      const A = { x0: Math.max(0, va.x0) + 8, y0: Math.max(0, va.y0) + 8, x1: Math.min(cam.w, va.x1) - 8, y1: Math.min(cam.h, va.y1) - 8 };
+      if (A.x1 - A.x0 < 60 || A.y1 - A.y0 < 40) return;
+      const at = (c) => (c?.cell == null ? null : cam.toScreen(grid.cx(c.cell), grid.cy(c.cell)));
+      const drop = Math.max(7, R * 0.55) + 6; // from a city's centre to the top of its plate
+      const placed = [];
       g.textBaseline = "middle";
-      for (const c of plates) {
-        if (c.cell == null) continue;
-        const [sx, sy] = cam.toScreen(grid.cx(c.cell), grid.cy(c.cell));
-        if (sx < -100 || sy < -60 || sx > cam.w + 100 || sy > cam.h + 60) continue;
-        const text = c.name;
-        const w = Math.ceil(g.measureText(text).width) + 18, h = 20;
-        const x = Math.round(sx - w / 2), y = Math.round(sy + Math.max(7, R * 0.55) + 6);
-        g.beginPath();
-        g.moveTo(sx - 5, y); g.lineTo(sx, y - 5); g.lineTo(sx + 5, y);
-        if (g.roundRect) g.roundRect(x, y, w, h, 4); else g.rect(x, y, w, h);
-        g.fillStyle = "rgba(16, 25, 35, 0.94)";
-        g.fill();
-        g.lineWidth = 1.5;
-        g.strokeStyle = HL_COLOR;
-        g.stroke();
+
+      // 1. Where each wrong guess goes: its own spot when in view, else the edge where its line leaves the view.
+      const misses = [];
+      for (const m of marks.misses) {
+        const q = at(m.city);
+        if (!q) continue;
+        const p = m.hint.km != null ? at(m.answer) : null; // no line to or from an inset state
+        const inView = q[0] >= A.x0 && q[0] <= A.x1 && q[1] >= A.y0 && q[1] <= A.y1;
+        const end = inView ? q : p ? exitPoint(p, q, A) : null;
+        if (!end) continue;
+        misses.push({ m, p, q, end, inView });
+      }
+      // 2. Dashed lines under everything else.
+      g.save();
+      g.setLineDash([5, 4]);
+      g.lineWidth = 1.5;
+      g.strokeStyle = MISS.line;
+      for (const x of misses) {
+        if (!x.p) continue;
+        g.beginPath(); g.moveTo(x.p[0], x.p[1]); g.lineTo(x.end[0], x.end[1]); g.stroke();
+      }
+      g.restore();
+      // 3. Answer plates first (they win any overlap), each with a notch pointing up at its city.
+      g.font = NAME_FONT;
+      g.textAlign = "center";
+      for (const c of marks.answers) {
+        const s = at(c);
+        if (!s || s[0] < -100 || s[1] < -60 || s[0] > cam.w + 100 || s[1] > cam.h + 60) continue;
+        placed.push({ x: s[0] - 7, y: s[1] - 7, w: 14, h: 14 }); // keep the city itself clear
+        const w = Math.ceil(g.measureText(c.name).width) + 18;
+        const r = placeRect([
+          { x: Math.round(s[0] - w / 2), y: Math.round(s[1] + drop), w, h: PLATE_H },
+          { x: Math.round(s[0] - w / 2), y: Math.round(s[1] - drop - PLATE_H), w, h: PLATE_H },
+        ], A, placed);
+        plateBox(g, r, HL_COLOR);
+        if (r.y > s[1] && Math.abs(r.x + r.w / 2 - s[0]) < r.w / 2 - 6) { // notch when the plate sits right under it
+          g.beginPath(); g.moveTo(s[0] - 5, r.y); g.lineTo(s[0], r.y - 5); g.lineTo(s[0] + 5, r.y); g.closePath();
+          g.fillStyle = HL_COLOR; g.fill();
+        }
         g.fillStyle = HL_COLOR;
-        g.fillText(text, sx, y + h / 2 + 0.5);
+        g.fillText(c.name, r.x + r.w / 2, r.y + PLATE_H / 2 + 0.5);
+      }
+      // 4. Wrong guesses: a dot on the city, then "✗ Name  [1,200 km ↘]".
+      for (const x of misses) {
+        const { m, end } = x;
+        if (x.inView) {
+          g.beginPath(); g.arc(end[0], end[1], 4, 0, Math.PI * 2);
+          g.fillStyle = MISS.stroke; g.fill();
+          g.lineWidth = 1.5; g.strokeStyle = PLATE_BG; g.stroke();
+          placed.push({ x: end[0] - 6, y: end[1] - 6, w: 12, h: 12 });
+        }
+        const name = `✗ ${m.city.name}`;
+        const chip = m.hint.km != null ? `${m.hint.km.toLocaleString("en-US")} km ${m.hint.arrow}` : "far";
+        g.font = NAME_FONT;
+        const nw = Math.ceil(g.measureText(name).width);
+        g.font = CHIP_FONT;
+        const cw = Math.ceil(g.measureText(chip).width) + 12;
+        const w = nw + cw + 22, h = PLATE_H, [ex, ey] = end;
+        const cands = x.inView
+          ? [
+            { x: Math.round(ex - w / 2), y: Math.round(ey + 10), w, h },
+            { x: Math.round(ex - w / 2), y: Math.round(ey - 10 - h), w, h },
+            { x: Math.round(ex + 10), y: Math.round(ey - h / 2), w, h },
+            { x: Math.round(ex - 10 - w), y: Math.round(ey - h / 2), w, h },
+            { x: Math.round(ex - w / 2), y: Math.round(ey + 10 + h + 6), w, h },
+            { x: Math.round(ex - w / 2), y: Math.round(ey - 10 - 2 * h - 6), w, h },
+          ]
+          // At the edge: centred on the exit point, then slid back along the line toward the answer.
+          : [0, 26, 52, 78, 104].map((d) => {
+            const len = Math.hypot(ex - x.p[0], ey - x.p[1]) || 1;
+            const cx = ex + ((x.p[0] - ex) / len) * d, cy = ey + ((x.p[1] - ey) / len) * d;
+            return { x: Math.round(cx - w / 2), y: Math.round(cy - h / 2), w, h };
+          });
+        const r = placeRect(cands, A, placed);
+        plateBox(g, r, MISS.stroke);
+        g.textAlign = "left";
+        g.font = NAME_FONT;
+        g.fillStyle = MISS.text;
+        g.fillText(name, r.x + 9, r.y + h / 2 + 0.5);
+        const chx = r.x + 9 + nw + 6;
+        g.beginPath();
+        if (g.roundRect) g.roundRect(chx, r.y + 3, cw, h - 6, 7); else g.rect(chx, r.y + 3, cw, h - 6);
+        g.fillStyle = "rgba(0, 0, 0, 0.45)";
+        g.fill();
+        g.font = CHIP_FONT;
+        g.fillStyle = MISS.chip;
+        g.fillText(chip, chx + 6, r.y + h / 2 + 0.5);
       }
     },
   });
@@ -553,20 +690,19 @@ export async function start(ctx) {
     const extra = sheetExtra();
     app.fitBounds(land.x0 - R, land.y0 - R, land.x1 + R, land.y1 + R, { padTop: 8, padBottom: 8 + extra, padLeft: 8, padRight: 8 });
   }
-  const setPlates = (list) => { plates = list; app.requestDraw?.(); };
 
   function syncMap() {
     if (view === "intro") {
       app.setHighlight?.(null);
       softenBanners([]);
-      setPlates([]);
+      setMarks();
       if (framedRound !== "intro") { framedRound = "intro"; showCountry(); }
       return;
     }
     if (view === "summary") {
       const cities = game.rounds.map((r) => ctx.cityById.get(r.answer)).filter(Boolean);
       softenBanners(cities.map((c) => c.id));
-      setPlates(cities);
+      setMarks(cities);
       if (framedRound !== "summary") {
         framedRound = "summary";
         app.setHighlight?.({ cells: new Set(cities.flatMap((c) => c.footprint || [c.cell])), cities: new Set(cities.map((c) => c.id)), color: HL_COLOR });
@@ -579,13 +715,21 @@ export async function start(ctx) {
     if (!r.done) {
       app.setHighlight?.(null);
       softenBanners([]);
-      setPlates([]);
+      setMarks();
       if (framedRound !== key) { framedRound = key; showCountry(); }
     } else {
       const c = ctx.cityById.get(r.answer);
+      const misses = r.steps.filter((s) => s.t === "miss").map((s) => ctx.cityById.get(s.id)).filter(Boolean)
+        .map((g) => ({ city: g, hint: guessHint(g, c), answer: c }));
       softenBanners([c.id]);
-      setPlates([c]);
-      if (framedRound !== key) { framedRound = key; frameCells(c.footprint?.length ? c.footprint : [c.cell], [c.id]); }
+      setMarks([c], misses);
+      if (framedRound !== key) {
+        framedRound = key;
+        const grid = app.w?.grid;
+        const near = grid ? misses.filter((m) => m.city.cell != null && m.hint.km != null && m.hint.km <= NEAR_KM)
+          .map((m) => [grid.cx(m.city.cell), grid.cy(m.city.cell)]) : [];
+        frameCells(c.footprint?.length ? c.footprint : [c.cell], [c.id], { near });
+      }
     }
   }
 

@@ -275,6 +275,19 @@ test("clue 1 never singles out a metro; the 10 biggest need at least 2 clues on 
   assert.ok(sum.top10need >= 2, `top 10 need ${sum.top10need} clues on average`);
 });
 
+test("clue 2 narrows the field without naming the answer; clue 3 still narrows it well", () => {
+  const res = ambiguity(pool, (c) => buildClues(c, data), 3);
+  const sum = summarize(res, 3);
+  assert.ok(sum.after2.median >= 4, `clues 1-2 leave a median of ${sum.after2.median} metros plausible`);
+  const lone = res.slice(0, 10).filter((r) => r.counts[1] === 1).map((r) => r.name);
+  assert.deepEqual(lone, [], `clues 1-2 alone identify: ${lone.join(", ")}`);
+  // Not too hard either: after three clues most metros are down to one or two candidates.
+  assert.ok(sum.after3.median <= 2, `clues 1-3 leave a median of ${sum.after3.median} metros plausible`);
+  // The facts that named New York and Chicago on their own are not in clue 2.
+  const people = buildClues(byId.get("35620"), data).find((c) => c.id === "people");
+  assert.ok(!people.facts.some((f) => /transit/i.test(f.label)), "transit belongs to a later clue");
+});
+
 test("no clue before the last shows absolute size: population is a broad band, never a count", () => {
   assert.equal(popBand(20e6), "5 million or more");
   assert.equal(popBand(1.5e6), "1 to 2 million");
