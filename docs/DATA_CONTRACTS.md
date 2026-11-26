@@ -796,8 +796,9 @@ first (true consumes it), then the `"mapclick"` handlers, then the default (sele
 (City View, advisors) the `"mapclick"` handlers go first and the layer's `click` only after them.
 
 **Hiding places.** `app.setCitiesHidden(on)` hides every city banner (so cities can't be hovered or clicked by
-their banner) and every hover tooltip (city, cell and layer tooltips all name places); the `"hover"` event still fires,
-with `city`, `resource`, `layer` and `item` null. For games that must not give the answer away (Which Metro?). Whoever
+their banner) and every hover tooltip (city, cell and layer tooltips all name places), except those of layers registered
+with `tooltipWhenHidden: true` (game modes' own layers: `ctx.addLayer` sets it). The `"hover"` event still fires, with
+`city` and `resource` null and `layer`/`item` only for such layers. For games that must not give the answer away (Which Metro?). Whoever
 turns it on turns it off (game modes do it on exit).
 
 **Map toggles.** `app.ui.addMapToggle({id, label, icon, get() → bool, set(on), title?, default?}) → remove()`: a switch

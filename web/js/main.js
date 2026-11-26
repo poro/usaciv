@@ -927,8 +927,15 @@ async function main() {
       requestDraw();
     }
     if (state.hideCities) {
-      hideTooltip();
-      if (events.has("hover")) emitHover(cell, null, null, mx, my, null);
+      // Only layers that opt in (a game's own layers: tooltipWhenHidden) may still explain what is under the pointer.
+      const gl = hitLayer(mx, my);
+      let gtip = null;
+      if (gl?.layer.tooltipWhenHidden && typeof gl.layer.tooltip === "function") {
+        try { gtip = gl.layer.tooltip(gl.item); } catch (err) { layerError(gl.layer, "tooltip", err); }
+      }
+      if (gtip != null && gtip !== "") showHtmlTooltip(mx, my, gtip);
+      else hideTooltip();
+      if (events.has("hover")) emitHover(cell, null, null, mx, my, gl?.layer.tooltipWhenHidden ? gl : null);
       return;
     }
     const lh = city ? null : hitLayer(mx, my);

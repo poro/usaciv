@@ -11,7 +11,8 @@
 //   dock(side?, {width, title}) → body element of a docked panel with a title bar and an Exit button
 //   toast(msg), setParam(str|null) (rewrites the URL), exit(), onCleanup(fn),
 //   on(event, fn)              app.on, removed automatically on exit ("mapclick" handlers: return true to consume)
-//   addLayer(layer)            app.registerStaticLayer, removed on exit (id is prefixed with the game id)
+//   addLayer(layer)            app.registerStaticLayer, removed on exit (id is prefixed with the game id; its
+//                              tooltips still show while app.setCitiesHidden(true) hides the real places)
 //   addOverlay(overlay)        app.registerOverlay, removed on exit
 // }
 // session (what start returns, all optional) = { stop(), onEscape() → false to leave the game, param() → string }
@@ -95,7 +96,8 @@ export async function install(app) {
       onCleanup: (fn) => own(fn),
       on: (name, fn) => own(app.on(name, fn)),
       addLayer(layer) {
-        const l = { ...layer, id: `${game.id}:${layer.id || "layer"}` };
+        // A game's own layers keep their tooltips while app.setCitiesHidden(true) hides everyone else's.
+        const l = { tooltipWhenHidden: true, ...layer, id: `${game.id}:${layer.id || "layer"}` };
         return own(app.registerStaticLayer(l));
       },
       addOverlay(o) {
@@ -142,6 +144,7 @@ export async function install(app) {
       try { off?.(); } catch (err) { console.error("game cleanup failed", err); }
     }
     app.setHighlight?.(null);
+    app.setCitiesHidden?.(false); // in case a game hid the real places and its own cleanup missed it
     app.invalidate?.();
   }
   app.registerMode("game", {
