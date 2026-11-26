@@ -8,7 +8,8 @@
 //               + resource site (mine +3, oil or gas play +2, hydro or geothermal +1)
 //   Trade     = coast +2, river (rank 1–2: +2, rank 3–4: +2, rank 5–6: +1), lake +1; peaks give no trade
 //               + links between your towns (road +2, rail +5 for each town at either end; see turn.js)
-//   Developed land (today's cities) is ignored: this is an empty country.
+//   Developed land (today's cities) is given back to the open land around it (terrain.js openLand): the country is
+//   empty, and a built-up hex must not give its city away by yielding less than its neighbours.
 //   Wetland (40%+ of the hex) does not change output but costs 2 moves to cross.
 //
 // Improvements add: farmstead +2 Food, mine +3 Materials, quarry +2 Materials, dock +2 Trade +1 Food.

@@ -9,9 +9,21 @@
 //     T.sites[i]      resource sites in the hex that feed Materials ([{type, name, kind: "mine"|"oilgas"|"power"}])
 //     T.wet[i]        1 if wetland is 40%+ of the hex (or wetland is the dominant cover): slow going
 //     T.landCells     every US land cell, ascending
+//     T.pct           OPEN-LAND shares (see openLand below): developed land is given back to the open land around it
+//     T.realPct       world.json pct as it is (developed share included), for anything that compares with today
+//     T.openCover[i]  the land cover a hex would have without its city (urban hexes only differ from T.cover)
 //
 // Rivers come as map-km polylines (world.json rivers); a hex counts as "on" a river when a point sampled every
 // ~6 km along it falls inside the hex.
+
+// Open land: this is an empty country, so a hex that is built up today must read (and yield) like the land around
+// it, or its plainness gives the real city away. openLand(world) returns new pct arrays where a hex's developed share
+// (10%+ only) is handed out over the six open classes: mostly by the hex's own open mix when it has plenty, mostly by
+// the open mix of its neighbours (ring 1 counts double ring 2; built-up neighbours are skipped) when it has little.
+export const OPEN_KEYS = ["forest", "crop", "pasture", "grass", "shrub", "wetland"];
+const OPEN_MIN_DEV = 10; // below this, a hex keeps its shares exactly
+const OPEN_OWN_K = 40; // own open land worth this many points of neighbour evidence
+const OPEN_URBAN_DEV = 30; // neighbours at least this built up are not used as evidence
 
 export const COVER = { FOREST_D: 1, FOREST_E: 2, FOREST_M: 3, SCRUB: 4, GRASS: 5, PASTURE: 6, CROP: 7, WETLAND: 8, URBAN: 9, BARREN: 10, ICE: 11 };
 export const RELIEF = { FLAT: 0, HILLS: 1, MOUNTAINS: 2, PEAKS: 3 };
@@ -52,6 +64,75 @@ export function neighbourCells(grid, i) {
     if (nc >= 0 && nr >= 0 && nc < cols && nr < rows) out.push(nr * cols + nc);
   }
   return out;
+}
+
+/**
+ * openLand(world) → {pct: {forest, crop, pasture, grass, shrub, wetland: Uint8Array}, cover: Uint8Array}
+ * pct: the shares with developed land redistributed (rounded, never above 100 in total); cover: the cover with every
+ * urban hex (9) replaced by the open class it would have (its forest type from forested neighbours, else mixed).
+ * Pure and deterministic.
+ */
+export function openLand(world) {
+  const grid = world.grid;
+  const size = grid.cols * grid.rows;
+  const src = world.pct, dev = src.developed || new Uint8Array(size);
+  const pct = {};
+  for (const k of OPEN_KEYS) pct[k] = Uint8Array.from(src[k] || new Uint8Array(size));
+  const cover = Uint8Array.from(world.cover);
+  const isLand = (i) => world.owner[i] >= 0 && !world.water[i];
+  for (let i = 0; i < size; i++) {
+    if (!isLand(i)) continue;
+    const d = dev[i] || 0;
+    if (d < OPEN_MIN_DEV && world.cover[i] !== COVER.URBAN) continue;
+    // Own open mix.
+    const own = OPEN_KEYS.map((k) => src[k]?.[i] || 0);
+    const ownTot = own.reduce((a, b) => a + b, 0);
+    // Neighbours' open mix (each neighbour normalised, so a half-water hex counts as much as a dry one).
+    const nb = OPEN_KEYS.map(() => 0);
+    let nbW = 0;
+    const ring1 = neighbourCells(grid, i);
+    const seen = new Set([i, ...ring1]);
+    const ring2 = [];
+    for (const j of ring1) for (const k of neighbourCells(grid, j)) if (!seen.has(k)) { seen.add(k); ring2.push(k); }
+    const add = (j, wgt) => {
+      if (!isLand(j) || (dev[j] || 0) >= OPEN_URBAN_DEV) return;
+      let t = 0;
+      for (const k of OPEN_KEYS) t += src[k]?.[j] || 0;
+      if (t <= 0) return;
+      OPEN_KEYS.forEach((k, n) => { nb[n] += (wgt * (src[k]?.[j] || 0)) / t; });
+      nbW += wgt;
+    };
+    for (const j of ring1) add(j, 2);
+    for (const j of ring2) add(j, 1);
+    const wb = nbW > 0 ? OPEN_OWN_K : 0;
+    const mix = OPEN_KEYS.map((_, n) => {
+      if (ownTot + wb <= 0) return OPEN_KEYS[n] === "grass" ? 1 : 0; // nothing known at all: grassland
+      const o = ownTot > 0 ? own[n] / ownTot : 0, b = nbW > 0 ? nb[n] / nbW : 0;
+      return (o * ownTot + b * wb) / (ownTot + wb);
+    });
+    if (d >= OPEN_MIN_DEV) {
+      let tot = 0;
+      OPEN_KEYS.forEach((k, n) => {
+        const v = Math.round(own[n] + d * mix[n]);
+        pct[k][i] = Math.min(100 - tot, v);
+        tot += pct[k][i];
+      });
+    }
+    if (world.cover[i] === COVER.URBAN) {
+      // Dominant open class (ties: the order of OPEN_KEYS).
+      let best = 0;
+      for (let n = 1; n < OPEN_KEYS.length; n++) if (pct[OPEN_KEYS[n]][i] > pct[OPEN_KEYS[best]][i]) best = n;
+      const key = OPEN_KEYS[best];
+      if (key === "forest") {
+        const votes = [0, 0, 0, 0];
+        for (const j of ring1) if (world.cover[j] >= 1 && world.cover[j] <= 3) votes[world.cover[j]]++;
+        let f = COVER.FOREST_M;
+        for (const c of [1, 2, 3]) if (votes[c] > votes[f]) f = c;
+        cover[i] = f;
+      } else cover[i] = { crop: COVER.CROP, pasture: COVER.PASTURE, grass: COVER.GRASS, shrub: COVER.SCRUB, wetland: COVER.WETLAND }[key];
+    }
+  }
+  return { pct, cover };
 }
 
 export function buildTerrain(world, resources = null) {
@@ -98,14 +179,15 @@ export function buildTerrain(world, resources = null) {
     (sites[c] ||= []).push({ type: it.type, name: it.name || it.type, kind });
   }
 
-  const pct = world.pct;
+  const open = openLand(world);
+  const pct = open.pct;
   const wet = new Uint8Array(size);
   for (const i of landCells) if ((pct.wetland[i] || 0) >= 40 || world.cover[i] === COVER.WETLAND) wet[i] = 1;
 
   const typeName = new Map((resources?.types || []).map((t) => [t.id, t.name]));
   return {
     grid, size, land, landCells, river, riverName, coast, lake, sites, wet, typeName,
-    relief: world.relief, cover: world.cover, pct, elev: world.elev, water: world.water, owner: world.owner,
+    relief: world.relief, cover: world.cover, openCover: open.cover, pct, realPct: world.pct, elev: world.elev, water: world.water, owner: world.owner,
     county: world.county, states: world.states, counties: world.counties, coverTable: world.tables?.cover || [],
   };
 }

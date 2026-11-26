@@ -12,15 +12,29 @@
 //   {type: "project", town, project}      build a town project (granary, school, market, harbor, depot, college)
 //   {type: "grow", town}                  homesteaders: materials → +1 person now (once a turn per town)
 //   {type: "festival", town}              materials → +8 culture now (once a turn per town)
-//   {type: "end"}                         end the turn (turn.js)
+//   {type: "auto", town, on}              auto-spend for this town when the turn ends (town: "all" = every town); auto.js
+//   {type: "end"}                         end the turn: auto towns spend first (auto.js runAuto), then turn.js endTurn
+//
+// Town orders by the player (improve, project, grow, festival, party) mark the town as ordered this turn
+// (town.acted = turn) and become state.lastOrder ({type, town, kind?, project?}) for "repeat last order". The same
+// actions with auto: true (what auto towns do) leave both alone.
 import { IMPROVEMENTS, improvementFits } from "./yields.js";
 import {
   RULES, FOCI, PROJECTS, clone, partyCost, chooseStart, owners, townById, townAt, partyById, landPath, foundBlocker, townName, rngOf,
   improvementCost, projectCost, hasProject, growCost, townOutput,
 } from "./state.js";
 import { endTurn, walk } from "./turn.js";
+import { runAuto } from "./auto.js";
 
 const fail = (state, error) => ({ ok: false, state, error });
+
+/** Record a player's town order on the (already cloned) state s. */
+function markOrder(s, action, townId, order) {
+  if (action.auto) return;
+  const t = townById(s, townId);
+  if (t) t.acted = s.turn;
+  s.lastOrder = { ...order, town: townId };
+}
 
 export function apply(env, state, action) {
   if (!action || !action.type) return fail(state, "No action");
@@ -58,7 +72,23 @@ export function apply(env, state, action) {
     case "project": return buildProject(env, state, action);
     case "grow": return grow(env, state, action);
     case "festival": return festival(env, state, action);
-    case "end": return { ok: true, state: endTurn(env, state) };
+    case "auto": {
+      const ids = action.town === "all" ? state.towns.map((t) => t.id) : [action.town];
+      if (!ids.length || ids.some((id) => !townById(state, id))) return fail(state, "Unknown town");
+      const s = clone(state);
+      for (const id of ids) {
+        const t = townById(s, id);
+        if (action.on) t.auto = true;
+        else delete t.auto;
+      }
+      return { ok: true, state: s };
+    }
+    case "end": {
+      const pre = runAuto(env, state);
+      const s = endTurn(env, pre.state);
+      if (pre.done.length && s.lastTurn) s.lastTurn.auto = pre.done;
+      return { ok: true, state: s };
+    }
     default: return fail(state, `Unknown action ${action.type}`);
   }
 }
@@ -98,7 +128,8 @@ function found(env, state, { party }) {
   return { ok: true, state: s, msg: `${town.name} founded`, town: town.id };
 }
 
-function buildParty(env, state, { town }) {
+function buildParty(env, state, action) {
+  const { town } = action;
   const t = townById(state, town);
   if (!t) return fail(state, "No such town");
   if (t.pop < 2) return fail(state, `${t.name} needs 2+ population to send settlers`);
@@ -111,6 +142,7 @@ function buildParty(env, state, { town }) {
   s.materials -= cost;
   s.parties.push({ id: s.nextId++, cell: tt.cell, moves: RULES.partyMoves, target: null });
   s.stats.built++;
+  markOrder(s, action, town, { type: "party" });
   s.log.push({ turn: s.turn, kind: "build", text: `A founding party sets out from ${tt.name}.` });
   return { ok: true, state: s };
 }
@@ -131,13 +163,15 @@ export function improveBlocker(env, state, cell, kind) {
   return null;
 }
 
-function improve(env, state, { cell, kind }) {
+function improve(env, state, action) {
+  const { cell, kind } = action;
   const why = improveBlocker(env, state, cell, kind);
   if (why) return fail(state, why);
   const s = clone(state);
   s.materials -= improvementCost(state, kind);
   s.improvements[cell] = kind;
   s.stats.built++;
+  markOrder(s, action, owners(env, state)[cell], { type: "improve", kind });
   return { ok: true, state: s };
 }
 
@@ -199,7 +233,8 @@ export function projectBlocker(env, state, town, id, { noCost = false } = {}) {
   return null;
 }
 
-function buildProject(env, state, { town, project }) {
+function buildProject(env, state, action) {
+  const { town, project } = action;
   const why = projectBlocker(env, state, town, project);
   if (why) return fail(state, why);
   const s = clone(state);
@@ -207,6 +242,7 @@ function buildProject(env, state, { town, project }) {
   s.materials -= projectCost(state, project);
   t.projects = [...(t.projects || []), project];
   s.stats.built++;
+  markOrder(s, action, town, { type: "project", project });
   s.log.push({ turn: s.turn, kind: "build", text: `${t.name} builds a ${PROJECTS[project].name.toLowerCase()}.` });
   return { ok: true, state: s, msg: `${PROJECTS[project].name} built in ${t.name}` };
 }
@@ -224,7 +260,8 @@ export function growBlocker(env, state, town, { noCost = false } = {}) {
   return null;
 }
 
-function grow(env, state, { town }) {
+function grow(env, state, action) {
+  const { town } = action;
   const why = growBlocker(env, state, town);
   if (why) return fail(state, why);
   const s = clone(state);
@@ -233,6 +270,7 @@ function grow(env, state, { town }) {
   t.pop++;
   t.grown = s.turn;
   s.stats.built++;
+  markOrder(s, action, town, { type: "grow" });
   return { ok: true, state: s, msg: `Homesteaders settle in ${t.name}: population ${t.pop}` };
 }
 
@@ -244,7 +282,8 @@ export function festivalBlocker(state, town) {
   return null;
 }
 
-function festival(env, state, { town }) {
+function festival(env, state, action) {
+  const { town } = action;
   const why = festivalBlocker(state, town);
   if (why) return fail(state, why);
   const s = clone(state);
@@ -252,5 +291,6 @@ function festival(env, state, { town }) {
   s.materials -= RULES.festivalCost;
   t.culture += RULES.festivalCulture;
   t.fest = s.turn;
+  markOrder(s, action, town, { type: "festival" });
   return { ok: true, state: s, msg: `${t.name} holds a festival: +${RULES.festivalCulture} culture` };
 }

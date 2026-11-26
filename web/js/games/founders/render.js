@@ -1,8 +1,10 @@
 // Founders: map art. Static layers go into the cached map (redrawn only when their sig() changes); the overlay
 // draws the selection and the move preview every frame, cheaply.
 //
-//   z 61  cover      paints plain terrain over every real city tile, metro spill and urban hex (just above CITIES 60),
-//                    then redraws rivers and state lines clipped to those hexes, so the land reads as untouched
+//   z 61  cover      paints the land as it would be without the city over every real city tile, metro spill and urban
+//                    hex (just above CITIES 60): tile colour, hex grid and the engine's own terrain art (forests,
+//                    fields, hills, mountains) from the sim's open-land estimate, then rivers and state lines clipped
+//                    to those hexes, so the land reads as untouched and matches its neighbours
 //   z 62  land       your territory tint and border, roads and rail, improvements
 //   z 64  yields     small food / materials / trade pips on land hexes (toggle; zoomed in only)
 //   z 66  towns      your towns, founding parties and labels; hit() + tooltip() explain any hex's output
@@ -11,6 +13,7 @@ import { css, mix, shade } from "../../color.js";
 import { hash01 } from "../../hex.js";
 import { drawRivers, strokeSegs } from "../../render/art/water.js";
 import { metroSpill } from "../../render/art/city.js";
+import { drawTerrainGlyphs, GLYPHS_MIN_RPX } from "../../render/art/terrain.js";
 import { esc } from "../../format.js";
 import { baseYields, explainHex, hexYield, IMPROVEMENTS, owners, townAt, landPath, foundBlocker, RULES, townOutput, RELIEF_NAME } from "./sim/index.js";
 import { moveCost } from "./sim/yields.js";
@@ -40,41 +43,73 @@ const inVp = (vp, x, y, m) => x > vp.x0 - m && x < vp.x1 + m && y > vp.y0 - m &&
 
 // --- cover: hide the real cities ---------------------------------------------------------------------------------
 
-/** Cells that would give a real city away, with a plain terrain colour for each. */
-export function prepareCover(w, cities) {
+/**
+ * Cells that would give a real city away, with a plain terrain colour for each. The colour follows world.js landRGB,
+ * but from the sim's open-land estimate (T.pct, T.openCover: the land as it would be without the city, from the
+ * hex's own open land and its neighbours'), so a covered hex matches the country around it.
+ */
+export function prepareCover(w, cities, T) {
   const set = new Set();
   for (const c of cities) if (c.cell != null && w.raw.owner[c.cell] >= 0) set.add(c.cell);
   for (const cell of metroSpill(w).keys()) set.add(cell);
   for (let i = 0; i < w.grid.size; i++) if (w.cover[i] === 9 && !w.water[i]) set.add(i);
   const cells = [...set].sort((a, b) => a - b);
+  const pct = T?.pct || w.pct;
+  const coverOf = (i) => (T?.openCover ? T.openCover[i] : w.cover[i] === 9 ? 5 : w.cover[i]);
   const items = cells.map((i) => {
-    // The cell's mix of open land (developed land left out), like world.js landRGB.
-    let best = 5, bestP = -1, tot = 0, r = 0, g = 0, b = 0;
+    const cv = coverOf(i);
+    let c = w.coverRGB[cv] || [169, 179, 90];
+    let tot = 0, r = 0, g = 0, b = 0;
     for (const [key, id] of Object.entries(PCT_COVER)) {
-      const p = w.pct?.[key]?.[i] || 0;
+      const p = pct?.[key]?.[i] || 0;
       const col = w.coverRGB[id];
-      if (!col) continue;
-      if (p > bestP) { bestP = p; best = id; }
-      if (p) { tot += p; r += col[0] * p; g += col[1] * p; b += col[2] * p; }
+      if (!p || !col) continue;
+      tot += p; r += col[0] * p; g += col[1] * p; b += col[2] * p;
     }
-    let c = w.coverRGB[best] || [169, 179, 90];
-    if (tot > 0) c = mix(c, [r / tot, g / tot, b / tot], 0.35);
+    if (tot > 0) c = mix(c, [r / tot, g / tot, b / tot], 0.3);
     const elev = w.raw.elev[i];
     c = mix(c, [176, 160, 128], Math.max(0, Math.min(1, (elev - 300) / 2800)) * 0.28);
     const rel = w.relief[i];
     if (rel >= 2) c = mix(c, rel === 3 ? [200, 204, 208] : [128, 116, 102], rel === 3 ? 0.45 : 0.32);
     else if (rel === 1) c = shade(c, -0.05);
     c = shade(c, (hash01(i, 7) - 0.5) * 0.08 + (w.shadeK?.[i] || 0));
-    return { cell: i, color: css(c), glyph: best, x: w.grid.cx(i), y: w.grid.cy(i) };
+    return { cell: i, color: css(c), glyph: cv, x: w.grid.cx(i), y: w.grid.cy(i) };
   });
-  return { cells, items, set };
+  return { cells, items, set, T: T || null };
+}
+
+/**
+ * A stand-in for the prepared world that the engine's terrain art (render/art/terrain.js drawTerrainGlyphs) can draw
+ * the covered hexes from: the same world, but with the open-land cover and forest share, and no cities (so no hex is
+ * skipped as "under a city tile" and no metro spills). Made once per world (the art caches its plans per world).
+ */
+const openWorlds = new WeakMap();
+function openWorld(w, cover) {
+  let ow = openWorlds.get(w);
+  if (ow) return ow;
+  const T = cover.T;
+  const cv = Uint8Array.from(w.cover);
+  const forest = Uint8Array.from(w.pct?.forest || new Uint8Array(w.grid.size));
+  for (const i of cover.cells) {
+    if (T?.openCover) cv[i] = T.openCover[i];
+    else if (cv[i] === 9) cv[i] = 5;
+    if (T?.pct) forest[i] = T.pct.forest[i];
+  }
+  ow = Object.create(w);
+  Object.defineProperties(ow, {
+    cover: { value: cv },
+    pct: { value: { ...(w.pct || {}), forest } },
+    cityByCell: { value: new Map() },
+  });
+  openWorlds.set(w, ow);
+  return ow;
 }
 
 export function coverLayer(model) {
   return {
     id: "cover", z: 61, snapshot: true,
     visible: () => !model.revealed,
-    sig: () => "c1",
+    sig: () => "c2",
     draw(ctx, vp, w, o) {
       const { grid } = w;
       const R = grid.R, s = o.s;
@@ -89,14 +124,37 @@ export function coverLayer(model) {
         for (let k = 1; k < 6; k++) clip.lineTo(x + grid.corners[k][0] * grow, y + grid.corners[k][1] * grow);
         clip.closePath();
       }
+      // 1. Tiles, as the base map paints land.
       for (const it of vis) {
         ctx.beginPath();
         hexPath(ctx, grid, it.cell, grow);
         ctx.fillStyle = it.color;
         ctx.fill();
       }
-      if (o.Rpx > 10) drawCoverGlyphs(ctx, vis, R, s);
-      // Rivers and state lines through those hexes, as the base map draws them.
+      ctx.save();
+      ctx.clip(clip);
+      // 2. The hex grid (map.js draws it once hexes are big enough to read; the fill above hid it here).
+      if (o.Rpx > 11) {
+        ctx.beginPath();
+        for (const it of vis) hexPath(ctx, grid, it.cell, 1);
+        ctx.lineJoin = "miter";
+        ctx.strokeStyle = `rgba(0,0,0,${Math.min(0.14, (o.Rpx - 11) * 0.012)})`;
+        ctx.lineWidth = 1 / s;
+        ctx.stroke();
+      }
+      ctx.restore();
+      // 3. The engine's own terrain art (texture, fields, forests, hills, mountains) for the open land, so these
+      //    hexes read like their neighbours instead of as flat patches. Not clipped: trees and ridges overlap the
+      //    hex edges just as everywhere else on the map.
+      let drew = false;
+      if (o.Rpx > GLYPHS_MIN_RPX) {
+        try {
+          drawTerrainGlyphs(ctx, vis.map((it) => it.cell), openWorld(w, model.cover), { Rpx: o.Rpx, s, lod: o.lod });
+          drew = true;
+        } catch (err) { if (!coverArtFailed) { coverArtFailed = true; console.warn("founders: terrain art for covered hexes failed", err); } }
+      }
+      if (!drew && o.Rpx > 10) drawCoverGlyphs(ctx, vis, R, s);
+      // 4. Rivers and state lines through those hexes, as the base map draws them.
       ctx.save();
       ctx.clip(clip);
       try { drawRivers(ctx, w, { s, Rpx: o.Rpx, lod: o.lod, lens: false }); } catch { /* art module changed: skip */ }
@@ -120,7 +178,9 @@ export function coverLayer(model) {
     },
   };
 }
+let coverArtFailed = false;
 
+/** Fallback marks (used only if the engine's terrain art cannot draw): field strips, tree dots, grass ticks. */
 function drawCoverGlyphs(ctx, items, R, s) {
   for (const it of items) {
     const h = (k) => hash01(it.cell, 40 + k);
@@ -132,7 +192,7 @@ function drawCoverGlyphs(ctx, items, R, s) {
       ctx.fillStyle = it.glyph === 7 ? "rgba(120,100,30,.22)" : "rgba(60,90,30,.18)";
       for (let k = -2; k <= 2; k++) ctx.fillRect(-0.5 * R, k * 0.17 * R, R, 0.07 * R);
       ctx.restore();
-    } else if (it.glyph === 1) {
+    } else if (it.glyph >= 1 && it.glyph <= 3) {
       ctx.fillStyle = "rgba(30,60,28,.55)";
       for (let k = 0; k < 4; k++) {
         ctx.beginPath();
@@ -568,9 +628,9 @@ export function hexTooltip(model, cell) {
     lines.push(`<span class="muted">Click to manage the town</span>`);
     return lines.join("<br>");
   }
-  const cv = T.coverTable.find((c) => c.id === T.cover[cell]);
-  // Urban cover would give real cities away: name the open land under it instead.
-  const coverName = !cv || cv.id === 9 ? "Open land" : cv.name;
+  // Urban cover would give real cities away: name the land it would be without the city (T.openCover).
+  const cv = T.coverTable.find((c) => c.id === (T.openCover ? T.openCover[cell] : T.cover[cell]));
+  const coverName = !cv || cv.id === 9 ? "Grassland" : cv.name;
   lines.push(`<b>${esc(coverName)}</b> <span class="muted">· ${RELIEF_NAME[T.relief[cell]]} · ${T.elev[cell]} m</span>`);
   const own = state && state.phase !== "setup" ? owners(env, state)[cell] : 0;
   if (own) lines.push(`<span class="muted">Inside ${esc(state.towns.find((t) => t.id === own)?.name || "your")}'s border</span>`);

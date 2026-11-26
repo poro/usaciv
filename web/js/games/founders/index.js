@@ -3,12 +3,19 @@
 // panel, map clicks and keys, saves, and the end screen. Map art is in ./render.js.
 //
 // Host needs (all through ctx and the documented app API; nothing in host.js changed):
-//   * Real cities are hidden while playing: the "cover" layer paints plain terrain over city tiles, and
+//   * Real cities are hidden while playing: the "cover" layer paints the land as it would be without the city over
+//     city tiles (the engine's terrain art drawn from the sim's open-land estimate, sim/terrain.js openLand), and
 //     app.setCitiesHidden(true) switches off the city banners and every non-game tooltip (restored on exit and at
 //     the end, when the real cities are revealed). Map-layer toggles that would show real places (roads, rail, ports…) are switched off and
 //     restored on exit, and the lens dock, the national totals (#yields) and city search are hidden by founders.css.
-//   * Keys go through ctx.onKey (before the map's own shortcuts); R and L are swallowed while the country is hidden,
-//     so resource icons and lenses (which show real places) cannot come back.
+//   * Keys go through ctx.onKey (before the map's own shortcuts); R, L and / are swallowed while the country is
+//     hidden, so resource icons, lenses and city search (which show real places) cannot come back. While hidden, R is
+//     Founders' own "repeat last order".
+//
+// Turn helpers (sim/auto.js): towns on Auto spend for themselves when the turn ends, R repeats the last town order
+// on the selected town, N jumps to the next party or town that needs orders, and End turn warns (once) only when
+// something is truly idle. A three-step first-run tutorial (TUT_KEY in the game's storage) can be replayed from
+// How to play.
 import { loadCss } from "../shared/css.js";
 import * as S from "./sim/index.js";
 import { prepareCover, prepareLand, coverLayer, landLayer, yieldsLayer, townsLayer, makeOverlay, COLORS } from "./render.js";
@@ -17,6 +24,7 @@ import { esc, int, popShort, compact } from "../../format.js";
 const SAVE_KEY = "save";
 const SAVE_V = 1;
 const HOWTO_KEY = "howto-seen";
+const TUT_KEY = "tutorial";
 
 export async function start(ctx) {
   const { app } = ctx;
@@ -32,9 +40,13 @@ export async function start(ctx) {
   const model = {
     env, grid: env.map.grid, state: null, ver: 0, land: null, revealed: false, showYields: true,
     selTown: null, selParty: null, selCell: null, hoverCell: null, history: null, confirmNew: false,
-    showHow: !ctx.storage.get(HOWTO_KEY),
-    cover: prepareCover(app.w, ctx.cities),
+    showHow: false, warnedTurn: null, tut: null,
+    cover: prepareCover(app.w, ctx.cities, env.T),
   };
+
+  // First run: the tutorial; afterwards the How-to-play card shows until it has been dismissed once.
+  if (!ctx.storage.get(TUT_KEY)?.done) model.tut = { step: 0, base: null };
+  else model.showHow = !ctx.storage.get(HOWTO_KEY);
 
   // --- hide the real country while playing -----------------------------------------------------------------------
   app.setCitiesHidden(true);
@@ -108,9 +120,19 @@ export async function start(ctx) {
     const s = model.state;
     if (s.phase !== "play") return;
     if (!s.towns.length) { ctx.toast("Found your first town before ending the turn (F)."); return; }
+    // Warn once a turn, and only when something is truly idle; a second End turn goes ahead.
+    const idle = model.warnedTurn === s.turn ? null : S.endTurnCheck(env, s);
+    if (idle) {
+      model.warnedTurn = s.turn;
+      selectItem(idle, true);
+      ctx.toast(`${idle.text} Press End turn again to end anyway.`);
+      refresh();
+      return;
+    }
     const r = act({ type: "end" });
     if (!r.ok) return;
     const rep = model.state.lastTurn;
+    if (rep?.auto?.length) ctx.toast(`Auto: ${rep.auto.length} order${rep.auto.length > 1 ? "s" : ""} (${rep.auto.slice(0, 3).map((a) => a.text).join(", ")}${rep.auto.length > 3 ? "…" : ""})`);
     for (const e of rep?.events || []) ctx.toast(`${e.icon} ${e.text}`);
     if (model.state.phase === "over") finish();
     refresh();
@@ -239,6 +261,56 @@ export async function start(ctx) {
     refresh();
   }
 
+  /** Select a party or town ({kind, id}) and bring it into view. */
+  function selectItem(it, fly = true) {
+    const s = model.state;
+    if (it.kind === "party") {
+      const p = S.partyById(s, it.id);
+      if (!p) return;
+      model.selParty = p.id; model.selTown = null; model.selCell = null;
+      if (fly) flyToCell(p.cell, true);
+    } else {
+      const t = S.townById(s, it.id);
+      if (!t) return;
+      model.selTown = t.id; model.selParty = null; model.selCell = null;
+      if (fly) flyToCell(t.cell, true);
+    }
+  }
+
+  /** N: the next founding party or town that needs orders (sim/auto.js ordersNeeded), after the current selection. */
+  function nextNeedingOrders() {
+    const s = model.state;
+    if (s.phase !== "play") return;
+    const list = S.ordersNeeded(env, s);
+    if (!list.length) { ctx.toast("Nothing needs orders: end the turn (Enter)."); return; }
+    const k = list.findIndex((x) => (x.kind === "party" ? x.id === model.selParty : x.id === model.selTown));
+    const it = list[(k + 1) % list.length];
+    selectItem(it, true);
+    ctx.toast(it.why);
+    refresh();
+  }
+
+  /** R: give the selected town the last town order (homesteaders, festival, an improvement on its best hex…). */
+  function repeatOrder() {
+    const s = model.state;
+    if (s.phase !== "play") return;
+    if (!s.lastOrder) { ctx.toast("No order to repeat yet: give a town an order first."); return; }
+    const t = model.selTown != null ? S.townById(s, model.selTown) : null;
+    if (!t) { ctx.toast(`Select a town to repeat "${S.orderLabel(s.lastOrder)}" (N jumps to the next town).`); return; }
+    const a = S.repeatAction(env, s, t.id);
+    if (!a) { ctx.toast(`${t.name} cannot take "${S.orderLabel(s.lastOrder)}" now.`); return; }
+    const r = act(a);
+    if (r.ok && !r.msg) ctx.toast(`${S.orderLabel(s.lastOrder)}: ${t.name}`);
+    refresh();
+  }
+
+  function toggleAuto(townId) {
+    const t = S.townById(model.state, townId);
+    if (!t) return;
+    act({ type: "auto", town: t.id, on: !t.auto }, { quiet: true });
+    ctx.toast(`${t.name}: auto ${t.auto ? "off" : "on"}`);
+  }
+
   // Keys (ctx.onKey runs before the map's own shortcuts; true = handled, so the map ignores it).
   ctx.onKey((e, k) => {
     const onButton = e.target?.tagName === "BUTTON";
@@ -248,13 +320,19 @@ export async function start(ctx) {
       return true;
     }
     if (k === "f") { found(); return true; }
-    if (k === " " || k === "n") {
-      if (k === " " && onButton) return false;
+    if (k === " ") {
+      if (onButton) return false;
       nextParty();
       return true;
     }
+    if (k === "n") { nextNeedingOrders(); return true; }
+    if (k === "a" && model.state.phase === "play") {
+      if (model.selTown != null) { toggleAuto(model.selTown); refresh(); } else ctx.toast("Select a town to put it on auto (A).");
+      return true;
+    }
+    if (k === "r" && !model.revealed) { repeatOrder(); return true; }
     if (k === "y") { model.showYields = !model.showYields; refresh(); return true; }
-    if (k === "h") { model.showHow = !model.showHow; refresh(); return true; }
+    if (k === "h") { model.showHow = !model.showHow; if (!model.showHow) ctx.storage.set(HOWTO_KEY, true); refresh(); return true; }
     // While the country is hidden: no resource icons (R), no lenses (L) and no city search (/): they show real places.
     if (!model.revealed && (k === "r" || k === "l" || k === "/")) return true;
     return false;
@@ -271,6 +349,13 @@ export async function start(ctx) {
       case "start": beginAt(+d.cell); return;
       case "found": found(); return;
       case "nextparty": nextParty(); return;
+      case "nextorder": nextNeedingOrders(); return;
+      case "repeat": repeatOrder(); return;
+      case "auto": toggleAuto(+d.town); break;
+      case "autoall": act({ type: "auto", town: "all", on: d.on === "1" }, { quiet: true }); break;
+      case "tut-next": tutAdvance(true); break;
+      case "tut-skip": tutFinish(false); break;
+      case "tut-replay": ctx.storage.remove(TUT_KEY); model.tut = { step: 0, base: null }; model.showHow = false; break;
       case "party": {
         const r = act({ type: "party", town: +d.town });
         if (r.ok) { model.selParty = model.state.parties.at(-1).id; model.selTown = null; }
@@ -320,6 +405,7 @@ export async function start(ctx) {
 
   function refresh() {
     enforceHidden();
+    tutAdvance(false);
     render();
     app.requestDraw();
   }
@@ -333,6 +419,10 @@ export async function start(ctx) {
     const score = S.prosperity(env, s).score;
     const hint = S.nextHint(env, s);
     const year = S.yearOf(s.turn);
+    const needs = S.ordersNeeded(env, s);
+    model.needs = new Set(needs.map((x) => `${x.kind}:${x.id}`));
+    const warned = model.warnedTurn === s.turn && s.phase === "play" ? S.endTurnCheck(env, s) : null;
+    const idleWarn = warned ? `<p class="fd-idle" role="status">${esc(warned.text)} <b>End turn</b> again to end anyway.</p>` : "";
     body.innerHTML = `
       <div class="fd-top">
         <div class="fd-year"><b>${year}</b><span>Turn ${s.turn} of ${s.maxTurns}</span></div>
@@ -344,10 +434,11 @@ export async function start(ctx) {
         </div>
       </div>
       ${model.showHow ? howToPlay() : ""}
-      <div class="fd-hint" role="status"><span class="fd-hint-k">Next</span> ${esc(hint)}</div>
+      ${model.tut ? tutorialCard() : `<div class="fd-hint" role="status"><span class="fd-hint-k">Next</span> ${esc(hint)}</div>`}
+      ${idleWarn}
       <div class="g-row fd-actions">
         <button class="g-btn primary fd-end" data-act="end" ${s.phase !== "play" ? "disabled" : ""} title="End the turn (Enter or E)">End turn <kbd>⏎</kbd></button>
-        <button class="g-btn" data-act="nextparty" ${s.parties.some((p) => p.moves > 0) ? "" : "disabled"} title="Next founding party (Space or N)">Next party</button>
+        <button class="g-btn" data-act="nextorder" ${needs.length ? "" : "disabled"} title="Next party or town that needs orders (N)">Next${needs.length ? ` · ${needs.length}` : ""} <kbd>N</kbd></button>
         <button class="g-btn fd-toggle${model.showYields ? " on" : ""}" data-act="yields" title="Show yields on the map when zoomed in (Y)" aria-pressed="${model.showYields}">Yields</button>
       </div>
       <div class="fd-sel">${selectionPanel()}</div>
@@ -431,6 +522,7 @@ export async function start(ctx) {
       <p>Food store <b>${t.food}/${need}</b> · ${grow}</p>
       <p>Culture <b>${t.culture}</b>${o.culture ? ` (+${1 + Math.floor(o.trade / 2) + o.culture}/turn)` : ""} · border radius ${t.radius}${nextR ? ` (grows at ${nextR})` : " (full)"} · works ${o.worked.length} of ${o.tiles.length} hexes · upkeep ${Math.floor(S.townUpkeep(s, t))}</p>
       <div class="fd-row"><span class="g-note">Focus</span> ${foci}</div>
+      ${ordersRow(t)}
       <div class="g-row"><button class="g-btn primary" data-act="party" data-town="${t.id}" ${canParty ? "" : "disabled"}
         title="Costs ${cost} materials and 1 person" aria-label="Send settlers: ${cost} materials and 1 person">Send settlers · ${cost}</button>
         ${t.pop < 2 ? `<span class="g-note">needs 2 people</span>` : ""}</div>
@@ -438,6 +530,19 @@ export async function start(ctx) {
       ${projectsPanel(t)}
       ${links ? `<h4 class="fd-h4">Links (+${S.RULES.roadTrade} trade each end; rail +${S.RULES.railTrade} from turn ${S.RULES.railTurn})</h4><ul class="fd-links">${links}</ul>` : ""}
       <p class="g-note">Click a hex inside the border to build on it, or to always work it. White dots mark worked hexes.</p>`;
+  }
+
+  /** Auto and Repeat: the late-game helpers for this town. */
+  function ordersRow(t) {
+    const s = model.state;
+    const lo = s.lastOrder;
+    const rep = lo ? S.repeatAction(env, s, t.id) : null;
+    const label = lo ? S.orderLabel(lo) : "";
+    return `<div class="g-row fd-orders">
+      <button class="g-btn fd-toggle${t.auto ? " on" : ""}" data-act="auto" data-town="${t.id}" aria-pressed="${!!t.auto}"
+        title="Auto: when you end the turn, this town builds its best improvement or project, links to other auto towns and spends spare materials on homesteaders and festivals. It keeps enough for the next settlers while you are still expanding. (A)">⚙ Auto ${t.auto ? "on" : "off"} <kbd>A</kbd></button>
+      ${lo ? `<button class="g-btn" data-act="repeat" ${rep ? "" : "disabled"} title="Give ${esc(t.name)} the last order again (R)">↻ ${esc(label)} <kbd>R</kbd></button>` : ""}
+    </div>`;
   }
 
   /** Homesteaders and festivals: turn spare materials into people or culture, once a turn each. */
@@ -499,7 +604,8 @@ export async function start(ctx) {
     if (r.grew.length) bits.push(`${r.grew.map((g) => esc(g.name)).join(", ")} grew`);
     if (r.borders.length) bits.push(`${r.borders.map((g) => esc(g.name)).join(", ")} border grew`);
     if (r.shrank.length) bits.push(`<span class="fd-warn">${r.shrank.map((g) => esc(g.name)).join(", ")} starved</span>`);
-    return `<h3 class="g-section">Last turn</h3><p>${r.income >= 0 ? "+" : ""}${r.income} materials${r.upkeep ? ` (after ${r.upkeep} upkeep)` : ""}, ${r.trade} trade${bits.length ? ` · ${bits.join(" · ")}` : ""}</p>${ev}`;
+    const auto = r.auto?.length ? `<p class="g-note">Auto: ${r.auto.map((a) => esc(a.text)).join(", ")}.</p>` : "";
+    return `<h3 class="g-section">Last turn</h3><p>${r.income >= 0 ? "+" : ""}${r.income} materials${r.upkeep ? ` (after ${r.upkeep} upkeep)` : ""}, ${r.trade} trade${bits.length ? ` · ${bits.join(" · ")}` : ""}</p>${auto}${ev}`;
   }
 
   function townList() {
@@ -508,13 +614,17 @@ export async function start(ctx) {
     const rows = s.towns.map((t) => {
       const o = S.townOutput(env, s, t);
       const arrow = o.surplus > 0 ? "▲" : o.surplus < 0 ? "▼" : "◆";
+      const need = model.needs?.has(`town:${t.id}`);
       return `<li><button class="fd-li${model.selTown === t.id ? " on" : ""}" data-act="town" data-id="${t.id}">
-        <b>${esc(t.name)}</b><span>${t.pop} <small class="${o.surplus < 0 ? "fd-warn" : "muted"}">${arrow}</small></span>
+        <b>${need ? `<span class="fd-need" title="Needs orders (N)">●</span> ` : ""}${esc(t.name)}${t.auto ? ` <small class="fd-auto" title="On auto">⚙</small>` : ""}</b><span>${t.pop} <small class="${o.surplus < 0 ? "fd-warn" : "muted"}">${arrow}</small></span>
         <span class="fd-li-y">${yl(o)}</span></button></li>`;
     }).join("");
+    const allAuto = s.towns.length && s.towns.every((t) => t.auto);
+    const autoAll = s.towns.length > 1 && s.phase === "play"
+      ? `<button class="g-btn fd-autoall" data-act="autoall" data-on="${allAuto ? 0 : 1}" title="${allAuto ? "Take every town off auto" : "Put every town on auto: they spend for themselves when you end the turn"}">⚙ ${allAuto ? "All manual" : "All auto"}</button>` : "";
     const parties = s.parties.map((p, k) => `<li><button class="fd-li${model.selParty === p.id ? " on" : ""}" data-act="party-sel" data-id="${p.id}">
-        <b>Founding party ${k + 1}</b><span class="muted">${p.moves} moves${p.target != null ? " · travelling" : ""}</span></button></li>`).join("");
-    return `<h3 class="g-section">Your country</h3><ul class="fd-list">${rows}${parties}</ul>`;
+        <b>${model.needs?.has(`party:${p.id}`) ? `<span class="fd-need" title="Needs orders (N)">●</span> ` : ""}Founding party ${k + 1}</b><span class="muted">${p.moves} moves${p.target != null ? " · travelling" : ""}</span></button></li>`).join("");
+    return `<h3 class="g-section fd-country">Your country ${autoAll}</h3><ul class="fd-list">${rows}${parties}</ul>`;
   }
 
   function logPanel() {
@@ -531,13 +641,14 @@ export async function start(ctx) {
         <li><span class="fd-food">Food</span> = round(crop%÷25 + pasture%÷40 + grass%÷60 × relief) + river (big +2, other +1) + coast +1 + lake +1. Hills ×0.75, mountains ×0.4, peaks 0, barren ×0.3.</li>
         <li><span class="fd-mat">Materials</span> = round(forest%÷30 + scrub%÷100) + hills 1 / mountains 2 / peaks 1 + mine site 3, oil or gas play 2, hydro or geothermal 1.</li>
         <li><span class="fd-trade">Trade</span> = coast 2, river 1–2, lake 1, plus roads (+${R_.roadTrade}) and rail (+${R_.railTrade}) to your other towns.</li>
-        <li>Developed land is ignored (the country is empty). Wetland costs 2 moves, mountains 2, peaks 3.</li>
+        <li>The country is empty: land built up today counts as the open land around it (the hex's own fields, forest or grass, and its neighbours'). Wetland costs 2 moves, mountains 2, peaks 3.</li>
       </ul>
       <p>Each person works one hex and eats ${R_.foodPerPop} food. Surplus food grows the town (${R_.growthBase} + ${R_.growthPerPop} × people). Culture (1 a turn + half the trade + schools and colleges) widens the border at ${R_.cultureR2}, ${R_.cultureR3} and ${R_.cultureR4}. Towns must be ${R_.minTownDist}+ hexes apart.</p>
       <p><span class="fd-mat">Materials</span> (town output plus a quarter of trade, minus upkeep of 1 per ${R_.upkeepPerPop} people and 1 per rail line) buy settlers, improvements, links and town projects. Everything gets dearer the more you own: settlers +8 per town, each improvement of a kind +12%, each copy of a project +25%. Spare materials can bring homesteaders (+1 person for ${R_.growBase} + ${R_.growPerPop} × people) or pay for a festival (+${R_.festivalCulture} culture for ${R_.festivalCost}), once a turn per town.</p>
       <p>Score: 10 a town, 4 a person, 1 per 5 trade ever earned, 2 an improvement, 3 a road (6 rail), 5 a project, 1 per 10 culture.</p>
       <p>Events are seeded; floods, storms, fires and winters strike where FEMA recorded them most (county declarations since 2000), droughts where NOAA counted billion-dollar droughts.</p>
-      <p>Keys: <kbd>Enter</kbd>/<kbd>E</kbd> end turn · <kbd>F</kbd> found · <kbd>Space</kbd>/<kbd>N</kbd> next party · <kbd>Y</kbd> yields · <kbd>H</kbd> how to play · <kbd>Esc</kbd> deselect.</p>
+      <p><b>Many towns?</b> Put a town on <b>Auto</b> (<kbd>A</kbd>, or "All auto" above the town list): when you end the turn it builds its best improvement or project, links to other auto towns and spends what is spare on homesteaders and festivals, keeping enough for the next settlers while you are still expanding. <kbd>R</kbd> repeats your last town order on the selected town; <kbd>N</kbd> jumps to the next party or town that needs orders (● in the list). End turn only stops you when a party is waiting or materials pile up unused.</p>
+      <p>Keys: <kbd>Enter</kbd>/<kbd>E</kbd> end turn · <kbd>F</kbd> found · <kbd>N</kbd> next that needs orders · <kbd>Space</kbd> next party · <kbd>A</kbd> auto · <kbd>R</kbd> repeat order · <kbd>Y</kbd> yields · <kbd>H</kbd> how to play · <kbd>Esc</kbd> deselect.</p>
     </details>`;
   }
 
@@ -550,8 +661,61 @@ export async function start(ctx) {
         <li><b>Spend.</b> Materials pay for everything, and prices rise the more you own. Never sit on a pile: spare materials buy homesteaders or festivals.</li>
         <li><b>Finish.</b> ${S.RULES.maxTurns} turns (1790–${S.yearOf(S.RULES.maxTurns) + S.RULES.yearsPerTurn}). Then the real cities come back and you see how close to history you built.</li>
       </ol>
-      <p class="g-note">The teal line below always says a good next step. <kbd>Enter</kbd> ends the turn.</p>
-      <button class="g-btn primary" data-act="how">Got it</button>
+      <p class="g-note">The teal line below always says a good next step. <kbd>Enter</kbd> ends the turn. With many towns, use Auto (<kbd>A</kbd>), Repeat (<kbd>R</kbd>) and Next (<kbd>N</kbd>).</p>
+      <div class="g-row"><button class="g-btn primary" data-act="how">Got it</button>
+        <button class="g-btn" data-act="tut-replay">Replay the tutorial</button></div>
+    </div>`;
+  }
+
+  // --- tutorial: three steps, advanced by what the player does (or "Next step"), stored once finished or skipped ----
+  const TUT = [
+    {
+      title: "Found your first town",
+      text: (s) => s.phase === "setup"
+        ? "Pick one of the four gold-ringed starts (or click any land hex, then Begin here). Your founding party appears there."
+        : "Press F (or Found a town here) to found your first town. Good sites have food nearby and a river or coast for trade: hover hexes to see what they yield.",
+      done: (s) => s.towns.length > 0,
+    },
+    {
+      title: "Claim and build",
+      text: () => "Your town claims the hexes in its teal border, and the border widens as culture grows. Click a hex inside it and build: a farmstead on farmland, a quarry in the hills, a dock on water. Or buy a project for the town.",
+      done: (s, b) => s.stats.built > b.built,
+    },
+    {
+      title: "End the turn",
+      text: () => "Press End turn (Enter). Towns produce, grow and the year moves on four years. Later, with many towns, put them on Auto (A) and press N to jump to whatever needs orders.",
+      done: (s, b) => s.turn > b.turn,
+    },
+  ];
+  function tutAdvance(force) {
+    const tut = model.tut, s = model.state;
+    if (!tut || !s) return;
+    if (s.phase === "over") { tutFinish(true); return; }
+    tut.base ||= { built: s.stats.built, turn: s.turn };
+    while (model.tut && (force || TUT[tut.step].done(s, tut.base))) {
+      force = false;
+      if (tut.step >= TUT.length - 1) { tutFinish(true); return; }
+      tut.step++;
+      tut.base = { built: s.stats.built, turn: s.turn };
+      if (tut.step === 1 && model.selTown == null && s.towns[0]) model.selTown = s.towns[0].id;
+    }
+  }
+  function tutFinish(completed) {
+    model.tut = null;
+    ctx.storage.set(TUT_KEY, { done: true });
+    ctx.storage.set(HOWTO_KEY, true);
+    ctx.toast(completed ? "Tutorial done. Replay it any time from How to play (H)." : "Tutorial skipped. Replay it any time from How to play (H).");
+  }
+  function tutorialCard() {
+    const { step } = model.tut;
+    const t = TUT[step];
+    const dots = TUT.map((_, k) => `<span class="fd-tut-dot${k < step ? " done" : k === step ? " on" : ""}"></span>`).join("");
+    return `<div class="fd-tut" role="note" aria-live="polite">
+      <div class="fd-tut-head"><span class="fd-hint-k">Tutorial · ${step + 1} of ${TUT.length}</span><span class="fd-tut-dots" aria-hidden="true">${dots}</span></div>
+      <b>${esc(t.title)}</b>
+      <p>${esc(t.text(model.state))}</p>
+      <div class="g-row"><button class="g-btn" data-act="tut-next">${step === TUT.length - 1 ? "Finish" : "Next step"}</button>
+        <button class="g-btn fd-tut-skip" data-act="tut-skip">Skip tutorial</button></div>
     </div>`;
   }
 

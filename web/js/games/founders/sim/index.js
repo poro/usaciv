@@ -7,3 +7,4 @@ export * from "./actions.js";
 export * from "./events.js";
 export * from "./score.js";
 export * from "./advice.js";
+export * from "./auto.js";
