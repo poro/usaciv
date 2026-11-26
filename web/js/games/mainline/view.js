@@ -35,13 +35,13 @@ export function makeView(ctx, game) {
 
   // --- cached geometry, rebuilt only when the network or the scenario changes ---
   let geoKey = "";
-  let geo = null; // {ok: Path2D, hard: Path2D, dmg: Path2D, segs: [{key, x1, y1, x2, y2}], stations: [[x, y, served]]}
+  let geo = null; // {ok, hard, dmg, dbl: Path2D, segs: [{key, x1, y1, x2, y2}], stations: [[x, y, live, home, hub level]]}
   function geometry() {
     const { env, state, ev } = game;
-    const key = `${env.scenario.id}:${env.home?.id}:${state.nv}:${state.year}`;
+    const key = `${env.scenario.id}:${env.home?.id}:${state.nv}:${state.year}:${state.seed}`;
     if (key === geoKey && geo) return geo;
     geoKey = key;
-    const ok = new Path2D(), hard = new Path2D(), dmg = new Path2D();
+    const ok = new Path2D(), hard = new Path2D(), dmg = new Path2D(), dbl = new Path2D();
     const segs = [];
     for (const k of Object.keys(state.links)) {
       const l = state.links[k];
@@ -49,17 +49,18 @@ export function makeView(ctx, game) {
       const p = l.d ? dmg : l.h ? hard : ok;
       p.moveTo(x1, y1);
       p.lineTo(x2, y2);
+      if (l.dt && !l.d) { dbl.moveTo(x1, y1); dbl.lineTo(x2, y2); }
       segs.push({ key: k, x1, y1, x2, y2 });
     }
     const net = S.networkCells(state);
     const stations = [];
     for (const c of env.cities) {
-      if (c.id === env.home?.id && !c.cells.some((x) => net.has(x))) { stations.push([g.cx(c.cell), g.cy(c.cell), true, true]); continue; }
+      if (c.id === env.home?.id && !c.cells.some((x) => net.has(x))) { stations.push([g.cx(c.cell), g.cy(c.cell), true, true, 0]); continue; }
       if (!c.cells.some((x) => net.has(x))) continue;
       const at = c.cells.find((x) => x === c.cell && net.has(x)) ?? c.cells.find((x) => net.has(x));
-      stations.push([g.cx(at), g.cy(at), ev.graph.comp.has(at), c.id === env.home?.id]);
+      stations.push([g.cx(at), g.cy(at), ev.graph.comp.has(at), c.id === env.home?.id, state.hubs?.[c.id] || 0]);
     }
-    geo = { ok, hard, dmg, segs, stations };
+    geo = { ok, hard, dmg, dbl, segs, stations };
     return geo;
   }
 
@@ -81,7 +82,7 @@ export function makeView(ctx, game) {
   const links = {
     id: "links", z: 56.5, minRpx: 0, snapshot: true,
     visible: () => !!game.state && game.ui.screen !== "picker",
-    sig: () => (game.state ? `${game.env.scenario.id}:${game.state.nv}:${game.state.year}` : "none"),
+    sig: () => (game.state ? `${game.env.scenario.id}:${game.state.seed}:${game.state.nv}:${game.state.year}` : "none"),
     draw(c, vp, w, o) {
       const G = geometry();
       const s = vp.s, Rpx = o.Rpx;
@@ -100,6 +101,10 @@ export function makeView(ctx, game) {
       c.lineWidth = lw / s;
       c.stroke(G.ok);
       c.stroke(G.hard);
+      // double track: a dark centre line splits the stroke into two rails
+      c.strokeStyle = "rgba(40,20,6,.9)";
+      c.lineWidth = Math.max(1, lw * 0.28) / s;
+      c.stroke(G.dbl);
       // damaged: red dashes
       c.strokeStyle = "#ff4a3d";
       c.setLineDash([(lw * 1.4) / s, (lw * 1.1) / s]);
@@ -107,15 +112,24 @@ export function makeView(ctx, game) {
       c.setLineDash([]);
       // stations on metros the network reaches
       const r = clamp(Rpx * 0.2, 3, 10) / s;
-      for (const [x, y, live, home] of G.stations) {
+      for (const [x, y, live, home, hub] of G.stations) {
         if (x < vp.x0 - 50 || x > vp.x1 + 50 || y < vp.y0 - 50 || y > vp.y1 + 50) continue;
         c.beginPath();
-        c.arc(x, y, home ? r * 1.35 : r, 0, Math.PI * 2);
+        const rr = (home ? r * 1.35 : r) * (hub ? 1.15 : 1);
+        if (hub) c.rect(x - rr, y - rr, rr * 2, rr * 2); // terminals are square
+        else c.arc(x, y, rr, 0, Math.PI * 2);
         c.fillStyle = live ? "#fff4dc" : "#9a8f80";
         c.fill();
         c.lineWidth = Math.max(1.5, r * s * 0.35) / s;
-        c.strokeStyle = home ? "#c9a45c" : "#2a1d10";
+        c.strokeStyle = home || hub ? "#c9a45c" : "#2a1d10";
         c.stroke();
+        // one gold pip per terminal level, under the station
+        for (let k = 0; k < hub; k++) {
+          c.beginPath();
+          c.arc(x + (k - (hub - 1) / 2) * rr * 0.9, y + rr * 1.7, rr * 0.32, 0, Math.PI * 2);
+          c.fillStyle = "#e8c46a";
+          c.fill();
+        }
       }
     },
     hit(x, y, Rpx) {
@@ -139,9 +153,13 @@ export function makeView(ctx, game) {
     const parts = [];
     if (d.rail != null) parts.push(`upgrades a real ${d.rail === 0 ? "main" : "secondary"} rail line (cheaper)`);
     if (d.river) parts.push(`crosses the ${esc(d.river.name)}`);
-    const status = l.d ? `<span class="ml-bad">Damaged in ${l.dy || "a disaster"}</span> · repair ${cr(S.repairCost(env, l))} (≈ ${usd(S.repairCost(env, l))})`
-      : l.h ? `<span class="ml-good">Hardened</span>: disasters cannot cut it`
-      : `Intact · harden for ${cr(S.hardenCost(env, l))}`;
+    const hz = S.hardenOptions(env, l);
+    const held = hz.filter((h) => h.done).map((h) => S.TYPE_NAME[h.type].toLowerCase());
+    const open = hz.filter((h) => !h.done).map((h) => S.TYPE_NAME[h.type].toLowerCase());
+    const status = (l.d ? `<span class="ml-bad">Damaged in ${l.dy || "a disaster"}</span> · repair ${cr(S.repairCost(env, l))} (≈ ${usd(S.repairCost(env, l))})`
+      : `Intact${l.dt ? " · <span class=\"ml-good\">double track</span>" : ""}`) +
+      (held.length ? `<br><span class="ml-good">Hardened against ${esc(held.join(", "))}</span>` : "") +
+      (open.length ? `<br><span class="muted">Exposed to ${esc(open.join(", "))}</span>` : "");
     return `<b>Your rail link</b><br>Built ${l.year} for ${cr(l.cost)} (≈ ${usd(l.cost)})<br>` +
       `<span class="muted">${esc(d.terrain?.join(" → ") || "")}${parts.length ? `<br>${parts.join(" · ")}` : ""}</span><br>${status}` +
       `<br><span class="muted">Click to select it.</span>`;

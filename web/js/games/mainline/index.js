@@ -10,6 +10,7 @@ import * as S from "./sim/index.js";
 import { makeView } from "./view.js";
 import { pickerHtml, gameHtml, buildHtml, endHtml, shareText, contractText } from "./panel.js";
 import { parseParam, formatParam } from "./params.js";
+import { shareImage } from "./share.js";
 
 const envCache = new Map();
 
@@ -52,7 +53,11 @@ export async function start(ctx) {
   ctx.onCleanup(() => { if (app.mainline === game) delete app.mainline; });
 
   // --- flow ---
-  function valid(s) { return !!(s && s.v === 1 && S.scenarioById(s.scenario) && s.links && s.cities && s.base); }
+  /** A usable save (migrated to the current version), or null. */
+  function loadSave() {
+    const sv = S.migrate(ctx.storage.get("save", null));
+    return sv && S.scenarioById(sv.scenario) ? sv : null;
+  }
   function newSeed() { return 1 + Math.floor(Math.random() * 99999); }
   function begin({ scenario, seed, home }, saved = null) {
     const env = getEnv(scenario, home);
@@ -63,6 +68,7 @@ export async function start(ctx) {
     game.ui.link = null;
     game.ui.tab = "open";
     game.ui.screen = game.state.over ? "end" : "game";
+    game.ui.help = game.ui.screen === "game" && !ctx.storage.get("seenHow", false); // first game: how to play
     view.reset();
     ctx.setParam(formatParam({ scenario, seed: game.state.seed, home: env.home?.id }));
     save();
@@ -82,9 +88,9 @@ export async function start(ctx) {
     game.ui.screen = "picker";
     game.sel = { start: null, end: null, hover: null, plan: null };
     ctx.setParam(null);
-    const sv = ctx.storage.get("save", null);
+    const sv = loadSave();
     let saveEnv = null;
-    try { if (valid(sv)) saveEnv = getEnv(sv.scenario, sv.home); } catch { saveEnv = null; }
+    try { if (sv) saveEnv = getEnv(sv.scenario, sv.home); } catch { saveEnv = null; }
     const metros = ctx.cities.filter((c) => c.metro).slice(0, 150).sort((a, b) => a.name.localeCompare(b.name));
     const last = game.state ? { scenario: game.state.scenario, home: game.state.home } : sv ? { scenario: sv.scenario, home: sv.home } : {};
     body.innerHTML = pickerHtml({
@@ -128,7 +134,8 @@ export async function start(ctx) {
     game.sel = { start: null, end: null, hover: game.sel.hover, plan: null };
     const r = game.state.last;
     const dmg = r.damaged ? `, ${r.damaged} link${r.damaged === 1 ? "" : "s"} damaged` : "";
-    ctx.toast(`${before.year}: +${r.revenue.toFixed(1)} cr freight, −${r.maint.toFixed(1)} upkeep${r.hits ? ` · ${r.hits} disaster${r.hits === 1 ? "" : "s"}${dmg}` : ""}`);
+    const debt = r.interest ? `, −${r.interest.toFixed(1)} interest` : "";
+    ctx.toast(`${before.year}: +${r.revenue.toFixed(1)} cr freight, −${r.maint.toFixed(1)} upkeep${debt}${r.hits ? ` · ${r.hits} disaster${r.hits === 1 ? "" : "s"}${dmg}` : ""}`);
     if (game.state.over) {
       game.ui.screen = "end";
       const sum = S.summary(game.env, game.state);
@@ -228,10 +235,12 @@ export async function start(ctx) {
       case "cancel": cancelBuild(); break;
       case "repairAll": act({ type: "repairAll" }); break;
       case "repair": if (game.ui.link) act({ type: "repair", key: game.ui.link }); break;
-      case "harden": if (game.ui.link) act({ type: "harden", key: game.ui.link }); break;
+      case "harden": if (game.ui.link) act({ type: "harden", key: game.ui.link, ...(t.dataset.hz ? { hz: t.dataset.hz } : {}) }); break;
+      case "double": if (game.ui.link) act({ type: "double", key: game.ui.link }); break;
+      case "hub": act({ type: "hub", city: t.dataset.city }); break;
       case "unlink": game.ui.link = null; refresh(); break;
       case "tab": game.ui.tab = t.dataset.tab; refresh(); break;
-      case "help": game.ui.help = !game.ui.help; refresh(); break;
+      case "help": toggleHelp(); break;
       case "new": showPicker(); break;
       case "again": begin({ scenario: game.env.scenario.id, seed: newSeed(), home: game.env.home?.id }); break;
       case "share": {
@@ -239,13 +248,14 @@ export async function start(ctx) {
         navigator.clipboard?.writeText(txt).then(() => ctx.toast("Result copied"), () => ctx.toast("Could not copy"));
         break;
       }
+      case "image": downloadImage(); break;
       case "reseed": {
         const inp = body.querySelector('[data-field="seed"]');
         if (inp) inp.value = newSeed();
         break;
       }
       case "resume": {
-        const sv = ctx.storage.get("save", null);
+        const sv = loadSave();
         if (sv) begin({ scenario: sv.scenario, seed: sv.seed, home: sv.home }, sv);
         break;
       }
@@ -281,39 +291,63 @@ export async function start(ctx) {
     if (game.ui.hover) { game.ui.hover = null; view.redraw(); }
   });
 
-  // --- keyboard ---
-  const onKey = (e) => {
-    if (e.defaultPrevented || game.ui.screen !== "game") return;
-    const t = e.target;
-    if (t && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName))) return;
-    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-    if ((k === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) || (k === "z" && !e.metaKey && !e.ctrlKey && !e.altKey)) {
-      e.preventDefault();
+  function toggleHelp(on = !game.ui.help) {
+    game.ui.help = on;
+    if (!on) ctx.storage.set("seenHow", true);
+    refresh();
+    if (on) body.scrollTop = 0;
+  }
+
+  // --- share image ---
+  async function downloadImage() {
+    if (!game.state || !app.cam || !app.w) { ctx.toast("The map can't be drawn here"); return; }
+    try {
+      const blob = await shareImage(ctx, game, model());
+      if (!blob) throw new Error("no image");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `mainline-${game.env.scenario.id}${game.env.scenario.id === "sandbox" ? `-${game.env.home?.id}` : ""}-${game.state.seed}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } catch (err) {
+      console.error("mainline: share image failed", err);
+      ctx.toast("Could not draw the image");
+    }
+  }
+
+  // --- keyboard (ctx.onKey: runs before the map's own shortcuts, skipped while typing or with Ctrl/Cmd/Alt) ---
+  ctx.onKey((e, k) => {
+    if (game.ui.screen !== "game" || !game.state) return false;
+    if (k === "z") {
       act({ type: "undo" });
       game.sel.plan = null;
       refreshBuild();
-    } else if (!e.metaKey && !e.ctrlKey && !e.altKey && (k === "e" || (k === "Enter" && !(t && t.tagName === "BUTTON")))) {
-      e.preventDefault();
-      act({ type: "endTurn" });
+      return true;
     }
-  };
-  window.addEventListener("keydown", onKey);
-  ctx.onCleanup(() => window.removeEventListener("keydown", onKey));
+    if (k === "e" || (k === "Enter" && e.target?.tagName !== "BUTTON")) {
+      act({ type: "endTurn" });
+      return true;
+    }
+    if (k === "h" || k === "?") { toggleHelp(); return true; }
+    return false;
+  });
 
   // --- start: URL param, else the saved game, else the picker ---
   const want = parseParam(ctx.param);
-  const sv = ctx.storage.get("save", null);
+  const sv = loadSave();
   if (want) {
-    const same = valid(sv) && sv.scenario === want.scenario && sv.seed === want.seed && (want.scenario !== "sandbox" || !want.home || sv.home === want.home);
+    const same = sv && sv.scenario === want.scenario && sv.seed === want.seed && (want.scenario !== "sandbox" || !want.home || sv.home === want.home);
     begin(want, same ? sv : null);
-  } else if (valid(sv) && !sv.over) {
+  } else if (sv && !sv.over) {
     begin({ scenario: sv.scenario, seed: sv.seed, home: sv.home }, sv);
   } else showPicker();
 
   return {
     param: () => (game.state && game.ui.screen !== "picker" ? formatParam({ scenario: game.env.scenario.id, seed: game.state.seed, home: game.env.home?.id }) : null),
     onEscape() {
-      if (game.ui.help) { game.ui.help = false; refresh(); return true; }
+      if (game.ui.help) { toggleHelp(false); return true; }
       if (game.sel.start != null || game.ui.link || game.ui.highlight) {
         game.ui.link = null;
         game.ui.highlight = null;

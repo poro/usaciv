@@ -51,19 +51,49 @@
 .ml-tabs button[aria-selected="true"] { color: var(--gold-bright); border-bottom-color: var(--gold); }
 .ml-tabs .g-note { margin-left: auto; }
 .ml-contracts { list-style: none; margin: 0; padding: 0; display: grid; }
-.ml-contracts li { display: grid; grid-template-columns: auto 1fr auto 44px; gap: 6px; align-items: center; padding: 5px 4px; border-bottom: 1px solid rgba(255,255,255,.05); cursor: pointer; font-size: 12.5px; }
-.ml-contracts li:hover, .ml-contracts li.on { background: rgba(201,164,92,.1); }
+.ml-contracts li { display: grid; grid-template-columns: 44px 1fr auto; grid-template-areas: "kind name pay" "kind val pay"; column-gap: 8px; row-gap: 1px; align-items: center; padding: 5px 6px; border-bottom: 1px solid rgba(255,255,255,.05); cursor: pointer; font-size: 12.5px;
+  background: linear-gradient(90deg, rgba(201,164,92,.09) var(--w, 0%), transparent var(--w, 0%)); }
+.ml-contracts li.served { background: linear-gradient(90deg, rgba(143,227,162,.08) var(--w, 0%), transparent var(--w, 0%)); }
+.ml-contracts li:hover, .ml-contracts li.on { background: rgba(201,164,92,.16); }
+.ml-contracts li > .ml-kind { grid-area: kind; justify-self: start; }
+.ml-contracts li > .ml-cname { grid-area: name; }
+.ml-contracts li > .ml-val { grid-area: val; }
+.ml-contracts li > .ml-pay { grid-area: pay; font-size: 14px; font-weight: 600; }
+.ml-pay small { display: block; font-size: 10px; font-weight: 400; color: #e8c46a; }
+.ml-half { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; background: linear-gradient(90deg, #e8c46a 50%, transparent 50%); border: 1px solid #e8c46a; }
 .ml-contracts li.ml-empty { display: block; cursor: default; }
-.ml-cname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ml-cname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .ml-val { color: var(--ink-dim); font-size: 11.5px; }
 .ml-pay { text-align: right; font-variant-numeric: tabular-nums; }
 .ml-kind { font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; padding: 1px 4px; border-radius: 3px; border: 1px solid; }
 .ml-kind.faf { color: #ffd678; border-color: rgba(255,214,120,.6); }
 .ml-kind.model { color: #b9c2cc; border-color: rgba(185,194,204,.4); font-style: italic; }
+.ml-kind.hub-port { color: #7fd4ff; border-color: rgba(127,212,255,.6); }
+.ml-kind.hub-airport { color: #c9a0ff; border-color: rgba(201,160,255,.55); }
+.ml-kind.hub-terminal { color: #ffd678; border-color: rgba(255,214,120,.5); }
+
+/* terminals tab */
+.ml-hubs li { grid-template-columns: 64px 1fr auto auto; grid-template-areas: "kind name pips btn"; cursor: default; background: none; }
+.ml-hubs li:hover { background: rgba(255,255,255,.03); }
+.ml-hubs li > .ml-cname small { display: block; font-size: 11px; white-space: normal; }
+.ml-pips { grid-area: pips; display: flex; gap: 3px; }
+.ml-pips i { width: 8px; height: 8px; border-radius: 2px; border: 1px solid #c9a45c; }
+.ml-pips i.on { background: #e8c46a; }
+.ml-hubbtn { grid-area: btn; padding: 3px 8px; font-size: 12px; white-space: nowrap; }
+.ml-hubs li > .ml-pay { grid-area: btn; font-size: 12px; }
+
+/* selected link: hardening per hazard */
+.ml-hz { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.ml-hz li { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: 12px; }
+.ml-hz li .g-btn { padding: 2px 8px; font-size: 12px; }
+.ml-hz li.done { opacity: .8; }
+.ml-link .g-btn small { font-size: 10.5px; color: #8fe3a2; margin-left: 3px; }
 .ml-check { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--ink-dim); }
 .ml-foot { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; align-items: center; margin-top: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
 .ml-foot .g-btn { padding: 3px 8px; font-size: 12px; }
-.ml-helpbox { padding: 8px 10px; border: 1px solid var(--gold); border-radius: 6px; background: rgba(0,0,0,.35); }
+.ml-helpbox { padding: 10px 12px; border: 1px solid var(--gold); border-radius: 6px; background: rgba(0,0,0,.45); display: grid; gap: 6px; }
+.ml-helpbox .ml-x { margin-left: auto; }
+.ml-helpbox .ml-how { margin-top: 0; }
 
 /* end screen */
 .ml-end { display: grid; gap: 8px; }
@@ -82,4 +112,10 @@
   .ml-year b { font-size: 22px; }
   .ml-contracts li { padding: 8px 4px; }
   .ml kbd { display: none; }
+  .ml-tabs button { padding: 6px 7px; }
+  .ml-tabs .g-note { display: none; }
+  .ml-hz li .g-btn, .ml-hubbtn { padding: 6px 10px; }
+  .ml-hz li { grid-template-columns: 1fr auto; }
+  .ml-hz li > .muted { grid-column: 1; grid-row: 2; font-size: 11px; }
+  .ml-hz li > :last-child { grid-row: 1 / span 2; grid-column: 2; }
 }

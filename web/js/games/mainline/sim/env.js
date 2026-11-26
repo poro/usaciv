@@ -10,6 +10,33 @@ import { buildContracts } from "./contracts.js";
 import { hazardTable } from "./events.js";
 import { yearlyRate, partnerWeights } from "./growth.js";
 
+/**
+ * What a terminal in each region metro builds on: its busiest real port (USACE tons), else its biggest cargo airport
+ * (FAA all-cargo lbs), else a plain rail terminal. → Map<cityId, {kind, name, rate (pay bonus per level), base (cr)}>
+ */
+export const HUB_KIND = {
+  port: { rate: 0.1, label: "Port" },
+  airport: { rate: 0.07, label: "Air cargo" },
+  terminal: { rate: 0.05, label: "Rail terminal" },
+};
+export const HUB_MAX = 3;
+function hubSites(env, infrastructure) {
+  const out = new Map();
+  const ports = infrastructure?.ports || [], airports = infrastructure?.airports || [];
+  for (const c of env.cities) {
+    const port = ports.filter((p) => p.cbsa === c.id && p.tons >= 5e6).sort((a, b) => b.tons - a.tons)[0];
+    const air = airports.filter((a) => a.cbsa === c.id && a.cargo_lbs >= 3e8).sort((a, b) => b.cargo_lbs - a.cargo_lbs)[0];
+    const kind = port ? "port" : air ? "airport" : "terminal";
+    const name = port ? port.name : air ? air.name : `${c.name} rail terminal`;
+    const detail = port ? `${Math.round(port.tons / 1e6)}M tons a year (USACE ${port.year})`
+      : air ? `${Math.round(air.cargo_lbs / 1e6).toLocaleString("en-US")}M lbs of air cargo (FAA ${air.year})` : "";
+    // price per level: a floor plus the metro's size (bigger metros: dearer land, more to gain)
+    const base = Math.round(10 + c.gdp0 / 20e9);
+    out.set(c.id, { kind, name, detail, rate: HUB_KIND[kind].rate, base });
+  }
+  return out;
+}
+
 export const DEFAULT_GDP_PER_HEAD = 75000; // only for a city with no BEA GDP (none today)
 
 // The river table depends only on the world: share it between envs.
@@ -81,9 +108,15 @@ export function makeEnv(data, scenarioId, { home = null, hexmap = null } = {}) {
     if (k >= 0 && !countyCell.has(k)) countyCell.set(k, i);
   }
 
+  // Distance between cell centres in km. Not hexmap.km (Math.hypot is not exactly rounded in every engine): sqrt is.
+  const km = (a, b) => {
+    const dx = g.cx(a) - g.cx(b), dy = g.cy(a) - g.cy(b);
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
   if (!riverCache.has(world)) riverCache.set(world, riverCrossings(world, hexmap));
   const env = {
-    scenario, world, hexmap, cityById, trade: data.trade, region, inRegion, bbox, ext,
+    scenario, world, hexmap, km, cityById, trade: data.trade, region, inRegion, bbox, ext,
     cities, cityIdx: new Map(cities.map((c, k) => [c.id, k])), home: homeCity,
     rivers: riverCache.get(world),
     rail: realRail(data.infrastructure, hexmap),
@@ -99,5 +132,6 @@ export function makeEnv(data, scenarioId, { home = null, hexmap = null } = {}) {
   env.contractById = new Map(env.contracts.map((c) => [c.id, c]));
   env.partners = partnerWeights(env);
   env.homeCells = new Set(homeCity ? homeCity.cells : []);
+  env.hubs = hubSites(env, data.infrastructure);
   return env;
 }

@@ -5,27 +5,49 @@
 //
 // state = {
 //   v, scenario, home, seed, year (the year being played), over, cash (cr),
-//   links: {edgeKey: {a, b, cost, year, h (hardened 0|1), d (damaged 0|1)}}, nv (network version, bumps on change),
+//   links: {edgeKey: {a, b, cost, year, h (hardened: bitmask over events.HZ_TYPES), d (damaged 0|1),
+//          dt (double track 0|1)}}, nv (network version, bumps on change),
+//   hubs: {cityId: terminal level 1..HUB_MAX},
 //   cities, base: {cityId: {gdp, pop}}   (your world and baseline America),
-//   undo: [{cash, changes: [[key, previous link | null]]}]   (this turn only),
+//   undo: [{cash, changes: [[key, previous link | null]], hubs?}]   (this turn only),
 //   events: [...]   (last turn's disaster cards), last: {...} (last turn's report), hist: [...] (one row per turn),
-//   totals: {revenue, potential, maint, built, repairs, hardening, hits, damaged}, rng (uint32)
+//   totals: {revenue, potential, maint, built, repairs, hardening, upgrades, hits, damaged}, rng (uint32)
 // }
 //
 // endTurn order: disasters roll → freight revenue and upkeep on intact links → growth → next year.
 // actions: {type: "build", path: [cell, …]} · {type: "undo"} · {type: "repair", key} · {type: "repairAll"} ·
-//          {type: "harden", key} · {type: "endTurn"}
+//          {type: "harden", key, hz?} (one hazard type, or every one the link is exposed to) ·
+//          {type: "double", key} (double-track a link) · {type: "hub", city} (build or raise a terminal) ·
+//          {type: "endTurn"}
+//
+// Upgrades are the late-game money sinks, and each answers a different question:
+//   double track   +DOUBLE_BONUS pay on the share of each route that runs on it, at 1.5× the link's upkeep
+//   terminals      +5/7/10% pay per level on contracts touching the metro (rail terminal / air cargo / port), and
+//                  +HUB_GROWTH GDP growth per level × the metro's network access; upkeep HUB_MAINT of the investment
+//   hardening      per hazard type, priced by that hazard's real FEMA rate in the link's counties
+//
+// Determinism: every number that reaches cash, a comparison or a roll is either exact (+ − × ÷ sqrt on doubles) or
+// rounded to fixed decimals first (r1, fix), so engines that differ in the last digit of exp / log / pow agree.
 import { makeRng, seedFrom } from "../../shared/rng.js";
 import { START_YEAR, END_YEAR } from "./scenarios.js";
 import { networkGraph, serveContracts } from "./contracts.js";
 import { accessShares, grow, PRODUCTIVITY, DEFAULT_POP_GROWTH } from "./growth.js";
-import { rollDisasters } from "./events.js";
+import { rollDisasters, linkHazards, HZ_BIT, HZ_ALL, fix } from "./events.js";
+import { HUB_MAX } from "./env.js";
 import { regionGdp } from "./score.js";
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 export const MAINT_RATE = 0.03; // of a link's build cost, every turn
 export const REPAIR_RATE = 0.4;
-export const HARDEN_RATE = 0.6;
+export const HARDEN_FLOOR = 0.12; // hardening against one hazard: link cost × (floor + K × its yearly rate)
+export const HARDEN_K = 5;
+export const DOUBLE_RATE = 0.6; // double track: of the link's build cost
+export const DOUBLE_MAINT = 1.5; // upkeep multiplier on a double-tracked link
+export const HUB_MAINT = 0.03; // of what a terminal cost, every turn
+// Repairs may run the cash negative (an emergency credit line), so one early storm cannot strand a network with no
+// income forever. Debt pays DEBT_RATE interest a turn; nothing else can be bought until cash is positive again.
+export const DEBT_RATE = 0.08;
+export const creditLine = (state) => r1(Math.max(30, 0.25 * (state.totals?.built || 0)));
 
 const r1 = (x) => Math.round(x * 10) / 10;
 
@@ -36,10 +58,10 @@ export function newGame(env, { seed = 1 } = {}) {
   return {
     v: SAVE_VERSION, scenario: env.scenario.id, home: env.home?.id ?? null, seed,
     year: START_YEAR, over: false, cash: env.scenario.cash,
-    links: {}, nv: 0,
+    links: {}, nv: 0, hubs: {},
     cities, base: structuredCopy(cities),
     undo: [], events: [], last: null, hist: [],
-    totals: { revenue: 0, potential: 0, maint: 0, built: 0, repairs: 0, hardening: 0, hits: 0, damaged: 0 },
+    totals: { revenue: 0, potential: 0, maint: 0, built: 0, repairs: 0, hardening: 0, upgrades: 0, hits: 0, damaged: 0 },
     rng: rng.state,
   };
 }
@@ -50,9 +72,46 @@ function structuredCopy(world) {
   return out;
 }
 
+/** A save from an older version, brought up to date (or null if it cannot be). v1 hardening covered every hazard. */
+export function migrate(s) {
+  if (!s || typeof s !== "object" || !s.links || !s.cities || !s.base) return null;
+  if (s.v === SAVE_VERSION) return s;
+  if (s.v !== 1) return null;
+  const links = {};
+  for (const [k, l] of Object.entries(s.links)) links[k] = { ...l, h: l.h ? HZ_ALL : 0, dt: 0 };
+  return { ...s, v: SAVE_VERSION, links, hubs: {}, totals: { upgrades: 0, ...s.totals } };
+}
+
 export const repairCost = (env, l) => r1(Math.max(0.5, REPAIR_RATE * env.edgeCost(l.a, l.b)));
-export const hardenCost = (env, l) => r1(Math.max(1, HARDEN_RATE * env.edgeCost(l.a, l.b)));
-export const maintenance = (state) => r1(Object.values(state.links).reduce((s, l) => s + Math.max(0.05, MAINT_RATE * l.cost), 0));
+export const doubleCost = (env, l) => r1(Math.max(1, DOUBLE_RATE * env.edgeCost(l.a, l.b)));
+/** Hardening options for a link: one per hazard type its counties have a record of. → [{type, bit, lam, cost, done, …}] */
+export function hardenOptions(env, l) {
+  const c = env.edgeCost(l.a, l.b);
+  return linkHazards(env, l).map((h) => ({ ...h, cost: r1(Math.max(0.5, c * (HARDEN_FLOOR + HARDEN_K * h.lam))), done: !!((l.h | 0) & h.bit) }));
+}
+/** Price of hardening a link against one hazard type, or (hz omitted) against every one it is not yet hardened for. */
+export function hardenCost(env, l, hz = null) {
+  const opts = hardenOptions(env, l).filter((o) => !o.done && (!hz || o.type === hz));
+  return r1(opts.reduce((s, o) => s + o.cost, 0));
+}
+/** Price of the next terminal level in a metro, or null at the top level. */
+export function hubCost(env, state, cityId) {
+  const site = env.hubs.get(cityId);
+  const lv = state.hubs?.[cityId] || 0;
+  return site && lv < HUB_MAX ? site.base * (lv + 1) : null;
+}
+const hubInvested = (env, id, lv) => (env.hubs.get(id)?.base || 0) * (lv * (lv + 1)) / 2;
+export const maintenance = (state, env = null) => {
+  let s = 0;
+  for (const l of Object.values(state.links)) s += Math.max(0.05, MAINT_RATE * l.cost) * (l.dt ? DOUBLE_MAINT : 1);
+  if (env) for (const [id, lv] of Object.entries(state.hubs || {})) s += HUB_MAINT * hubInvested(env, id, lv);
+  return r1(s);
+};
+/** Metros with a station: a hex of the city is on your network. */
+export function connectedCities(env, state) {
+  const net = networkCells(state);
+  return env.cities.filter((c) => c.cells.some((x) => net.has(x)));
+}
 
 /** Cells your network touches (any link end). */
 export function networkCells(state) {
@@ -65,7 +124,7 @@ export function networkCells(state) {
  * Cheapest route for new track from `from` to `to`: your built links are (almost) free, so routes reuse them.
  * → {path, cost (new links only), fresh (new link count), rail (new links upgrading real rail), rivers, km, error}
  */
-export function plan(env, state, from, to) {
+export function plan(env, state, from, to, { maxCost = Infinity } = {}) {
   const hm = env.hexmap;
   if (!env.inRegion(from) || !env.inRegion(to)) return { path: null, cost: Infinity, error: "Outside this scenario's region" };
   const built = state.links;
@@ -73,8 +132,8 @@ export function plan(env, state, from, to) {
     const l = built[hm.edgeKey(a, b)];
     return l ? 0.01 : env.edgeCost(a, b);
   };
-  const r = hm.path(from, to, stepCost);
-  if (!r) return { path: null, cost: Infinity, error: "No route: open water, foreign land or the region's edge is in the way" };
+  const r = hm.path(from, to, stepCost, { maxCost });
+  if (!r) return { path: null, cost: Infinity, error: maxCost < Infinity ? "Too dear" : "No route: open water, foreign land or the region's edge is in the way" };
   return { ...describePath(env, state, r.path), path: r.path };
 }
 
@@ -84,7 +143,7 @@ export function describePath(env, state, path) {
   for (let k = 1; k < path.length; k++) {
     const a = path[k - 1], b = path[k];
     const key = hm.edgeKey(a, b);
-    km += hm.km(a, b);
+    km += env.km(a, b);
     if (state.links[key]) continue;
     cost += env.edgeCost(a, b);
     fresh++;
@@ -123,18 +182,39 @@ export function check(env, state, action) {
     }
     case "undo":
       return state.undo.length ? null : "Nothing to undo this turn";
-    case "repair": case "harden": {
+    case "repair": case "harden": case "double": {
       const l = state.links[action.key];
       if (!l) return "No such link";
-      if (action.type === "repair" && !l.d) return "That link is not damaged";
-      if (action.type === "harden" && l.h) return "Already hardened";
-      const c = action.type === "repair" ? repairCost(env, l) : hardenCost(env, l);
+      let c;
+      if (action.type === "repair") {
+        if (!l.d) return "That link is not damaged";
+        c = repairCost(env, l);
+        return c > state.cash + creditLine(state) + 1e-9 ? `Not enough money, even on credit: ${c} cr needed` : null;
+      } else if (action.type === "double") {
+        if (l.dt) return "Already double-tracked";
+        if (l.d) return "Repair it first";
+        c = doubleCost(env, l);
+      } else {
+        const opts = hardenOptions(env, l);
+        if (action.hz != null && !opts.some((o) => o.type === action.hz)) return "No record of that hazard here";
+        if (!opts.some((o) => !o.done && (action.hz == null || o.type === action.hz))) return opts.length ? "Already hardened" : "No disaster record here";
+        c = hardenCost(env, l, action.hz ?? null);
+      }
+      return c > state.cash + 1e-9 ? `Not enough money: ${c} cr needed` : null;
+    }
+    case "hub": {
+      if (!env.hubs.has(action.city)) return "Not a metro in this region";
+      const c = hubCost(env, state, action.city);
+      if (c == null) return "Already at the top level";
+      const city = env.cities[env.cityIdx.get(action.city)];
+      const net = networkCells(state);
+      if (!city.cells.some((x) => net.has(x))) return `Connect ${city.name} to your network first`;
       return c > state.cash + 1e-9 ? `Not enough money: ${c} cr needed` : null;
     }
     case "repairAll": {
       const dmg = Object.values(state.links).filter((l) => l.d);
       if (!dmg.length) return "Nothing is damaged";
-      return repairCost(env, dmg.reduce((a, b) => (repairCost(env, a) <= repairCost(env, b) ? a : b))) > state.cash + 1e-9 ? "Not enough money" : null;
+      return repairCost(env, dmg.reduce((a, b) => (repairCost(env, a) <= repairCost(env, b) ? a : b))) > state.cash + creditLine(state) + 1e-9 ? "Not enough money, even on credit" : null;
     }
     case "endTurn":
       return null;
@@ -158,7 +238,7 @@ export function apply(env, state, action) {
         const key = hm.edgeKey(a, b);
         if (links[key]) continue;
         const c = env.edgeCost(a, b);
-        links[key] = { a, b, cost: c, year: state.year, h: 0, d: 0 };
+        links[key] = { a, b, cost: c, year: state.year, h: 0, d: 0, dt: 0 };
         changes.push([key, null]);
         cost += c;
       }
@@ -169,16 +249,37 @@ export function apply(env, state, action) {
         totals: { ...state.totals, built: r1(state.totals.built + cost) },
       };
     }
-    case "repair": case "harden": {
+    case "repair": case "harden": case "double": {
       const l = state.links[action.key];
-      const repair = action.type === "repair";
-      const cost = repair ? repairCost(env, l) : hardenCost(env, l);
-      const links = { ...state.links, [action.key]: repair ? { ...l, d: 0 } : { ...l, h: 1 } };
+      let cost, next;
       const t = { ...state.totals };
-      if (repair) t.repairs = r1(t.repairs + cost); else t.hardening = r1(t.hardening + cost);
+      if (action.type === "repair") {
+        cost = repairCost(env, l);
+        next = { ...l, d: 0 };
+        t.repairs = r1(t.repairs + cost);
+      } else if (action.type === "double") {
+        cost = doubleCost(env, l);
+        next = { ...l, dt: 1 };
+        t.upgrades = r1((t.upgrades || 0) + cost);
+      } else {
+        cost = hardenCost(env, l, action.hz ?? null);
+        const bits = action.hz != null ? HZ_BIT[action.hz] : hardenOptions(env, l).reduce((m, o) => m | o.bit, 0);
+        next = { ...l, h: (l.h | 0) | bits };
+        t.hardening = r1(t.hardening + cost);
+      }
+      const links = { ...state.links, [action.key]: next };
       return {
         ...state, links, nv: state.nv + 1, cash: r1(state.cash - cost), totals: t,
         undo: [...state.undo, { cash: state.cash, changes: [[action.key, l]], what: action.type, totals: state.totals }],
+      };
+    }
+    case "hub": {
+      const cost = hubCost(env, state, action.city);
+      const hubs = { ...state.hubs, [action.city]: (state.hubs?.[action.city] || 0) + 1 };
+      return {
+        ...state, hubs, nv: state.nv + 1, cash: r1(state.cash - cost),
+        totals: { ...state.totals, upgrades: r1((state.totals.upgrades || 0) + cost) },
+        undo: [...state.undo, { cash: state.cash, changes: [], hubs: state.hubs, what: "hub", totals: state.totals }],
       };
     }
     case "repairAll": {
@@ -187,9 +288,10 @@ export function apply(env, state, action) {
       const links = { ...state.links };
       const changes = [];
       let cash = state.cash, spent = 0;
+      const credit = creditLine(state);
       for (const key of dmg) {
         const c = repairCost(env, links[key]);
-        if (c > cash + 1e-9) break;
+        if (c > cash + credit + 1e-9) break;
         changes.push([key, links[key]]);
         links[key] = { ...links[key], d: 0 };
         cash = r1(cash - c);
@@ -207,7 +309,9 @@ export function apply(env, state, action) {
         if (prev) links[key] = prev;
         else delete links[key];
       }
-      return { ...state, links, nv: state.nv + 1, cash: u.cash, undo: state.undo.slice(0, -1), totals: u.totals || state.totals };
+      return {
+        ...state, links, hubs: u.hubs || state.hubs, nv: state.nv + 1, cash: u.cash, undo: state.undo.slice(0, -1), totals: u.totals || state.totals,
+      };
     }
     case "endTurn":
       return endTurn(env, state);
@@ -218,7 +322,7 @@ export function apply(env, state, action) {
 /** GDP growth of a set of cities since the start (cities outside the region list follow the national trend). */
 export function growthOf(env, state) {
   const t = state.year - START_YEAR;
-  const trend = Math.pow(1 + PRODUCTIVITY + DEFAULT_POP_GROWTH, t);
+  const trend = fix(Math.pow(1 + PRODUCTIVITY + DEFAULT_POP_GROWTH, t), 1e9);
   return (ids) => {
     let s = 0, n = 0;
     for (const id of ids) {
@@ -231,22 +335,35 @@ export function growthOf(env, state) {
   };
 }
 
-/** What the network does right now (derived, not stored): served contracts, revenue, access. */
+/**
+ * What the network does right now (derived, not stored): served contracts, revenue, upkeep, and per link the
+ * contracts routed over it (loads: Map<edgeKey, {n, pay, base}>).
+ */
 export function evaluate(env, state) {
   const graph = networkGraph(env, state.links, { intactOnly: true });
-  const served = serveContracts(env, graph, growthOf(env, state));
+  const served = serveContracts(env, graph, growthOf(env, state), state.hubs);
   let revenue = 0;
-  for (const s of served.values()) revenue += s.pay;
+  const loads = new Map();
+  for (const s of served.values()) {
+    revenue += s.pay;
+    for (const k of s.keys) {
+      const ld = loads.get(k) || { n: 0, pay: 0, base: 0, km: 0 };
+      ld.n++;
+      ld.pay += s.pay;
+      ld.base += s.base * (s.km > 0 ? env.km(state.links[k].a, state.links[k].b) / s.km : 0);
+      loads.set(k, ld);
+    }
+  }
   const anyDamage = Object.values(state.links).some((l) => l.d);
   let potential = revenue;
   let potentialServed = served;
   if (anyDamage) {
     const full = networkGraph(env, state.links, { intactOnly: false });
-    potentialServed = serveContracts(env, full, growthOf(env, state));
+    potentialServed = serveContracts(env, full, growthOf(env, state), state.hubs);
     potential = 0;
     for (const s of potentialServed.values()) potential += s.pay;
   }
-  return { graph, served, revenue: r1(revenue), potential: r1(potential), potentialServed, maint: maintenance(state) };
+  return { graph, served, loads, revenue: r1(revenue), potential: r1(potential), potentialServed, maint: maintenance(state, env) };
 }
 
 function endTurn(env, state) {
@@ -257,15 +374,16 @@ function endTurn(env, state) {
   // 2. freight revenue and upkeep on what is left standing
   const ev = evaluate(env, hit);
   const revenue = ev.revenue, maint = ev.maint;
-  const cash = r1(state.cash + revenue - maint);
+  const interest = state.cash < 0 ? r1(-state.cash * DEBT_RATE) : 0;
+  const cash = r1(state.cash + revenue - maint - interest);
   // 3. growth: baseline on trend, your metros with the access bonus of the intact network
   const access = accessShares(env, ev.graph);
-  const cities = grow(env, state.cities, access);
+  const cities = grow(env, state.cities, access, state.hubs);
   const base = grow(env, state.base, null);
   const damaged = roll.events.reduce((s, e) => s + e.damaged, 0);
   const you = regionGdp(env, cities), bl = regionGdp(env, base);
   const row = {
-    year: state.year, revenue, potential: ev.potential, maint, served: ev.served.size, cash,
+    year: state.year, revenue, potential: ev.potential, maint, interest, served: ev.served.size, cash,
     uplift: bl > 0 ? you / bl - 1 : 0, links: Object.keys(state.links).length, hits: roll.events.length, damaged,
   };
   const t = state.totals;

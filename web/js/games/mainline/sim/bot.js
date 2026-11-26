@@ -1,32 +1,142 @@
 // A simple greedy player, for balance tests (and later an AI rival). Pure and deterministic.
-// Each turn: repair everything it can, then repeatedly connect the unserved contract with the best pay per credit
-// of new track it can afford (keeping a small reserve), then end the turn.
-import { apply, check, evaluate, plan } from "./state.js";
-import { payFor } from "./contracts.js";
+// Each turn:
+//   1. repair everything it can;
+//   2. repeatedly connect the unserved contract with the best pay per credit of new track it can afford (keeping a
+//      small reserve). Only the few most promising contracts (by a cheap hex-distance estimate) are routed, and every
+//      route search stops at the money in hand, so a whole-country Sandbox stays fast;
+//   3. if it is saving for a contract it cannot afford yet, keep that money; spend the rest on the upgrade with the
+//      best payback over the years left (double track, terminals, hardening per hazard; see upgradeOptions);
+//   4. end the turn.
+// opts.log (an array) records every action it applied, for replay tests.
+import { apply, check, evaluate, plan, networkCells, connectedCities, hardenOptions, doubleCost, hubCost, DOUBLE_MAINT, MAINT_RATE } from "./state.js";
+import { payFor, DOUBLE_BONUS } from "./contracts.js";
+import { accessShares, HUB_GROWTH } from "./growth.js";
+import { regionGdp } from "./score.js";
+import { END_YEAR } from "./scenarios.js";
+import { LINK_HIT } from "./events.js";
 
-export function greedyTurn(env, state, { reserve = 4, maxBuilds = 6 } = {}) {
+const CANDIDATES = 8; // contracts routed per pick (out of the 32 best by estimate)
+const EST_PER_HEX = 6; // cr, for the pre-ranking estimate only
+
+export function greedyTurn(env, state, { reserve = 4, maxBuilds = 6, upgrades = true, maxUpgrades = 40, log = null } = {}) {
   let s = state;
-  if (!check(env, s, { type: "repairAll" })) s = apply(env, s, { type: "repairAll" });
+  const act = (a) => {
+    const n = apply(env, s, a);
+    if (n !== s) { s = n; log?.push(a); }
+  };
+  if (!check(env, s, { type: "repairAll" })) act({ type: "repairAll" });
+  let saving = 0;
+  const hm = env.hexmap;
   for (let n = 0; n < maxBuilds; n++) {
-    const served = evaluate(env, s).served;
-    let best = null;
+    const ev = evaluate(env, s);
+    const budget = s.cash - reserve;
+    const horizon = Math.max(0, budget) + 4 * Math.max(0, ev.revenue - ev.maint);
+    const net = [...networkCells(s), ...env.homeCells];
+    const netSet = new Set(net);
+    const near = (end) => {
+      if (end.cells.some((x) => netSet.has(x))) return 0;
+      let d = Infinity;
+      for (const c of net) d = Math.min(d, hm.dist(c, end.cell));
+      return d;
+    };
+    const cands = [];
     for (const c of env.contracts) {
-      if (served.has(c.id)) continue;
-      for (const [x, y] of [[c.a, c.b], [c.b, c.a]]) {
-        const p1 = plan(env, s, env.home.cell, x.cell);
-        const p2 = plan(env, s, x.cell, y.cell);
-        if (!p1.path || !p2.path) continue;
-        const cost = p1.cost + p2.cost;
-        if (cost > s.cash - reserve) continue;
-        const ratio = payFor(c.value, 1) / Math.max(1, cost);
-        if (!best || ratio > best.ratio) best = { ratio, x, y };
+      if (ev.served.has(c.id)) continue;
+      const pay = payFor(c.value, 1, c.km);
+      const na = near(c.a), nb = near(c.b), ab = hm.dist(c.a.cell, c.b.cell);
+      for (const [x, y, nx, ny] of [[c.a, c.b, na, nb], [c.b, c.a, nb, na]]) {
+        const est = (nx + Math.min(ab, ny + 0)) * EST_PER_HEX;
+        cands.push({ c, x, y, pay, est: pay / Math.max(1, est) });
       }
     }
-    if (!best) break;
+    cands.sort((p, q) => q.est - p.est || (p.c.id < q.c.id ? -1 : p.c.id > q.c.id ? 1 : 0));
+    const memo = new Map();
+    const route = (a, b, max) => {
+      const k = `${a}>${b}`;
+      if (!memo.has(k) || (memo.get(k).cost === Infinity && memo.get(k).max < max)) memo.set(k, { ...plan(env, s, a, b, { maxCost: max }), max });
+      return memo.get(k);
+    };
+    let best = null, wait = null, routed = 0;
+    for (const cd of cands.slice(0, CANDIDATES * 4)) {
+      if (routed >= CANDIDATES) break;
+      const p1 = route(env.home.cell, cd.x.cell, horizon);
+      if (!p1.path) continue;
+      const p2 = route(cd.x.cell, cd.y.cell, horizon - p1.cost);
+      if (!p2.path) continue;
+      routed++;
+      const cost = p1.cost + p2.cost;
+      const ratio = cd.pay / Math.max(1, cost);
+      if (cost > budget) { if (!wait || ratio > wait.ratio) wait = { ratio, cost }; continue; }
+      if (!best || ratio > best.ratio) best = { ratio, x: cd.x, y: cd.y };
+    }
+    if (!best) { saving = wait ? wait.cost : 0; break; }
     const p1 = plan(env, s, env.home.cell, best.x.cell);
-    if (p1.fresh) s = apply(env, s, { type: "build", path: p1.path });
+    if (p1.fresh) act({ type: "build", path: p1.path });
     const p2 = plan(env, s, best.x.cell, best.y.cell);
-    if (p2.fresh) s = apply(env, s, { type: "build", path: p2.path });
+    if (p2.fresh) act({ type: "build", path: p2.path });
   }
-  return apply(env, s, { type: "endTurn" });
+  if (upgrades) {
+    // one appraisal a turn, then buy down the list (hardening is cheap insurance: it may dip into savings)
+    let n = 0;
+    for (const up of upgradeOptions(env, s)) {
+      if (n >= maxUpgrades) break;
+      const room = s.cash - reserve - (up.action.type === "harden" ? 0 : saving);
+      if (up.cost > room || check(env, s, up.action)) continue;
+      act(up.action);
+      n++;
+    }
+  }
+  act({ type: "endTurn" });
+  return s;
+}
+
+/**
+ * Upgrades worth buying, best payback over the years left first: [{action, cost, ratio}]. It wants 1.2× back while
+ * there is time to reinvest, less near the end (money left in 2050 scores nothing).
+ */
+export function upgradeOptions(env, s) {
+  const years = END_YEAR - s.year + 1;
+  const bar = years > 6 ? 1.2 : 0.4;
+  const ev = evaluate(env, s);
+  const out = [];
+  const consider = (action, cost, benefit) => {
+    if (!(cost > 0)) return;
+    const ratio = benefit / cost;
+    if (ratio >= bar) out.push({ action, cost, ratio });
+  };
+  const keys = Object.keys(s.links).sort();
+  for (const k of keys) {
+    const l = s.links[k];
+    if (l.d) continue;
+    const ld = ev.loads.get(k);
+    if (!ld) continue;
+    // double track: the extra pay on the routes over it, less the extra upkeep
+    if (!l.dt) {
+      const gain = DOUBLE_BONUS * ld.base - MAINT_RATE * l.cost * (DOUBLE_MAINT - 1);
+      consider({ type: "double", key: k }, doubleCost(env, l), gain * years);
+    }
+    // hardening: the chance a hit cuts it × (the year's pay over it + the repair)
+    for (const o of hardenOptions(env, l)) {
+      if (o.done) continue;
+      const loss = o.lam * LINK_HIT * (ld.pay + 0.4 * l.cost);
+      consider({ type: "harden", key: k, hz: o.type }, o.cost, loss * years);
+    }
+  }
+  // terminals: extra pay on contracts touching the metro + its extra growth (1 bp of uplift ≈ 10 cr of score)
+  const access = accessShares(env, ev.graph);
+  const region = regionGdp(env, s.cities);
+  for (const c of connectedCities(env, s)) {
+    const cost = hubCost(env, s, c.id);
+    if (cost == null) continue;
+    const site = env.hubs.get(c.id);
+    let pay = 0;
+    for (const [id, sv] of ev.served) {
+      const ct = env.contractById.get(id);
+      if (ct.a.cities.includes(c.id) || ct.b.cities.includes(c.id)) pay += sv.base;
+    }
+    const i = env.cityIdx.get(c.id);
+    const growth = (s.cities[c.id].gdp / region) * HUB_GROWTH * access[i] * years * 0.5 * 1e5;
+    consider({ type: "hub", city: c.id }, cost, pay * site.rate * years + growth - cost * 0.03 * years);
+  }
+  return out.sort((a, b) => b.ratio - a.ratio || a.cost - b.cost);
 }

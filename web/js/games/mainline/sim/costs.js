@@ -51,7 +51,7 @@ export function riverCrossings(world, hexmap) {
     const p = rv.pts;
     for (let k = 2; k + 1 < p.length; k += 2) {
       const x0 = p[k - 2], y0 = p[k - 1], x1 = p[k], y1 = p[k + 1];
-      const len = Math.hypot(x1 - x0, y1 - y0);
+      const len = Math.sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)); // sqrt, not hypot: sqrt is exactly rounded in every engine
       const steps = Math.max(1, Math.ceil(len / 10));
       const cand = new Set();
       for (let s = 0; s <= steps; s++) {

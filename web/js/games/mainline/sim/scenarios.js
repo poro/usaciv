@@ -1,6 +1,8 @@
 // Mainline scenarios: each fixes a start metro, a starting budget, a goal and the region you may build in, so runs
-// are comparable. Region = US land hexes in `states` (null = the whole lower 48) and inside the box around
-// `bounds.cities` padded by `bounds.padKm` (null = no box). City ids are cities.json CBSA codes.
+// are comparable. Goals are set so the greedy bot (sim/bot.js) beats them when it also buys upgrades, and mostly
+// misses them on track alone (tests/js/mainline.test.mjs checks seed 1 of each). Region = US land hexes in `states`
+// (null = the whole lower 48) and inside the box around `bounds.cities` padded by `bounds.padKm` (null = no box).
+// City ids are cities.json CBSA codes.
 
 export const START_YEAR = 2026;
 export const END_YEAR = 2050; // the last year you play; ending it ends the game (25 turns)
@@ -23,7 +25,7 @@ export const SCENARIOS = [
     blurb: "Rebuild Great Lakes freight from Chicago. Old rail is everywhere, so upgrades are cheap; winters and floods are not.",
     home: "16980", // Chicago
     cash: 80,
-    goal: 0.035,
+    goal: 0.05,
     states: ["IL", "IN", "MI", "OH", "WI", "PA", "IA"],
     bounds: { cities: ["16980", "19820", "18140", "38300", "17410", "33340", "26900", "19780"], padKm: 90 },
     models: 20,
@@ -34,7 +36,7 @@ export const SCENARIOS = [
     blurb: "The densest freight market in the country, from Washington to Boston. Every hex is expensive and the coast floods.",
     home: "35620", // New York
     cash: 70,
-    goal: 0.045,
+    goal: 0.053,
     states: ["VA", "DC", "MD", "DE", "PA", "NJ", "NY", "CT", "RI", "MA", "NH", "VT"],
     bounds: { cities: ["47900", "12580", "37980", "35620", "25540", "39300", "14460"], padKm: 90 },
     models: 16,
@@ -44,11 +46,12 @@ export const SCENARIOS = [
     name: "Sandbox",
     blurb: "The whole lower 48 and every one of the 40 largest freight flows. Pick a home metro and go.",
     home: null, // chosen by the player
-    cash: 150,
+    cash: 240,
     goal: 0.01,
     states: null,
     bounds: null,
     models: 45,
+    homeModels: 5, // plus the home metro's five best partners, whatever home you pick
   },
 ];
 

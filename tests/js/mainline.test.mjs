@@ -1,10 +1,10 @@
 // Mainline simulation tests: node --test tests/js/*.test.mjs   (no npm, no dependencies)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import * as S from "../../web/js/games/mainline/sim/index.js";
 import { linkCost, cellFactor, RAIL_DISCOUNT } from "../../web/js/games/mainline/sim/costs.js";
-import { rollDisasters } from "../../web/js/games/mainline/sim/events.js";
+import { rollDisasters, HZ_ALL } from "../../web/js/games/mainline/sim/events.js";
 import { makeRng } from "../../web/js/games/shared/rng.js";
 import { parseParam, formatParam } from "../../web/js/games/mainline/params.js";
 
@@ -134,9 +134,10 @@ test("disasters damage unhardened links only; repair and harden work", () => {
   let s = S.newGame(e, { seed: 3 });
   const p = S.plan(e, s, e.home.cell, e.cityById.get("19100").cell);
   s = S.apply(e, s, { type: "build", path: p.path });
-  const keys = Object.keys(s.links).sort();
-  s = S.apply(e, s, { type: "harden", key: keys[0] });
-  assert.equal(s.links[keys[0]].h, 1);
+  const keys = Object.keys(s.links).sort((x, y) => S.hardenOptions(e, s.links[y]).length - S.hardenOptions(e, s.links[x]).length || (x < y ? -1 : 1));
+  s = S.apply(e, s, { type: "harden", key: keys[0] }); // no hz: every hazard on its record
+  const opts = S.hardenOptions(e, s.links[keys[0]]);
+  assert.ok(opts.length && opts.every((o) => o.done), "hardened against every hazard it has a record of");
   // a storm everywhere: every county hits, every exposed link is damaged
   const stormy = { ...e, hazard: new Map([...e.hazard].map(([k, h]) => [k, { ...h, p: 1 }])) };
   const hit = rollDisasters({ ...stormy }, s.links, makeRng(1), 2030);
@@ -155,6 +156,90 @@ test("disasters damage unhardened links only; repair and harden work", () => {
   assert.ok(fixed.cash < broken.cash);
 });
 
+test("hardening is per hazard type and priced by the local FEMA rate", () => {
+  const e = env("texas");
+  let s = S.newGame(e, { seed: 3 });
+  s = { ...s, cash: 500 };
+  s = S.apply(e, s, { type: "build", path: S.plan(e, s, e.home.cell, e.cityById.get("19100").cell).path });
+  // a link on the Gulf: hurricanes are its top hazard, and the dearest to harden
+  const key = Object.keys(s.links).sort().find((k) => S.hardenOptions(e, s.links[k])[0]?.type === "hurricane");
+  assert.ok(key, "a Houston link is hurricane-exposed");
+  const opts = S.hardenOptions(e, s.links[key]);
+  assert.ok(opts.length >= 2);
+  for (let k = 1; k < opts.length; k++) assert.ok(opts[k - 1].lam >= opts[k].lam && opts[k - 1].cost >= opts[k].cost, "rate and price go together");
+  s = S.apply(e, s, { type: "harden", key, hz: "hurricane" });
+  assert.equal(S.hardenOptions(e, s.links[key]).find((o) => o.type === "hurricane").done, true);
+  assert.match(S.check(e, s, { type: "harden", key, hz: "hurricane" }), /Already hardened/);
+  // a hurricane-only hardened link holds against a hurricane but not against a flood
+  const only = (t) => ({ ...e, hazard: new Map([...e.hazard].map(([k, h]) => [k, { ...h, p: 1, lam: Object.fromEntries(Object.keys(h.lam).map((x) => [x, x === t ? 1 : 0])) }])) });
+  const linkOnly = { [key]: s.links[key] };
+  let hurt = 0;
+  for (let seed = 1; seed <= 20; seed++) hurt += rollDisasters(only("hurricane"), linkOnly, makeRng(seed), 2030).links[key].d;
+  assert.equal(hurt, 0, "hurricane hardening holds");
+  for (let seed = 1; seed <= 20; seed++) hurt += rollDisasters(only("flood"), linkOnly, makeRng(seed), 2030).links[key].d;
+  assert.ok(hurt > 0, "but floods still cut it");
+  // undo gives the money back
+  const u = S.apply(e, s, { type: "undo" });
+  assert.equal(u.links[key].h, 0);
+});
+
+test("double track and terminals raise pay; terminals need a station; undo restores them", () => {
+  const e = env("texas");
+  let s = { ...S.newGame(e, { seed: 3 }), cash: 2000 };
+  s = S.apply(e, s, { type: "build", path: S.plan(e, s, e.home.cell, e.cityById.get("19100").cell).path });
+  const before = S.evaluate(e, s);
+  // double-track every link: routes on it pay DOUBLE_BONUS more, upkeep rises
+  let d = s;
+  for (const k of Object.keys(d.links)) d = S.apply(e, d, { type: "double", key: k });
+  const ev = S.evaluate(e, d);
+  assert.ok(Math.abs(ev.revenue - before.revenue * (1 + S.DOUBLE_BONUS)) < 0.2, `double track ${ev.revenue} vs ${before.revenue}`);
+  assert.ok(ev.maint > before.maint);
+  assert.match(S.check(e, d, { type: "double", key: Object.keys(d.links)[0] }), /Already/);
+  // a terminal in Houston (its real port) raises pay on contracts touching Houston
+  const site = e.hubs.get("26420");
+  assert.equal(site.kind, "port");
+  const h = S.apply(e, s, { type: "hub", city: "26420" });
+  assert.equal(h.hubs["26420"], 1);
+  assert.equal(h.cash, s.cash - site.base);
+  assert.ok(S.evaluate(e, h).revenue > before.revenue);
+  assert.equal(S.hubCost(e, h, "26420"), site.base * 2, "the next level costs more");
+  // a metro off the network cannot have one
+  assert.match(S.check(e, s, { type: "hub", city: "41700" }), /Connect San Antonio/);
+  // terminals add growth: one turn later Houston is bigger than without
+  const g1 = S.apply(e, h, { type: "endTurn" }), g0 = S.apply(e, s, { type: "endTurn" });
+  assert.ok(g1.cities["26420"].gdp > g0.cities["26420"].gdp);
+  const u = S.apply(e, h, { type: "undo" });
+  assert.deepEqual(u.hubs, {});
+  assert.equal(u.cash, s.cash);
+});
+
+test("repairs may run on credit, so one early storm cannot strand you", () => {
+  const e = env("texas");
+  let s = S.newGame(e, { seed: 3 });
+  s = S.apply(e, s, { type: "build", path: S.plan(e, s, e.home.cell, e.cityById.get("19100").cell).path });
+  const broken = { ...s, cash: 0, links: Object.fromEntries(Object.entries(s.links).map(([k, l]) => [k, { ...l, d: 1 }])) };
+  assert.equal(S.check(e, broken, { type: "repairAll" }), null);
+  const fixed = S.apply(e, broken, { type: "repairAll" });
+  assert.ok(fixed.cash < 0 && Object.values(fixed.links).some((l) => !l.d));
+  assert.match(S.check(e, fixed, { type: "hub", city: "26420" }), /Not enough money/, "nothing else on credit");
+  const next = S.apply(e, fixed, { type: "endTurn" });
+  assert.ok(next.last.interest > 0, "debt pays interest");
+});
+
+test("v1 saves migrate: old hardening covered every hazard", () => {
+  const e = env("texas");
+  let s = S.newGame(e, { seed: 3 });
+  s = S.apply(e, s, { type: "build", path: S.plan(e, s, e.home.cell, e.cityById.get("19100").cell).path });
+  const k = Object.keys(s.links)[0];
+  const v1 = JSON.parse(JSON.stringify({ ...s, v: 1, hubs: undefined, links: { ...s.links, [k]: { ...s.links[k], h: 1, dt: undefined } } }));
+  const m = S.migrate(v1);
+  assert.equal(m.v, S.SAVE_VERSION);
+  assert.equal(m.links[k].h, HZ_ALL);
+  assert.deepEqual(m.hubs, {});
+  assert.equal(S.migrate({ v: 99, links: {}, cities: {}, base: {} }), null);
+  assert.ok(!S.check(e, m, { type: "endTurn" }) && S.apply(e, m, { type: "endTurn" }).year === m.year + 1);
+});
+
 test("doing nothing ties baseline America; growth follows the real trend", () => {
   const e = env("texas");
   const s = run(e, 5, idle);
@@ -167,13 +252,64 @@ test("doing nothing ties baseline America; growth follows the real trend", () =>
   assert.ok(s.base["12420"].pop > austin.pop0 * 1.3, "Austin keeps growing fast");
 });
 
-test("balance: a simple greedy builder beats doing nothing and the Texas goal", () => {
-  const e = env("texas");
-  for (const seed of [1, 2]) {
-    const g = S.summary(e, run(e, seed, S.greedyTurn));
-    const n = S.summary(e, run(e, seed, idle));
-    assert.ok(g.score > n.score, `greedy ${g.score} > idle ${n.score}`);
-    assert.ok(g.beat, `greedy uplift ${(g.uplift * 100).toFixed(2)}% beats the ${(e.scenario.goal * 100).toFixed(1)}% goal`);
+test("balance: the greedy bot beats every goal (Sandbox included) when it upgrades; idling never does", () => {
+  const trackOnly = (e, s) => S.greedyTurn(e, s, { upgrades: false });
+  for (const sc of S.SCENARIOS) {
+    const e = env(sc.id, sc.home ? null : "19100");
+    const t0 = performance.now();
+    const gs = run(e, 1, S.greedyTurn);
+    const ms = performance.now() - t0;
+    const g = S.summary(e, gs);
+    const n = S.summary(e, run(e, 1, idle));
+    const pct = (x) => `${(x * 100).toFixed(2)}%`;
+    assert.ok(g.beat, `${sc.id}: bot ${pct(g.uplift)} beats the ${pct(sc.goal)} goal`);
+    assert.ok(!n.beat && g.score > n.score, `${sc.id}: idling (${pct(n.uplift)}) does not`);
+    assert.ok(ms < 5000, `${sc.id}: a bot game takes ${ms.toFixed(0)} ms`);
+    // the upgrades are a real money sink that pays: the bot spends on them, and scores more than on track alone
+    assert.ok(gs.totals.upgrades + gs.totals.hardening > 0, `${sc.id}: bot bought upgrades`);
+    if (sc.home) {
+      const t = S.summary(e, run(e, 1, trackOnly));
+      assert.ok(g.uplift > t.uplift, `${sc.id}: upgrades lift GDP (${pct(g.uplift)} vs ${pct(t.uplift)} on track alone)`);
+    }
+  }
+});
+
+test("determinism: a recorded action list replays to the same state hash", () => {
+  const e = env("rust");
+  const log = [];
+  let s = S.newGame(e, { seed: 11 });
+  while (!s.over) s = S.greedyTurn(e, s, { log });
+  assert.ok(log.some((a) => a.type === "build") && log.some((a) => a.type === "harden" || a.type === "double" || a.type === "hub"));
+  // the log travels as JSON (as it would between browsers), then replays from a fresh game
+  const wire = JSON.parse(JSON.stringify(log));
+  let r = S.newGame(e, { seed: 11 });
+  for (const a of wire) {
+    assert.equal(S.check(e, r, a), null, `replayed ${a.type} is valid`);
+    r = S.apply(e, r, a);
+  }
+  assert.equal(S.stateHash(r), S.stateHash(s));
+  assert.equal(JSON.stringify(r), JSON.stringify(s));
+  // a fresh env (as another client builds it) gives the same game too
+  const e2 = S.makeEnv(data, "rust");
+  let r2 = S.newGame(e2, { seed: 11 });
+  for (const a of wire) r2 = S.apply(e2, r2, a);
+  assert.equal(S.stateHash(r2), S.stateHash(s));
+  const s0 = S.newGame(e, { seed: 11 });
+  assert.notEqual(S.stateHash(S.apply(e, s0, wire[0])), S.stateHash(s0), "the hash sees a change");
+});
+
+test("determinism: no engine-dependent Math result reaches the sim unrounded", () => {
+  // Math.exp / log / pow / hypot / trig may differ in the last digit between browsers. In sim/, each use must be
+  // wrapped in fix(…) or Math.round(…) on the same line, so no comparison, roll or sum depends on that digit.
+  const dir = new URL("../../web/js/games/mainline/sim/", import.meta.url);
+  for (const f of readdirSync(dir).filter((n) => n.endsWith(".js"))) {
+    readFileSync(new URL(f, dir), "utf8").split("\n").forEach((line, k) => {
+      if (/^\s*\/\//.test(line)) return;
+      if (/Math\.(exp|log|log1p|expm1|pow|hypot|sin|cos|tan|atan2?|cbrt)\b/.test(line)) {
+        assert.ok(/\bfix\(|Math\.round\(/.test(line), `${f}:${k + 1} rounds its Math result: ${line.trim()}`);
+      }
+      assert.ok(!/Math\.random|Date\.now|performance\.now/.test(line), `${f}:${k + 1} uses no clock or Math.random`);
+    });
   }
 });
 
