@@ -1,6 +1,6 @@
 # Monthly data refresh: re-download every public source, rebuild web/data and run the data check.
 # If the data changed and the check has no FAIL, open (or update) a pull request with a summary. Nothing is
-# merged automatically: review the PR, merge it, then redeploy (see wrangler.jsonc) to publish. A FAIL (a publisher changed a format, a site
+# merged automatically: review the PR and merge it; the Deploy workflow then publishes it. A FAIL (a publisher changed a format, a site
 # was down) fails the job, and GitHub emails you; the logs and check report are attached to the run.
 name: Refresh data
 

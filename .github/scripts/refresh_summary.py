@@ -68,8 +68,7 @@ def main(argv: list[str]) -> str:
         out += ["```", *flagged, "```", ""]
     out += [
         "Before merging: open the site locally (`uv run python -m pipeline serve`) and skim the map, a City View, "
-        "and each game mode. After merging, redeploy the site to publish the new numbers "
-        "(`uv run python -m pipeline package && npx wrangler deploy`).",
+        "and each game mode. Merging deploys the new numbers to the live site (the Deploy workflow).",
     ]
     return "\n".join(out) + "\n"
 

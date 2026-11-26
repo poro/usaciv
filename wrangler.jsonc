@@ -1,5 +1,6 @@
 // Cloudflare Workers static-assets deploy of the packaged site (no Worker code).
-// Deploy:  uv run python -m pipeline package && npx wrangler deploy
+// Deploys run automatically on every push to main (.github/workflows/deploy.yml). By hand:
+//   uv run python -m pipeline package && npx wrangler deploy
 // Serves dist/usaciv/ (the public site without the dev pages, plus usaciv-source.zip) at
 // https://usaciv.mark-ollila.workers.dev/
 {

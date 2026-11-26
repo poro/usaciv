@@ -1,0 +1,50 @@
+# Deploy the site to Cloudflare Workers (https://usaciv.mark-ollila.workers.dev) on every push to main, after the
+# tests pass. Merging a monthly data-refresh PR therefore publishes the new numbers too.
+# Needs the repo secret CLOUDFLARE_API_TOKEN (Cloudflare dashboard › My Profile › API Tokens › "Edit Cloudflare
+# Workers" template) and the repo variable CLOUDFLARE_ACCOUNT_ID. Without the token the job skips the deploy step.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Tests and data check
+        run: |
+          uv run python -m unittest discover -s tests
+          if ls tests/js/*.test.mjs >/dev/null 2>&1; then node --test tests/js/*.test.mjs; fi
+          uv run python -m pipeline check
+
+      - name: Package
+        run: uv run python -m pipeline package
+
+      - name: Deploy
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: npx --yes wrangler@4 deploy
+
+      - name: No token yet
+        if: env.CLOUDFLARE_API_TOKEN == ''
+        run: echo "::warning::CLOUDFLARE_API_TOKEN is not set, so nothing was deployed. Add it under Settings › Secrets and variables › Actions."
