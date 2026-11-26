@@ -43,10 +43,20 @@
 .wm-list li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 3px; cursor: pointer; }
 .wm-list li small { color: var(--ink-dim); white-space: nowrap; }
 .wm-list li.on, .wm-list li:hover { background: rgba(201,164,92,.18); }
-.wm-list li.tried { opacity: .5; text-decoration: line-through; }
+.wm-list li.tried { color: var(--ink-dim); text-decoration: line-through; }
 .wm-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0 4px; }
-.wm-wrong { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 2px; }
-.wm-chip-x { font-size: 12px; padding: 1px 8px; border-radius: 10px; color: #f6d6cc; background: rgba(208,103,79,.16); border: 1px solid rgba(208,103,79,.5); }
+.wm-wrong { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 2px; padding: 0; list-style: none; }
+.wm-chip-x { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 1px 3px 1px 8px; border-radius: 10px; color: #f6d6cc;
+  background: rgba(208,103,79,.16); border: 1px solid rgba(208,103,79,.5); max-width: 100%; }
+.wm-xn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.wm-hint { flex: none; font-size: 11px; padding: 0 6px; border-radius: 8px; color: #fff1d6; background: rgba(0,0,0,.35); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wm-hint b { font-weight: 700; color: var(--gold-bright); }
+.wm-helpbtn { margin-left: auto; width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(201,164,92,.6); background: rgba(0,0,0,.3);
+  color: var(--gold-bright); font: 600 13px var(--sans); cursor: pointer; flex: none; }
+.wm-helpbtn:hover { background: rgba(201,164,92,.18); }
+.wm :focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 2px; }
+.wm .wm-input:focus-visible { outline: none; }
+.wm kbd { font: 11px ui-monospace, Menlo, monospace; padding: 0 4px; border: 1px solid rgba(201,164,92,.5); border-bottom-width: 2px; border-radius: 3px; color: var(--ink); }
 
 /* round reveal */
 .wm-reveal { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; background: rgba(0,0,0,.22); }
@@ -73,7 +83,7 @@
 .wm-num { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; flex: none;
   color: #241c0e; background: var(--gold); }
 .wm-lead { font-size: 12.5px; color: var(--ink); }
-.wm-src { margin: 6px 0 0 !important; font-size: 10.5px; color: var(--ink-dim); opacity: .8; }
+.wm-src { margin: 6px 0 0 !important; font-size: 10.5px; color: var(--ink-dim); }
 .wm-sub { margin: 8px 0 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-dim); }
 
 .wm-bars { display: grid; gap: 4px; }
@@ -110,12 +120,22 @@
 .wm-verdict-line { font-family: var(--serif); font-size: 15px; color: var(--ink); }
 .wm-share { text-align: left; display: inline-block; margin: 6px auto 8px; padding: 8px 12px; font-size: 13px; line-height: 1.4; white-space: pre-wrap; word-break: break-all;
   background: rgba(0,0,0,.3); border: 1px solid rgba(201,164,92,.3); border-radius: 4px; color: var(--ink); max-width: 100%; user-select: all; }
-.wm-answers { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.wm-answers li { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
-.wm-an { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #241c0e; background: var(--gold); }
-.wm-at b { display: block; font-weight: 600; color: var(--ink); }
-.wm-at small { display: block; color: var(--ink-dim); font-size: 11px; line-height: 1.3; }
+.wm h3.g-section { font-weight: normal; }
+.wm-next { margin: 8px auto 0; font-size: 12.5px; color: var(--ink-dim); }
+.wm-next b { font-family: ui-monospace, Menlo, monospace; font-size: 15px; color: var(--gold-bright); font-weight: 600; font-variant-numeric: tabular-nums; }
+.wm-answers { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.wm-rc { border: 1px solid rgba(201,164,92,.28); border-radius: 6px; padding: 7px 10px 6px; background: rgba(0,0,0,.18); }
+.wm-rc.ok { box-shadow: inset 3px 0 0 var(--wm-ok); }
+.wm-rc.miss { box-shadow: inset 3px 0 0 var(--wm-miss); }
+.wm-rc-head { display: flex; align-items: center; gap: 8px; }
+.wm-rc-name { flex: 1; min-width: 0; font-family: var(--serif); font-weight: normal; font-size: 16px; color: var(--ink); }
+.wm-rc-line { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.wm-rc-line .wm-squares { font-size: 13px; letter-spacing: 1px; margin: 0; }
+.wm-rc-how { flex: 1; font-size: 11.5px; color: var(--ink-dim); }
+.wm-rc .wm-why { margin: 4px 0 2px; font-size: 12px; }
+.wm-an { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #241c0e; background: var(--gold); flex: none; }
 .wm-ap { font-family: var(--serif); font-size: 18px; color: var(--gold-bright); min-width: 14px; text-align: right; }
+.wm-rc.miss .wm-ap { color: var(--ink-dim); }
 .wm-cv { font-size: 11.5px; padding: 3px 8px; }
 .wm-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; text-align: center; margin: 4px 0 8px; }
 .wm-stats .g-stat span { font-size: 10px; }
@@ -129,11 +149,22 @@
 .wm-more { margin: 12px 0 6px; }
 
 @media (max-width: 700px) {
-  .wm-input { font-size: 16px; } /* no zoom-on-focus on iOS */
+  /* The sheet stays just under half the screen: the camera keeps its centre inside the world, so with a taller
+     sheet the south of the country could never rise above it (index.js showCountry). */
+  body[data-game="whichMetro"] .app-dock.games-dock { height: 48vh; height: 48dvh; }
+  .wm-input { font-size: 16px; padding: 9px 10px; } /* 16px: no zoom-on-focus on iOS */
+  .wm-guess .g-btn { padding: 8px 14px; }
+  .wm-pips { margin-bottom: 6px; }
+  .wm-pip { width: 22px; height: 22px; }
+  .wm-score { font-size: 18px; }
+  .wm-cluebar { margin: 4px 0 6px; }
+  .wm-actions { margin: 6px 0 2px; }
   .wm-big-score { font-size: 40px; }
   .wm-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-  .wm-answers li { grid-template-columns: 20px minmax(0, 1fr) auto; }
-  .wm-cv { grid-column: 2 / -1; justify-self: start; }
-  .wm-list { max-height: 30vh; }
+  .wm-list { max-height: 34vh; }
+  .wm-list li { padding: 10px 8px; }
+  .wm-bar { grid-template-columns: minmax(0, 1.3fr) minmax(50px, 1fr) 48px; }
+  .wm-facts { gap: 6px 8px; }
+  .wm-answer { font-size: 21px; }
 }
-@media (pointer: coarse) { .wm-keys { display: none; } }
+@media (pointer: coarse) { .wm-keys { display: none; } .wm-helpbtn { width: 32px; height: 32px; } }

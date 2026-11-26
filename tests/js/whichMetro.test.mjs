@@ -6,7 +6,8 @@ import {
   ROUNDS, MAX_CLUES, POOL_SIZE, LAUNCH_DATE, buildPool, dailyAnswers, practiceAnswers, parseParam, puzzleNumber,
   dayDiff, isDateKey, newPracticeSeed,
 } from "../../web/js/games/whichMetro/sim/puzzle.js";
-import { buildClues, whyLine, roughPeople, roughDollars, sig2 } from "../../web/js/games/whichMetro/sim/clues.js";
+import { buildClues, whyLine, roughPeople, roughDollars, sig2, TIER_ORDER } from "../../web/js/games/whichMetro/sim/clues.js";
+import { guessHint } from "../../web/js/games/whichMetro/sim/hint.js";
 import {
   newGame, reveal, guess, nextRound, roundPoints, totalScore, shareText, roundSquares, updateStats, emptyStats,
   liveStreak, distBuckets, validSave, MAX_SCORE, pointsAtStake,
@@ -102,7 +103,7 @@ test("district names come from the catalog, not hardcoded ids", () => {
   const catNames = new Set(districts.catalog.map((d) => d.name));
   let seen = 0;
   for (const city of pool) {
-    const econ = buildClues(city, data)[2];
+    const econ = buildClues(city, data).find((c) => c.id === "economy");
     for (const chip of econ.chips) { assert.ok(catNames.has(chip.label), chip.label); seen++; }
   }
   assert.ok(seen > 50);
@@ -110,7 +111,7 @@ test("district names come from the catalog, not hardcoded ids", () => {
   const renamed = structuredClone(districts);
   for (const d of renamed.catalog) d.name = `Renamed ${d.id}`;
   const sj = pool.find((c) => districts.cities[c.id]?.districts?.length);
-  const chips = buildClues(sj, { ...data, districts: renamed })[2].chips;
+  const chips = buildClues(sj, { ...data, districts: renamed }).find((c) => c.id === "economy").chips;
   assert.ok(chips.every((c) => c.label.startsWith("Renamed ")));
 });
 
@@ -119,7 +120,7 @@ test("clues survive missing optional files", () => {
   const clues = buildClues(city, {});
   assert.equal(clues.length, MAX_CLUES);
   assert.ok(clues[0].bars.length > 0);
-  assert.ok(clues[3].facts.length > 0);
+  assert.ok(clues.find((c) => c.id === "size").facts.length > 0);
   assert.ok(whyLine(city, {}).text.includes("Population"));
 });
 
@@ -222,4 +223,30 @@ test("search: names, labels, principal cities, duplicates", () => {
   assert.equal(byId.get(fw[0].id).name, "Dallas");
   assert.deepEqual(matchCities(index, ""), []);
   assert.ok(matchCities(index, "a", 5).length <= 5);
+});
+
+test("clue tiers come in TIER_ORDER: size before the economy, place last", () => {
+  assert.deepEqual(TIER_ORDER, ["workforce", "people", "size", "economy", "where"]);
+  for (const city of pool.slice(0, 20)) assert.deepEqual(buildClues(city, data).map((c) => c.id), TIER_ORDER);
+});
+
+test("wrong-guess hints: distance and direction, no names", () => {
+  const sea = byId.get("42660"), mia = byId.get("33100"), bos = byId.get("14460"), nyc = byId.get("35620");
+  const h = guessHint(sea, mia); // guessed Seattle, answer Miami
+  assert.ok(h.km > 3500 && h.km < 6000, String(h.km));
+  assert.equal(h.dir, "north-west");
+  assert.equal(h.arrow, "↘");
+  assert.match(h.text, /^[\d,]+ km too far north-west$/);
+  assert.ok(!h.text.includes("Miami"));
+  assert.equal(guessHint(mia, sea).dir, "south-east");
+  assert.equal(guessHint(bos, nyc).dir.includes("north"), true);
+  const tx = pool.filter((c) => c.states[0] === "TX");
+  assert.ok(guessHint(tx[0], tx[1]).sameState);
+  const hi = cities.find((c) => c.states[0] === "HI");
+  if (hi) {
+    const off = guessHint(sea, hi);
+    assert.equal(off.km, null);
+    assert.match(off.text, /lower 48/);
+  }
+  assert.equal(guessHint(null, sea).text, "");
 });

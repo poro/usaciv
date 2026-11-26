@@ -173,8 +173,15 @@ function whereClue(city, pool) {
   return { id: "where", title: "Where it is", source: "Census regions and divisions; the metro's principal state first", facts };
 }
 
+/** Clue ids in the order they are revealed. */
+export const TIER_ORDER = ["workforce", "people", "size", "economy", "where"];
+
 /**
- * The five clues for a metro, vague → specific.
+ * The five clues for a metro, vague → specific (TIER_ORDER).
+ * Size comes before the economy: a headless check (nearest pool metros per tier) found the economy tier the most
+ * telling by far (its district badges and top industries single out about half the pool on their own, nearly all
+ * of the 25 biggest), so as tier 3 it left tiers 4 and 5 with little to do. Size is the vaguest tier for mid-sized
+ * metros, so it now bridges the gap.
  * data = {citizens, districts, nation, pool}  (any may be missing: each tier then falls back to cities.json)
  */
 export function buildClues(city, data = {}) {
@@ -182,8 +189,8 @@ export function buildClues(city, data = {}) {
   return [
     workforceClue(city, citizens, nation),
     peopleClue(city, citizens),
-    economyClue(city, districts),
     sizeClue(city, nation),
+    economyClue(city, districts),
     whereClue(city, pool),
   ];
 }
@@ -201,7 +208,7 @@ export function whyLine(city, data = {}) {
     if (t.emp < 1000 || !(t.lq > 1)) continue;
     cands.push({
       score: Math.log(t.lq),
-      tier: 3,
+      tier: 4,
       text: `${labels.get(t.naics) || t.naics}: ${t.lower_bound ? "at least " : ""}${times(t.lq)} the US share of jobs (${intTxt(t.emp)} jobs).`,
     });
   }
@@ -219,5 +226,5 @@ export function whyLine(city, data = {}) {
   cands.sort((a, b) => b.score - a.score || a.tier - b.tier);
   if (cands.length && cands[0].score > Math.log(1.3)) return { text: cands[0].text, tier: cands[0].tier };
   const g = city.gdp ? `, GDP ${roughDollars(city.gdp)}` : "";
-  return { text: `Population ${roughPeople(city.population)}${g}.`, tier: 4 };
+  return { text: `Population ${roughPeople(city.population)}${g}.`, tier: 3 };
 }
