@@ -26,7 +26,8 @@ The design notes for each game are in [GAME_PLAN.md](GAME_PLAN.md).
 
 ## Phase 0: engine and framework (now)
 
-- [x] Private repo `poro/usaciv`, starting from the original source (MIT, credit kept).
+- [x] Repo `poro/usaciv` (public), starting from the original source (MIT, credit kept). Live at
+  https://usaciv.mark-ollila.workers.dev, auto-deployed from `main`; data refreshed monthly by a GitHub Action.
 - [x] Rename the city districts to plain names, in the pipeline, the data, the UI, the tests and the docs:
 
   | Old id / name | New id / name |
@@ -42,26 +43,29 @@ The design notes for each game are in [GAME_PLAN.md](GAME_PLAN.md).
   | `encampment` Encampment | `defense_district` Defense District |
   | `aqueduct` Aqueduct & dam | `utility_district` Utility District |
 
-- [ ] Game-mode framework: `web/js/games/` (a registry, the Play menu, a mode host with automatic cleanup, a seeded
+- [x] Game-mode framework: `web/js/games/` (a registry, the Play menu, a mode host with automatic cleanup, a seeded
   RNG, hex-map helpers and pathfinding, and namespaced saves). URL: `#play=<mode>`.
-- [ ] `node --test tests/js` for the shared helpers and each game's simulation.
+- [x] `node --test tests/js/*.test.mjs` for the shared helpers and each game's simulation.
 
-## Phase 1: single-player games (v0.1, playable)
+## Phase 1: single-player games (v0.1, playable): shipped 2026-11-26
 
-**Which Metro?** (smallest; first to be playable)
+All three are live. Known gaps to close next: Founders' late-game materials pile up, Mainline's late-game cash has
+little to spend on and it has no share image, and Which Metro? small metros need their own name plate at the reveal.
+
+**Which Metro?** ✅ (smallest; first to be playable)
 - 5 rounds a day from a date seed. Clues are revealed one at a time (workforce figures → district mix → yields →
   region), and fewer clues means more points. Guess with city search.
 - Streaks and stats in localStorage. A spoiler-free share text (grid of squares).
 - Practice mode with a random seed.
 
-**Mainline** (milestones M0–M4 in GAME_PLAN.md)
+**Mainline** ✅ (milestones M0–M4 in GAME_PLAN.md)
 - Lay rail hex to hex, with costs from terrain and discounts for upgrading real rail. Budget, End Turn, 2026–2050.
 - Contracts from the 40 real FAF freight flows plus gravity-model contracts (labelled as a model). Connected cities
   grow faster than their real trend.
 - Disasters rolled from real FEMA county rates. Damage, repair, hardening.
 - Score against baseline America, an end screen, scenarios (Texas Triangle, Rust to Rail, Western Grid, Sandbox).
 
-**Founders**
+**Founders** ✅
 - Start with one settler on real terrain. Hex output comes from real land cover, relief, rivers and resource sites.
 - Found cities, claim hexes, grow population, build simple improvements. A fixed number of turns.
 - No combat in v0.1. The end screen compares your settlement pattern with where Americans actually live (overlap
