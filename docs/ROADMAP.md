@@ -106,6 +106,12 @@ labels the answer and each wrong guess on the map.
 
 ## Phase 3: accounts and multiplayer (v0.3+)
 
+**Step 1 shipped 2026-11-26** (no login yet; see [MULTIPLAYER.md](MULTIPLAYER.md)): a Worker in front of the static
+site with D1 and a `RaceRoom` Durable Object. Players pick a nickname (a device id and token, no account). Which
+Metro? has a daily leaderboard and live races by room link; Mainline has a best-run board per scenario. The server
+replays every submitted run with the same `sim/` code, so scores can't be typed in. Next: login (email link, Google,
+Apple) attached to the same player rows, then Mainline versus and Founders hotseat/online.
+
 The static site stays static. Multiplayer is added as a small backend next to it.
 
 - **Hosting:** Cloudflare Workers + Durable Objects (one object per game room) + D1 for accounts and leaderboards.

@@ -221,7 +221,8 @@ export function check(env, state, action) {
       const c = env.contractById.get(action.id);
       if (!c) return "No such contract";
       if (state.express?.[action.id]) return "Express already runs there";
-      const served = serveContracts(env, networkGraph(env, state.links, { intactOnly: true }), growthOf(env, state), state.hubs);
+      // only this contract's route matters here (contracts route independently): skip routing the rest
+      const served = serveContracts(env, networkGraph(env, state.links, { intactOnly: true }), growthOf(env, state), state.hubs, { only: action.id });
       const st = corridorStatus(env, state.links, served, action.id);
       if (!st.ok) return st.why;
       const cost = expressCost(c);
@@ -244,6 +245,11 @@ export function check(env, state, action) {
 /** The reducer. */
 export function apply(env, state, action) {
   if (check(env, state, action)) return state;
+  return applyValid(env, state, action);
+}
+
+/** apply() for an action check() has just accepted (skips the second check; the replay verifier uses it). */
+export function applyValid(env, state, action) {
   const hm = env.hexmap;
   switch (action.type) {
     case "build": {

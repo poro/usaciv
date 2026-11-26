@@ -1,13 +1,35 @@
-// Cloudflare Workers static-assets deploy of the packaged site (no Worker code).
+// Cloudflare Worker for usaciv: the packaged static site plus a small multiplayer API (docs/MULTIPLAYER.md).
+// Static files come straight from dist/usaciv/ (the public site without the dev pages, plus usaciv-source.zip);
+// only /api/* runs worker/index.js first. D1 (DB) holds players and scores; the RaceRoom Durable Object runs live
+// Which Metro? races.
 // Deploys run automatically on every push to main (.github/workflows/deploy.yml). By hand:
-//   uv run python -m pipeline package && npx wrangler deploy
-// Serves dist/usaciv/ (the public site without the dev pages, plus usaciv-source.zip) at
-// https://usaciv.mark-ollila.workers.dev/
+//   uv run python -m pipeline package
+//   npx wrangler@4 d1 migrations apply usaciv --remote
+//   npx wrangler@4 deploy
+// Local: npx wrangler@4 d1 migrations apply usaciv --local && npx wrangler@4 dev --port 8788
+// Secret IP_SALT (salts the stored IP hashes): npx wrangler@4 secret put IP_SALT; locally put it in .dev.vars.
+// Serves https://usaciv.mark-ollila.workers.dev/
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "usaciv",
+  "main": "worker/index.js",
   "compatibility_date": "2026-11-26",
   "assets": {
-    "directory": "./dist/usaciv"
-  }
+    "directory": "./dist/usaciv",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "usaciv",
+      "database_id": "231ed041-182a-4072-a0ac-57edad2d0414",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "RACE", "class_name": "RaceRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RaceRoom"] }],
+  "observability": { "enabled": true }
 }

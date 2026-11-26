@@ -17,6 +17,9 @@ import {
 } from "./sim/game.js";
 import { buildIndex, matchCities, cityLabel } from "./sim/search.js";
 import { guessHint } from "./sim/hint.js";
+import { net } from "../shared/net.js";
+import { parseRaceParam, raceParam } from "./online.js";
+import { createOnline } from "./onlineUi.js";
 
 const HL_COLOR = "#ecd08e";
 
@@ -89,20 +92,40 @@ export async function start(ctx) {
   });
 
   // --- state -------------------------------------------------------------------------------------------------
-  let meta = null;   // {mode, key, seed}
+  let meta = null;   // {mode, key, seed} (+ code for a race)
   let game = null;
-  let view = "intro"; // intro | play | summary | help
+  let view = "intro"; // intro | play | summary | help | race (lobby) | board (today's leaderboard)
   let helpBack = null; // the view "help" returns to
   let countdown = 0;   // interval id of the summary's next-puzzle countdown
   let stats = { ...emptyStats(), ...(ctx.storage.get("stats") || {}) };
   let ui = { q: "", matches: [], active: -1, listOpen: false };
   let framedRound = -1;
 
-  const paramOf = (m) => (m.mode === "practice" ? `practice-${m.seed}` : m.key);
-  const saveKey = (m) => (m.mode === "practice" ? "practice" : `game:${m.key}`);
+  const paramOf = (m) => (m.mode === "race" ? raceParam(m.code) : m.mode === "practice" ? `practice-${m.seed}` : m.key);
+  // A race keeps its own save ("race"), never the daily's, and never touches the stats (persist).
+  const saveKey = (m) => (m.mode === "race" ? "race" : m.mode === "practice" ? "practice" : `game:${m.key}`);
   const shareUrl = () => `${location.origin}${location.pathname}#play=${encodeURIComponent(ctx.game.id)}~${encodeURIComponent(paramOf(meta))}`;
 
+  // Online play (leaderboard, races). Inert until net.available() says the backend is there.
+  const online = createOnline({
+    ctx, net, body,
+    hooks: {
+      view: () => view,
+      setView: (v) => { view = v; },
+      render: () => render(),
+      meta: () => meta,
+      game: () => game,
+      today: () => today,
+      startRace,
+      leaveToDaily: () => load({ mode: "daily", key: today, seed: null }),
+      get rules() { return RULES; }, // read at render time (RULES is defined further down)
+      copy: (t) => copy(t),
+    },
+  });
+  ctx.onCleanup(() => online.stop());
+
   function load(m) {
+    online.leaveRace();
     meta = m;
     const answers = m.mode === "practice" ? practiceAnswers(pool, m.seed) : dailyAnswers(pool, m.key);
     const saved = ctx.storage.get(saveKey(m));
@@ -117,6 +140,23 @@ export async function start(ctx) {
     // First time ever (and not already reading the rules on the intro): show How to play once.
     if (view === "play" && !ctx.storage.get("seenHelp")) { helpBack = "play"; view = "help"; }
     render();
+  }
+
+  // A live race: everyone plays practiceAnswers(pool, room.seed). A reload resumes the saved run of this room.
+  function startRace(room, code) {
+    const m = { mode: "race", key: null, seed: String(room.seed), code };
+    meta = m;
+    const answers = practiceAnswers(pool, m.seed);
+    const saved = ctx.storage.get(saveKey(m));
+    game = saved && saved.code === code && saved.seed === m.seed && validSave(saved, answers)
+      ? saved
+      : { ...newGame({ mode: "race", key: null, seed: m.seed, number: null, answers }), code };
+    framedRound = -1;
+    ui = { q: "", matches: [], active: -1, listOpen: false };
+    ctx.storage.set("seenHelp", true); // the lobby showed the rules
+    view = game.done ? "summary" : "play";
+    render();
+    if (view === "play") say(`The race is on. Round ${game.idx + 1} of ${ROUNDS}.`);
   }
 
   function persist() {
@@ -137,6 +177,7 @@ export async function start(ctx) {
     ui = { q: "", matches: [], active: -1, listOpen: false };
     render();
     announce(before, beforeIdx);
+    online.afterAct(game);
     return true;
   }
 
@@ -162,11 +203,16 @@ export async function start(ctx) {
   // --- rendering ---------------------------------------------------------------------------------------------
   function render() {
     if (view !== "summary" && countdown) { clearInterval(countdown); countdown = 0; }
-    if (view === "intro") renderIntro();
-    else if (view === "help") renderHelp();
-    else if (view === "summary") renderSummary();
-    else renderPlay();
+    online.wrapRender(() => {
+      if (view === "intro") renderIntro();
+      else if (view === "help") renderHelp();
+      else if (view === "summary") renderSummary();
+      else if (view === "race") online.renderRaceView();
+      else if (view === "board") online.renderBoardView();
+      else renderPlay();
+    });
     syncMap();
+    online.afterRender(view);
   }
 
   const RULES = `
@@ -204,6 +250,7 @@ export async function start(ctx) {
   }
 
   function modeLine() {
+    if (meta.mode === "race") return `Race <code>${esc(meta.code)}</code> <span class="wm-tag">not scored in stats</span>`;
     if (meta.mode === "practice") return `Practice puzzle <code>${esc(meta.seed)}</code>`;
     if (meta.mode === "archive") return `Puzzle #${puzzleNumber(meta.key)} · ${esc(meta.key)} <span class="wm-tag">archive, not scored in stats</span>`;
     return `Puzzle #${puzzleNumber(meta.key)} · ${esc(meta.key)}`;
@@ -218,6 +265,7 @@ export async function start(ctx) {
         <div class="g-row"><button class="g-btn primary wm-big" data-act="start" type="button">${meta.mode === "daily" ? "Play today's puzzle" : "Start"}</button>
           ${meta.mode !== "practice" ? `<button class="g-btn" data-act="practice" type="button">Practice</button>` : ""}</div>
       </div>
+      ${online.slot("intro")}
       ${stats.played ? statsHtml() : ""}
       <p class="g-note">Data: ACS 2025 1-year (Census), BLS QCEW 2025, BEA GDP 2024. A new puzzle every day at local midnight.</p>`;
     body.querySelector("[data-act=start]")?.focus();
@@ -277,7 +325,7 @@ export async function start(ctx) {
     }
     const list = [];
     for (let k = shown - 1; k >= 0; k--) list.push(clueHtml(clues[k], k, !r.done && k === r.clues - 1, r.done && k >= r.clues));
-    body.innerHTML = `${top}<div class="wm-clues">${list.join("")}</div>`;
+    body.innerHTML = `${meta.mode === "race" ? online.slot("strip") : ""}${top}<div class="wm-clues">${list.join("")}</div>`;
     if (!r.done) {
       const input = body.querySelector(".wm-input");
       wireCombo(input);
@@ -444,7 +492,28 @@ export async function start(ctx) {
       </li>`;
   }
 
+  // A race's results: the server's standings first, then the usual round-by-round recap. No share text (the race
+  // has no puzzle number), no daily countdown and no stats.
+  function renderRaceSummary() {
+    const score = totalScore(game);
+    body.innerHTML = `
+      ${pipsHtml()}
+      <div class="wm-final">
+        <div class="wm-kicker">${modeLine()}</div>
+        <div class="wm-big-score">${score}<small>/${MAX_SCORE}</small></div>
+      </div>
+      ${online.slot("raceres")}
+      <h3 class="g-section">Round by round</h3>
+      <ol class="wm-answers">${game.rounds.map(recapHtml).join("")}</ol>
+      <div class="g-row wm-more">
+        <button class="g-btn primary" data-act="race-new" type="button">New race</button>
+        <button class="g-btn" data-act="today" type="button">Today's puzzle</button>
+        <button class="g-btn" data-act="practice" type="button">Practice puzzle</button>
+      </div>`;
+  }
+
   function renderSummary() {
+    if (meta.mode === "race") return renderRaceSummary();
     const score = totalScore(game);
     const text = shareText(game, shareUrl());
     const verdict = score >= 22 ? "Atlas-grade." : score >= 16 ? "Sharp eye for data." : score >= 10 ? "Solid reading." : score >= 5 ? "The numbers fought back." : "Tough one. Try a practice round.";
@@ -461,6 +530,7 @@ export async function start(ctx) {
         <div class="g-row"><button class="g-btn primary" data-act="share" type="button">Copy result</button></div>
         <div class="wm-next" role="timer" aria-live="off">Next daily puzzle in <b class="wm-count">${untilMidnight()}</b></div>
       </div>
+      ${online.slot("board")}
       <h3 class="g-section">Round by round</h3>
       <ol class="wm-answers">${game.rounds.map(recapHtml).join("")}</ol>
       ${meta.mode === "daily" ? statsHtml() : ""}
@@ -692,7 +762,7 @@ export async function start(ctx) {
   }
 
   function syncMap() {
-    if (view === "intro") {
+    if (view === "intro" || view === "race" || view === "board" || !game) {
       app.setHighlight?.(null);
       softenBanners([]);
       setMarks();
@@ -751,6 +821,7 @@ export async function start(ctx) {
     const b = e.target.closest("[data-act]");
     if (!b) return;
     const a = b.dataset.act;
+    if (online.onClick(a, b)) return;
     if (a === "start") { ctx.storage.set("seenHelp", true); view = "play"; render(); say(`Round 1 of ${ROUNDS}. Clue 1: ${cluesFor(currentRound(game).answer).clues[0].title}.`); }
     else if (a === "help") openHelp();
     else if (a === "help-ok") closeHelp();
@@ -766,9 +837,14 @@ export async function start(ctx) {
     }
   });
 
+  // The nickname form (the guess form has its own listener).
+  body.addEventListener("submit", (e) => {
+    if (online.onSubmit(e.target)) e.preventDefault();
+  });
+
   // No map click may select a city mid-game (its panel would name it). On the results, an answer's hexes open it.
   ctx.on("mapclick", (ev) => {
-    if (view === "summary" && ev?.city && game.answers.includes(ev.city.id)) openCityView(ev.city.id);
+    if (view === "summary" && ev?.city && game?.answers.includes(ev.city.id)) openCityView(ev.city.id);
     return true;
   });
 
@@ -782,6 +858,7 @@ export async function start(ctx) {
       if (k === "Enter" && !onControl) { closeHelp(); return true; }
       return false;
     }
+    if (view === "race" || view === "board") return false;
     if (view === "intro") {
       if (k === "Enter" && !onControl) { body.querySelector("[data-act=start]")?.click(); return true; }
       return false;
@@ -813,14 +890,19 @@ export async function start(ctx) {
     ctx.onCleanup(() => { ro.disconnect(); clearTimeout(timer); });
   }
 
-  load(parseParam(ctx.param, today));
+  // "race-<CODE>" is handled here, before the normal param (sim/puzzle.js's parseParam stays as pinned).
+  const raceCode = parseRaceParam(ctx.param);
+  if (raceCode) online.joinRace(raceCode);
+  else load(parseParam(ctx.param, today));
+  online.init(); // shows the online parts once /api/health answers; nothing changes when it does not
 
   return {
     stop: restore,
     onEscape() {
+      if (online.escape()) return true;
       if (ui.listOpen) { ui.listOpen = false; if (view === "play") render(); }
       return true; // Esc never drops the game; use ✕
     },
-    param: () => (meta ? paramOf(meta) : null),
+    param: () => (online.raceCode ? raceParam(online.raceCode) : meta ? paramOf(meta) : null),
   };
 }

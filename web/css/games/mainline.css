@@ -158,3 +158,24 @@
   .ml-hz li > .muted { grid-column: 1; grid-row: 2; font-size: 11px; }
   .ml-hz li > :last-child { grid-row: 1 / span 2; grid-column: 2; }
 }
+
+/* online boards (only when the site has the multiplayer backend) */
+.ml-boards-link[hidden] { display: none; }
+.ml-boards-link { justify-content: center; }
+.ml-online { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid rgba(201,164,92,.35); border-radius: 6px; background: rgba(0,0,0,.2); }
+.ml-online p { margin: 0; font-size: 12.5px; }
+.ml-submit { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.ml-nick input { margin-left: 6px; width: 140px; background: #121a24; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font: inherit; }
+.ml-err { margin: 0; font-size: 12.5px; }
+.ml-board td:first-child, .ml-board th:first-child { width: 2.2em; color: var(--ink-dim); }
+.ml-board td:last-child, .ml-board th:last-child { text-align: right; }
+.ml-board tr.ml-you td { background: rgba(232,196,106,.14); color: var(--ink); }
+.ml-you-tag { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #e8c46a; }
+.ml-boards { display: grid; gap: 6px; }
+.ml-boards > .g-row { justify-content: space-between; }
+.ml-boards > .g-row b { font-family: var(--serif); font-size: 17px; }
+.ml-boards p { margin: 0; }
+@media (max-width: 700px) {
+  .ml-nick input { width: 120px; min-height: 34px; }
+  .ml-submit .g-btn { min-height: 40px; }
+}

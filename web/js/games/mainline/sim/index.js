@@ -2,7 +2,7 @@
 export { SCENARIOS, scenarioById, START_YEAR, END_YEAR } from "./scenarios.js";
 export { makeEnv, HUB_KIND, HUB_MAX } from "./env.js";
 export {
-  newGame, apply, check, plan, describePath, evaluate, networkCells, connectedCities, migrate, SAVE_VERSION,
+  newGame, apply, applyValid, check, plan, describePath, evaluate, networkCells, connectedCities, migrate, SAVE_VERSION,
   repairCost, hardenCost, hardenOptions, doubleCost, hubCost, maintenance, DOUBLE_MAINT, HUB_MAINT, DEBT_RATE, creditLine, MAINT_RATE,
 } from "./state.js";
 export { summary, byState, regionGdp } from "./score.js";

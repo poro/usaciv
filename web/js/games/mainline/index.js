@@ -3,14 +3,18 @@
 //
 // This file is the glue: the dock (panel.js), the map layers and overlays (view.js) and input. All game rules live in
 // the pure, deterministic sim/ (state.js: apply(env, state, action)). Contract: see games/host.js.
-// URL: #play=mainline~<scenario>.<seed>[.<home>]   Save: ctx.storage "save" (the whole state, after every action).
+// URL: #play=mainline~<scenario>.<seed>[.<home>]   Save: ctx.storage "save" (the whole state plus its action log,
+// runlog.js, after every action). Online boards (docs/MULTIPLAYER.md) appear only when net.available().
 // First-run tutorial: ctx.storage "tutorial" = the coach step (0..COACH_STEPS; COACH_STEPS = done or skipped).
 // Prefs: ctx.storage "prefs" = {showDemand, trains (default on), sound (default off)}. Trains and sound are view-only.
 import { loadCss } from "../shared/css.js";
 import { esc } from "../../format.js";
 import * as S from "./sim/index.js";
 import { makeView } from "./view.js";
-import { pickerHtml, gameHtml, buildHtml, endHtml, shareText, contractText, COACH_STEPS } from "./panel.js";
+import { pickerHtml, gameHtml, buildHtml, endHtml, shareText, contractText, COACH_STEPS, boardsHtml } from "./panel.js";
+import { record, packSave, unpackSave } from "./runlog.js";
+import { verifyRun } from "./sim/verify.js";
+import { net } from "../shared/net.js";
 import { parseParam, formatParam } from "./params.js";
 import { shareImage } from "./share.js";
 import { makeSound } from "./sound.js";
@@ -40,6 +44,8 @@ export async function start(ctx) {
   const prefs = ctx.storage.get("prefs", {}) || {};
   const game = {
     env: null, state: null, ev: null,
+    log: null, // the action log since newGame (runlog.js); null for a save from before logs
+    online: { avail: false, status: "idle", error: null, result: null, board: null, nick: "" },
     sel: { start: null, end: null, hover: null, plan: null },
     ui: { tab: "open", showDemand: prefs.showDemand !== false, trains: prefs.trains !== false, sound: prefs.sound === true, motion: true,
       highlight: null, hover: null, link: null, help: false, screen: "picker", coach: null },
@@ -63,16 +69,18 @@ export async function start(ctx) {
   ctx.onCleanup(() => { if (app.mainline === game) delete app.mainline; });
 
   // --- flow ---
-  /** A usable save (migrated to the current version), or null. */
+  /** A usable save {state (migrated to the current version), log}, or null. */
   function loadSave() {
-    const sv = S.migrate(ctx.storage.get("save", null));
-    return sv && S.scenarioById(sv.scenario) ? sv : null;
+    const sv = unpackSave(ctx.storage.get("save", null));
+    return sv && S.scenarioById(sv.state.scenario) ? sv : null;
   }
   function newSeed() { return 1 + Math.floor(Math.random() * 99999); }
   function begin({ scenario, seed, home }, saved = null) {
     const env = getEnv(scenario, home);
     game.env = env;
-    game.state = saved || S.newGame(env, { seed });
+    game.state = saved?.state || S.newGame(env, { seed });
+    game.log = saved ? saved.log : [];
+    game.online = { ...game.online, status: "idle", error: null, result: null, board: null };
     game.sel = { start: null, end: null, hover: null, plan: null };
     game.ui.highlight = null;
     game.ui.link = null;
@@ -95,13 +103,13 @@ export async function start(ctx) {
     app.fitBounds(e.x0 - pad, e.y0 - pad, e.x1 + pad, e.y1 + pad, { padTop: 30, padBottom: 30 });
   }
   function save() {
-    if (game.state) ctx.storage.set("save", game.state);
+    if (game.state) ctx.storage.set("save", packSave(game.state, game.log));
   }
   function showPicker() {
     game.ui.screen = "picker";
     game.sel = { start: null, end: null, hover: null, plan: null };
     ctx.setParam(null);
-    const sv = loadSave();
+    const sv = loadSave()?.state;
     let saveEnv = null;
     try { if (sv) saveEnv = getEnv(sv.scenario, sv.home); } catch { saveEnv = null; }
     const metros = ctx.cities.filter((c) => c.metro).slice(0, 150).sort((a, b) => a.name.localeCompare(b.name));
@@ -109,6 +117,7 @@ export async function start(ctx) {
     body.innerHTML = pickerHtml({
       save: sv, saveEnv, cities: metros,
       defaults: { scenario: last.scenario || "texas", home: last.home || "19100", seed: newSeed() },
+      online: game.online.avail,
     });
     view.redraw();
   }
@@ -116,7 +125,7 @@ export async function start(ctx) {
   function refresh() {
     if (!game.state) return;
     game.ev = S.evaluate(game.env, game.state);
-    if (game.ui.screen === "end") body.innerHTML = endHtml(model(), ctx.storage.get(`best:${game.env.scenario.id}`, null));
+    if (game.ui.screen === "end") body.innerHTML = endHtml(model(), ctx.storage.get(`best:${game.env.scenario.id}`, null), boardModel());
     else {
       const scroll = body.scrollTop;
       body.innerHTML = gameHtml(model());
@@ -137,11 +146,11 @@ export async function start(ctx) {
 
   function act(action, { quiet = false } = {}) {
     if (!game.state) return false;
-    const err = S.check(game.env, game.state, action);
-    if (err) { if (!quiet) ctx.toast(err); return false; }
     const before = game.state;
     const servedBefore = game.ev?.served.size ?? 0;
-    game.state = S.apply(game.env, game.state, action);
+    const r = record(game.env, game.state, game.log, action);
+    if (r.error) { if (!quiet) ctx.toast(r.error); return false; }
+    game.state = r.state;
     if (action.type === "endTurn") afterTurn(before);
     else if (action.type === "build") sound.play("build");
     if (game.ui.link && !game.state.links[game.ui.link]) game.ui.link = null;
@@ -309,9 +318,11 @@ export async function start(ctx) {
       }
       case "resume": {
         const sv = loadSave();
-        if (sv) begin({ scenario: sv.scenario, seed: sv.seed, home: sv.home }, sv);
+        if (sv) begin({ scenario: sv.state.scenario, seed: sv.state.seed, home: sv.state.home }, sv);
         break;
       }
+      case "boards": showBoards(); break;
+      case "boardsBack": showPicker(); break;
       case "start": {
         const scenario = body.querySelector('input[name="ml-scn"]:checked')?.value || "texas";
         const seed = Math.max(0, Number.parseInt(body.querySelector('[data-field="seed"]')?.value, 10) || newSeed());
@@ -379,6 +390,67 @@ export async function start(ctx) {
     }
   }
 
+  // --- online boards ---
+  let stopped = false;
+  const cityName = (id) => ctx.cityById?.get(id)?.name || id;
+  function boardModel() {
+    if (!game.online.avail || !game.state?.over) return null;
+    const o = game.online;
+    return { ...o, scenario: game.env.scenario, hasLog: Array.isArray(game.log), player: net.player(), cityName };
+  }
+  async function submitRun() {
+    const o = game.online;
+    if (o.status === "sending" || !Array.isArray(game.log) || !game.state?.over) return;
+    const env = game.env, state = game.state, log = game.log;
+    const nickEl = body.querySelector('[data-field="nick"]');
+    if (nickEl) o.nick = nickEl.value;
+    o.status = "sending";
+    o.error = null;
+    refresh();
+    const failed = (msg) => {
+      if (game.state !== state) return; // a new game started meanwhile
+      o.status = "idle";
+      o.error = msg;
+      refresh();
+    };
+    if (!net.player()) {
+      const name = (o.nick || "").trim();
+      if (!name) return failed("Pick a nickname first (2–20 letters, digits or spaces).");
+      try { await net.ensurePlayer(name); } catch (err) { return failed(`Could not create your player: ${err.message}`); }
+    }
+    // replay locally first: a log that does not reproduce this game would only be refused by the server
+    const run = { scenario: env.scenario.id, seed: state.seed, home: env.scenario.id === "sandbox" ? env.home?.id ?? null : null, log };
+    const local = verifyRun(data, run);
+    if (!local.ok || local.hash !== S.stateHash(state)) {
+      return failed(`This game's move log does not replay${local.ok ? " to the same result" : `: ${local.error}`}, so it can't be submitted.`);
+    }
+    const r = await net.post("/api/ml/run", run);
+    if (!r.ok) return failed(`The server refused the run: ${r.error}`);
+    const b = await net.get(`/api/ml/board/${encodeURIComponent(env.scenario.id)}?limit=10`);
+    if (game.state !== state) return;
+    o.status = "done";
+    o.result = r.data;
+    o.board = b.ok ? b.data : null;
+    o.error = b.ok ? null : `Your run is in, but the board did not load: ${b.error}`;
+    refresh();
+  }
+  async function showBoards() {
+    game.ui.screen = "picker";
+    body.innerHTML = boardsHtml({ boards: null, cityName });
+    const res = await Promise.all(S.SCENARIOS.map((sc) => net.get(`/api/ml/board/${sc.id}?limit=5`)));
+    if (stopped || !body.querySelector(".ml-boards")) return; // left the view meanwhile
+    const boards = Object.fromEntries(S.SCENARIOS.map((sc, k) => [sc.id, res[k].ok ? res[k].data : { error: `Could not load: ${res[k].error}` }]));
+    body.innerHTML = boardsHtml({ boards, cityName });
+  }
+  body.addEventListener("submit", (e) => {
+    if (!e.target.matches('[data-form="submit"]')) return;
+    e.preventDefault();
+    submitRun();
+  });
+  body.addEventListener("input", (e) => {
+    if (e.target.matches('[data-field="nick"]')) game.online.nick = e.target.value;
+  });
+
   // --- keyboard (ctx.onKey: runs before the map's own shortcuts, skipped while typing or with Ctrl/Cmd/Alt) ---
   ctx.onKey((e, k) => {
     if (game.ui.screen !== "game" || !game.state) return false;
@@ -398,13 +470,25 @@ export async function start(ctx) {
 
   // --- start: URL param, else the saved game, else the picker ---
   const want = parseParam(ctx.param);
-  const sv = loadSave();
+  const svAll = loadSave();
+  const sv = svAll?.state;
   if (want) {
     const same = sv && sv.scenario === want.scenario && sv.seed === want.seed && (want.scenario !== "sandbox" || !want.home || sv.home === want.home);
-    begin(want, same ? sv : null);
+    begin(want, same ? svAll : null);
   } else if (sv && !sv.over) {
-    begin({ scenario: sv.scenario, seed: sv.seed, home: sv.home }, sv);
+    begin({ scenario: sv.scenario, seed: sv.seed, home: sv.home }, svAll);
   } else showPicker();
+
+  // online boards: only when this site has the backend (never on the static dev server)
+  net.available().then((ok) => {
+    if (!ok || stopped) return;
+    game.online.avail = true;
+    if (game.ui.screen === "end") refresh();
+    else if (game.ui.screen === "picker") {
+      const link = body.querySelector(".ml-boards-link");
+      if (link) link.hidden = false;
+    }
+  });
 
   return {
     param: () => (game.state && game.ui.screen !== "picker" ? formatParam({ scenario: game.env.scenario.id, seed: game.state.seed, home: game.env.home?.id }) : null),
@@ -419,6 +503,6 @@ export async function start(ctx) {
       }
       return true; // Esc never drops you out of a game; use ✕ in the dock
     },
-    stop() {},
+    stop() { stopped = true; },
   };
 }

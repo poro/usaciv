@@ -10,3 +10,4 @@ out/
 dist/
 usaciv.zip
 .wrangler/
+.dev.vars

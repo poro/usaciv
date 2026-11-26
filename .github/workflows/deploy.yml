@@ -1,7 +1,8 @@
 # Deploy the site to Cloudflare Workers (https://usaciv.mark-ollila.workers.dev) on every push to main, after the
 # tests pass. Merging a monthly data-refresh PR therefore publishes the new numbers too.
 # Needs the repo secret CLOUDFLARE_API_TOKEN (Cloudflare dashboard › My Profile › API Tokens › "Edit Cloudflare
-# Workers" template) and the repo variable CLOUDFLARE_ACCOUNT_ID. Without the token the job skips the deploy step.
+# Workers" template, plus Account › D1 › Edit for the migrations step) and the repo variable CLOUDFLARE_ACCOUNT_ID.
+# Without the token the job skips the migration and deploy steps.
 name: Deploy
 
 on:
@@ -40,6 +41,10 @@ jobs:
 
       - name: Package
         run: uv run python -m pipeline package
+
+      - name: Apply D1 migrations
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: npx --yes wrangler@4 d1 migrations apply usaciv --remote
 
       - name: Deploy
         if: env.CLOUDFLARE_API_TOKEN != ''

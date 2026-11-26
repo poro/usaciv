@@ -253,10 +253,10 @@ export function hubBonus(env, hubs, end) {
  * growthOf(cityIds) → value multiplier from the end cities' GDP growth since the start. hubs = state.hubs.
  * → Map<contract id, {pay, base (before upgrades), detour, km, dkm, value, from, to, keys: [edgeKey]}>
  */
-export function serveContracts(env, graph, growthOf, hubs = null) {
+export function serveContracts(env, graph, growthOf, hubs = null, { only = null } = {}) {
   const out = new Map();
   const ek = env.hexmap.edgeKey;
-  for (const c of env.contracts) {
+  for (const c of only != null ? [env.contractById.get(only)].filter(Boolean) : env.contracts) {
     const r = networkRoute(graph, c.a.cells, c.b.cells);
     if (!r) continue;
     const straight = Math.max(env.km(r.from, r.to), 40);

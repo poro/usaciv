@@ -54,7 +54,7 @@ function coachHtml(m) {
 
 const HZ_ICON = { hurricane: "🌀", flood: "🌊", fire: "🔥", severe_storm: "⛈️", winter: "❄️", other: "⚠️" };
 
-export function pickerHtml({ save, saveEnv, cities, defaults }) {
+export function pickerHtml({ save, saveEnv, cities, defaults, online = false }) {
   const resume = save && saveEnv && !save.over
     ? `<button class="g-btn primary ml-wide" data-act="resume">Resume ${esc(saveEnv.scenario.name)}${save.home && saveEnv.scenario.id === "sandbox" ? ` (${esc(saveEnv.home?.name || "")})` : ""}, ${save.year}</button>`
     : "";
@@ -73,6 +73,7 @@ export function pickerHtml({ save, saveEnv, cities, defaults }) {
     <div class="g-row ml-seedrow"><label>Seed <input data-field="seed" type="number" min="0" max="999999" value="${defaults.seed}"></label>
       <button class="g-btn" data-act="reseed" type="button" title="A new random seed">🎲</button></div>
     <button class="g-btn primary ml-wide" data-act="start">Start</button>
+    <button class="g-btn ml-link-btn ml-boards-link" data-act="boards" type="button"${online ? "" : " hidden"}>🏆 Leaderboards</button>
     <details class="ml-help"><summary>How to play</summary>${HOW_TO}</details>
   </div>`;
 }
@@ -285,7 +286,8 @@ export function contractText(env, c, s) {
   return lines.join("\n");
 }
 
-export function endHtml(m, best) {
+/** End screen. online = the board model (see boardHtml), or null when the site has no multiplayer backend. */
+export function endHtml(m, best, online = null) {
   const { env, state, sum } = m;
   const rows = S.byState(env, state).slice(0, 8).map((r) => `<tr><td>${esc(r.state)}</td><td>${money(r.you)}</td><td>${money(r.base)}</td><td class="${r.uplift > 0 ? "ml-good" : ""}">${signed(r.uplift, 2)}</td></tr>`).join("");
   const h = state.hist;
@@ -305,6 +307,7 @@ export function endHtml(m, best) {
     <svg class="ml-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="GDP uplift by year">
       <line x1="0" x2="${W}" y1="${gy}" y2="${gy}" class="goal"/><polyline points="${pts}"/></svg>
     <div class="g-note">GDP uplift over baseline America each year; the line is the goal.</div>
+    ${online ? boardHtml(online) : ""}
     <table class="ml-table"><tr><th>Region</th><td colspan="3">${money(sum.you)} with your network vs ${money(sum.base)} baseline (${env.cities.length} metros)</td></tr>
       <tr><th>Freight</th><td colspan="3">${cr(state.totals.revenue)} earned (≈ ${usd(state.totals.revenue)}), ${links} links built for ${cr(state.totals.built)}</td></tr>
       <tr><th>Upgrades</th><td colspan="3">${cr(state.totals.upgrades || 0)} on double track and terminals, ${cr(state.totals.hardening)} on hardening</td></tr>
@@ -329,4 +332,71 @@ export function shareText(m) {
   return `Mainline · ${env.scenario.name}${env.scenario.id === "sandbox" ? ` (${env.home?.name})` : ""} · seed ${state.seed}\n` +
     `${sum.beat ? "Beat" : "Lost to"} baseline America: ${signed(sum.uplift, 2)} GDP by 2050 (goal ${signed(sum.goal)}) · score ${sum.score}\n` +
     `${Object.keys(state.links).length} links · ${cr(state.totals.revenue)} freight revenue · ${pct(sum.resilience, 0)} resilience`;
+}
+
+// --- online boards (only when net.available(); docs/MULTIPLAYER.md) ---
+
+export const boardName = (sc) => (sc.id === "sandbox" ? "Sandbox" : sc.name);
+
+/** Board rows: rank, name, uplift (and home for Sandbox). you = the response's `you` ({rank, …} or null). */
+function boardTable(rows, { you = null, sandbox = false, cityName = (id) => id } = {}) {
+  if (!rows?.length) return `<p class="g-note">No runs yet. Be the first.</p>`;
+  let marked = false;
+  const tr = rows.map((r) => {
+    const mine = !marked && you && r.rank === you.rank && (you.uplift == null || r.uplift === you.uplift);
+    if (mine) marked = true;
+    return `<tr${mine ? ' class="ml-you"' : ""}><td>${r.rank}</td><td>${esc(r.name)}${mine ? ' <span class="ml-you-tag">you</span>' : ""}</td>` +
+      `${sandbox ? `<td>${esc(r.home ? cityName(r.home) : "")}</td>` : ""}<td class="${r.uplift >= 0 ? "ml-good" : "ml-bad"}">${signed(r.uplift, 2)}</td></tr>`;
+  }).join("");
+  return `<table class="ml-table ml-board"><tr><th>#</th><th>Player</th>${sandbox ? "<th>Home</th>" : ""}<th>GDP</th></tr>${tr}</table>`;
+}
+
+/**
+ * The end screen's board section. o = {scenario (the scenario object), hasLog, player ({name} | null), nick,
+ * status: "idle" | "sending" | "done", error, result ({uplift, beat, rank, total, best, improved}), board ({top, you, total}),
+ * cityName(id)}
+ */
+export function boardHtml(o) {
+  const name = boardName(o.scenario);
+  const sandbox = o.scenario.id === "sandbox";
+  let inner;
+  if (!o.hasLog) {
+    inner = `<p class="g-note">This game was saved before Mainline kept a move log, so it can't be submitted to the board.
+      Your next game can be.</p>`;
+  } else if (o.status === "done" && o.result) {
+    const r = o.result;
+    const bestNote = r.improved === true ? " A new personal best."
+      : typeof r.best === "number" && r.best > r.uplift ? ` Your best stays ${signed(r.best, 2)}.` : "";
+    inner = `<p>Rank <b>#${r.rank}</b> of ${r.total} on the ${esc(name)} board with ${signed(r.uplift, 2)}.${bestNote}</p>
+      ${o.board ? boardTable(o.board.top, { you: o.board.you, sandbox, cityName: o.cityName }) : ""}`;
+  } else {
+    const sending = o.status === "sending";
+    inner = `<form class="ml-submit" data-form="submit">
+      ${o.player ? `<span class="g-note">Posting as <b>${esc(o.player.name)}</b></span>`
+        : `<label class="ml-nick">Nickname <input data-field="nick" maxlength="20" autocomplete="nickname" placeholder="2–20 letters" value="${esc(o.nick || "")}"></label>`}
+      <button class="g-btn primary" type="submit"${sending ? " disabled" : ""}>${sending ? "Submitting…" : `Submit to the ${esc(name)} board`}</button>
+    </form>
+    <p class="g-note">The server replays your moves to check the score.</p>`;
+  }
+  return `<div class="ml-online"><div class="g-section">Online board</div>${inner}
+    ${o.error ? `<p class="ml-bad ml-err" role="alert">${esc(o.error)}</p>` : ""}</div>`;
+}
+
+/**
+ * The picker's Leaderboards view: each scenario's top 5. boards = {scenarioId: {top, total} | {error}} or null while
+ * loading.
+ */
+export function boardsHtml({ boards, cityName = (id) => id }) {
+  const secs = S.SCENARIOS.map((sc) => {
+    const b = boards?.[sc.id];
+    const body = !boards ? `<p class="g-note">Loading…</p>`
+      : b?.error ? `<p class="ml-bad ml-err">${esc(b.error)}</p>`
+      : `${boardTable(b?.top, { sandbox: sc.id === "sandbox", cityName })}${b?.total > (b?.top?.length || 0) ? `<p class="g-note">${b.total} runs in all</p>` : ""}`;
+    return `<div class="g-section">${esc(sc.name)}</div>${body}`;
+  }).join("");
+  return `<div class="ml-boards">
+    <div class="g-row"><b>Leaderboards</b><button class="g-btn" data-act="boardsBack">Back</button></div>
+    <p class="g-note">The best GDP uplift over baseline America by 2050, one run per player. The server replays every run.</p>
+    ${secs}
+  </div>`;
 }
