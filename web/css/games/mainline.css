@@ -1,0 +1,85 @@
+/* Mainline (web/js/games/mainline): loaded by the game with loadCss and removed when it exits. Builds on games.css. */
+.ml { display: flex; flex-direction: column; gap: 8px; }
+.ml > * { flex: none; }
+.ml kbd { font: 10px/1 ui-monospace, monospace; padding: 1px 4px; border: 1px solid rgba(255,246,220,.35); border-radius: 3px; opacity: .8; }
+.ml .ml-good { color: #8fe3a2; }
+.ml .ml-bad { color: #ff8a7a; }
+.ml-wide { width: 100%; justify-content: center; }
+
+/* picker */
+.ml-picker { display: grid; gap: 8px; }
+.ml-scns { display: grid; gap: 6px; }
+.ml-scn { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; cursor: pointer; border: 1px solid rgba(201,164,92,.3); border-radius: 6px; background: rgba(0,0,0,.2); }
+.ml-scn.on { border-color: var(--gold-bright); box-shadow: inset 0 0 0 1px var(--gold); }
+.ml-scn input { margin-top: 3px; accent-color: var(--gold); }
+.ml-scn > span { display: grid; gap: 2px; }
+.ml-scn b { font-family: var(--serif); font-size: 15px; color: var(--ink); }
+.ml-scn small { font-size: 11px; color: var(--gold); }
+.ml-home select, .ml-seedrow input { margin-left: 6px; background: #121a24; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font: inherit; }
+.ml-seedrow input { width: 110px; }
+.ml-help summary { cursor: pointer; color: var(--gold); }
+.ml-how { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 6px; font-size: 12.5px; }
+
+/* game panel */
+.ml-top { display: flex; gap: 14px; align-items: flex-end; justify-content: space-between; }
+.ml-year { display: grid; }
+.ml-year b { font-family: var(--serif); font-size: 26px; line-height: 1; color: var(--gold-bright); }
+.ml-year span { font-size: 11px; color: var(--ink-dim); }
+.ml-actions .g-btn.primary { flex: 1; justify-content: center; }
+.ml-goal { display: grid; gap: 4px; }
+.ml-goal-txt { display: flex; gap: 8px; align-items: baseline; font-size: 12px; }
+.ml-goal-txt b { font-size: 15px; margin-left: auto; }
+.ml-bar { position: relative; height: 8px; border-radius: 4px; background: rgba(255,255,255,.08); overflow: visible; }
+.ml-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: linear-gradient(90deg, #8a6a2a, #8fe3a2); }
+.ml-bar em { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--gold-bright); }
+.ml-build { padding: 8px 10px; border: 1px dashed rgba(201,164,92,.45); border-radius: 6px; background: rgba(0,0,0,.2); font-size: 12.5px; min-height: 36px; }
+.ml-build > div { margin-top: 3px; }
+.ml-build .g-row { margin-top: 4px; }
+.ml-hint { color: var(--ink-dim); }
+.ml-link { padding: 8px 10px; border: 1px solid rgba(255,255,255,.25); border-radius: 6px; display: grid; gap: 6px; }
+.ml-link .ml-x { margin-left: auto; }
+.ml-card { padding: 7px 10px; border-left: 3px solid #b88; background: rgba(0,0,0,.25); border-radius: 0 6px 6px 0; display: grid; gap: 2px; font-size: 12.5px; }
+.ml-card small { color: var(--ink-dim); font-size: 11px; }
+.ml-card.hz-hurricane { border-color: #6fb7ff; }
+.ml-card.hz-flood { border-color: #4fd0d0; }
+.ml-card.hz-fire { border-color: #ff8a3d; }
+.ml-card.hz-severe_storm { border-color: #c9a0ff; }
+.ml-card.hz-winter { border-color: #e6f0ff; }
+.ml-dmg { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 12.5px; }
+.ml-tabs { display: flex; gap: 4px; align-items: center; border-bottom: 1px solid var(--line); margin-top: 6px; }
+.ml-tabs button { background: none; border: none; border-bottom: 2px solid transparent; color: var(--ink-dim); padding: 4px 8px; cursor: pointer; font: inherit; font-size: 13px; }
+.ml-tabs button[aria-selected="true"] { color: var(--gold-bright); border-bottom-color: var(--gold); }
+.ml-tabs .g-note { margin-left: auto; }
+.ml-contracts { list-style: none; margin: 0; padding: 0; display: grid; }
+.ml-contracts li { display: grid; grid-template-columns: auto 1fr auto 44px; gap: 6px; align-items: center; padding: 5px 4px; border-bottom: 1px solid rgba(255,255,255,.05); cursor: pointer; font-size: 12.5px; }
+.ml-contracts li:hover, .ml-contracts li.on { background: rgba(201,164,92,.1); }
+.ml-contracts li.ml-empty { display: block; cursor: default; }
+.ml-cname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ml-val { color: var(--ink-dim); font-size: 11.5px; }
+.ml-pay { text-align: right; font-variant-numeric: tabular-nums; }
+.ml-kind { font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; padding: 1px 4px; border-radius: 3px; border: 1px solid; }
+.ml-kind.faf { color: #ffd678; border-color: rgba(255,214,120,.6); }
+.ml-kind.model { color: #b9c2cc; border-color: rgba(185,194,204,.4); font-style: italic; }
+.ml-check { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--ink-dim); }
+.ml-foot { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; align-items: center; margin-top: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
+.ml-foot .g-btn { padding: 3px 8px; font-size: 12px; }
+.ml-helpbox { padding: 8px 10px; border: 1px solid var(--gold); border-radius: 6px; background: rgba(0,0,0,.35); }
+
+/* end screen */
+.ml-end { display: grid; gap: 8px; }
+.ml-verdict { font-family: var(--serif); font-size: 22px; text-align: center; padding: 10px; border-radius: 6px; }
+.ml-verdict.win { color: #c8f5d2; background: rgba(60,140,80,.25); border: 1px solid rgba(143,227,162,.5); }
+.ml-verdict.lose { color: #ffd0c8; background: rgba(140,60,50,.25); border: 1px solid rgba(255,138,122,.5); }
+.ml-end > p { margin: 0; text-align: center; color: var(--ink-dim); font-size: 12px; }
+.ml-spark { width: 100%; height: 70px; background: rgba(0,0,0,.2); border-radius: 4px; }
+.ml-spark polyline { fill: none; stroke: #8fe3a2; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.ml-spark .goal { stroke: #e8c46a; stroke-width: 1.5; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.ml-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ml-table th, .ml-table td { padding: 3px 4px; border-bottom: 1px solid rgba(255,255,255,.06); text-align: left; vertical-align: top; }
+.ml-states td:not(:first-child), .ml-states th { text-align: right; }
+
+@media (max-width: 700px) {
+  .ml-year b { font-size: 22px; }
+  .ml-contracts li { padding: 8px 4px; }
+  .ml kbd { display: none; }
+}
