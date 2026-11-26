@@ -107,6 +107,8 @@
 .ml-hz li.done { opacity: .8; }
 .ml-link .g-btn small { font-size: 10.5px; color: #8fe3a2; margin-left: 3px; }
 .ml-check { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--ink-dim); }
+.ml-checks { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.ml-check:has(input:disabled) { opacity: .6; }
 .ml-foot { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; align-items: center; margin-top: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
 .ml-foot .g-btn { padding: 3px 8px; font-size: 12px; }
 .ml-helpbox { padding: 10px 12px; border: 1px solid var(--gold); border-radius: 6px; background: rgba(0,0,0,.45); display: grid; gap: 6px; }
@@ -127,11 +129,30 @@
 .ml-states td:not(:first-child), .ml-states th { text-align: right; }
 
 @media (max-width: 700px) {
+  /* Portrait phones: the dock is a bottom sheet. A little shorter than the stock 55% so the map keeps ~300px of
+     tappable hexes on a 375x667 phone, with End turn / Undo pinned to the sheet's bottom edge (the thumb zone) so
+     the core loop never needs a scroll, however far the contract list or the coach pushes the panel. */
+  body[data-game="mainline"] .app-dock.games-dock { height: 48vh; height: 48dvh; }
+  .ml > .ml-actions { order: 50; position: sticky; bottom: 0; z-index: 3; margin: 0 -12px -10px; padding: 8px 12px;
+    background: var(--panel); border-top: 1px solid rgba(201,164,92,.35); flex-wrap: nowrap; }
+  .ml > .ml-actions .g-btn { min-height: 40px; }
   .ml-year b { font-size: 22px; }
   .ml-contracts li { padding: 8px 4px; }
   .ml kbd { display: none; }
-  .ml-tabs button { padding: 6px 7px; }
+  /* four tabs share the row instead of overflowing it at 375px */
+  .ml-tabs { gap: 2px; }
+  .ml-tabs button { flex: 1 1 auto; min-width: 0; min-height: 36px; padding: 6px 3px; font-size: 12.5px; white-space: nowrap; }
   .ml-tabs .g-note { display: none; }
+  .ml-coach { padding: 6px 10px 8px; gap: 4px; }
+  .ml-coach p { font-size: 12.5px; line-height: 1.4; }
+  .ml-coach .g-btn { padding: 7px 12px; }
+  .ml-check { min-height: 32px; }
+  .ml-build { scroll-margin-bottom: 64px; } /* index.js scrolls a touch preview into view: clear of the pinned bar */
+  /* end screen: the four buttons in a 2x2 grid pinned to the bottom, so Play again needs no scroll past the tables */
+  .ml-end > .ml-actions { position: sticky; bottom: 0; z-index: 3; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    margin: 0 -12px; padding: 8px 12px; background: var(--panel); border-top: 1px solid rgba(201,164,92,.35); }
+  .ml-end > .ml-actions .g-btn { justify-content: center; padding: 8px 6px; }
+  .ml-verdict { font-size: 19px; padding: 8px; }
   .ml-hz li .g-btn, .ml-hubbtn { padding: 6px 10px; }
   .ml-hz li { grid-template-columns: 1fr auto; }
   .ml-hz li > .muted { grid-column: 1; grid-row: 2; font-size: 11px; }

@@ -109,7 +109,11 @@ export function gameHtml(m) {
   ${dmg.length ? `<div class="ml-dmg"><span><b class="ml-bad">${dmg.length}</b> damaged link${dmg.length === 1 ? "" : "s"} carry nothing</span>
     <button class="g-btn" data-act="repairAll" title="${esc(crTitle(repairAll))}">Repair all ${cr(repairAll)}</button></div>` : ""}
   ${contractsHtml(m)}
-  <label class="ml-check"><input type="checkbox" data-act="demand" ${ui.showDemand ? "checked" : ""}> Show demand lines on the map</label>
+  <div class="ml-checks">
+    <label class="ml-check"><input type="checkbox" data-act="demand" ${ui.showDemand ? "checked" : ""}> Demand lines</label>
+    <label class="ml-check"${ui.motion === false ? ` title="Off: your system asks for reduced motion"` : ` title="Animate trains on served routes"`}><input type="checkbox" data-act="trains" ${ui.trains && ui.motion !== false ? "checked" : ""}${ui.motion === false ? " disabled" : ""}> Trains</label>
+    <label class="ml-check" title="Short synthesised sounds for building, End turn and disasters"><input type="checkbox" data-act="sound" ${ui.sound ? "checked" : ""}> Sound</label>
+  </div>
   <div class="ml-foot g-note">
     <span>${esc(env.scenario.name)}${env.scenario.id === "sandbox" ? ` · ${esc(env.home?.name || "")}` : ""} · seed ${state.seed}</span>
     <span class="g-row"><button class="g-btn" data-act="help" title="How to play (H)">How to play</button><button class="g-btn" data-act="new">New game</button></span>

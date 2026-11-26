@@ -5,6 +5,7 @@
 // the pure, deterministic sim/ (state.js: apply(env, state, action)). Contract: see games/host.js.
 // URL: #play=mainline~<scenario>.<seed>[.<home>]   Save: ctx.storage "save" (the whole state, after every action).
 // First-run tutorial: ctx.storage "tutorial" = the coach step (0..COACH_STEPS; COACH_STEPS = done or skipped).
+// Prefs: ctx.storage "prefs" = {showDemand, trains (default on), sound (default off)}. Trains and sound are view-only.
 import { loadCss } from "../shared/css.js";
 import { esc } from "../../format.js";
 import * as S from "./sim/index.js";
@@ -12,6 +13,7 @@ import { makeView } from "./view.js";
 import { pickerHtml, gameHtml, buildHtml, endHtml, shareText, contractText, COACH_STEPS } from "./panel.js";
 import { parseParam, formatParam } from "./params.js";
 import { shareImage } from "./share.js";
+import { makeSound } from "./sound.js";
 
 const envCache = new Map();
 
@@ -39,7 +41,8 @@ export async function start(ctx) {
   const game = {
     env: null, state: null, ev: null,
     sel: { start: null, end: null, hover: null, plan: null },
-    ui: { tab: "open", showDemand: prefs.showDemand !== false, highlight: null, hover: null, link: null, help: false, screen: "picker", coach: null },
+    ui: { tab: "open", showDemand: prefs.showDemand !== false, trains: prefs.trains !== false, sound: prefs.sound === true, motion: true,
+      highlight: null, hover: null, link: null, help: false, screen: "picker", coach: null },
     contractTip: (id) => {
       const c = game.env?.contractById.get(id);
       if (!c) return null;
@@ -49,6 +52,12 @@ export async function start(ctx) {
   };
   let touch = false;
   const view = makeView(ctx, game);
+  game.ui.motion = view.motionOk();
+  // sound: off by default; a remembered "on" creates no AudioContext until the player's first build or End turn
+  const sound = makeSound();
+  sound.setOn(game.ui.sound, { gesture: false });
+  ctx.onCleanup(() => sound.close());
+  const setPref = (k, v) => { prefs[k] = v; ctx.storage.set("prefs", prefs); };
   // debugging handle (like app.mapArt): the live game model, removed on exit
   app.mainline = game;
   ctx.onCleanup(() => { if (app.mainline === game) delete app.mainline; });
@@ -118,7 +127,11 @@ export async function start(ctx) {
   const model = () => ({ env: game.env, state: game.state, ev: game.ev, sum: S.summary(game.env, game.state), ui: game.ui, sel: game.sel, touch });
   function refreshBuild() {
     const el = body.querySelector("#ml-build");
-    if (el) el.innerHTML = buildHtml(model());
+    if (el) {
+      el.innerHTML = buildHtml(model());
+      // phones: the first tap previews; make sure its Build / Cancel buttons are in view even if the list was scrolled
+      if (touch && game.sel.end != null) el.scrollIntoView?.({ block: "nearest" });
+    }
     view.redraw();
   }
 
@@ -130,6 +143,7 @@ export async function start(ctx) {
     const servedBefore = game.ev?.served.size ?? 0;
     game.state = S.apply(game.env, game.state, action);
     if (action.type === "endTurn") afterTurn(before);
+    else if (action.type === "build") sound.play("build");
     if (game.ui.link && !game.state.links[game.ui.link]) game.ui.link = null;
     save();
     refresh();
@@ -161,6 +175,7 @@ export async function start(ctx) {
     const dmg = r.damaged ? `, ${r.damaged} link${r.damaged === 1 ? "" : "s"} damaged` : "";
     const debt = r.interest ? `, −${r.interest.toFixed(1)} interest` : "";
     ctx.toast(`${before.year}: +${r.revenue.toFixed(1)} cr freight, −${r.maint.toFixed(1)} upkeep${debt}${r.hits ? ` · ${r.hits} disaster${r.hits === 1 ? "" : "s"}${dmg}` : ""}`);
+    sound.play(r.damaged ? "disaster" : "turn");
     if (game.state.over) {
       game.ui.screen = "end";
       const sum = S.summary(game.env, game.state);
@@ -310,8 +325,17 @@ export async function start(ctx) {
     const t = e.target;
     if (t.matches('[data-act="demand"]')) {
       game.ui.showDemand = t.checked;
-      ctx.storage.set("prefs", { ...prefs, showDemand: t.checked });
+      setPref("showDemand", t.checked);
       view.refresh();
+    } else if (t.matches('[data-act="trains"]')) {
+      game.ui.trains = t.checked;
+      setPref("trains", t.checked);
+      view.syncTrains();
+    } else if (t.matches('[data-act="sound"]')) {
+      game.ui.sound = t.checked;
+      setPref("sound", t.checked);
+      sound.setOn(t.checked); // this change event is the user gesture that lets the AudioContext start
+      if (t.checked) sound.play("build");
     } else if (t.matches('input[name="ml-scn"]')) {
       for (const l of body.querySelectorAll(".ml-scn")) l.classList.toggle("on", l.contains(t));
       const h = body.querySelector(".ml-home");

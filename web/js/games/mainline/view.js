@@ -1,12 +1,21 @@
-// Map drawing for Mainline: static layers (cached with the map, re-rendered only when their sig() changes) and two
-// overlays for the build preview and highlights (drawn per frame, but frames only happen on input: nothing animates).
+// Map drawing for Mainline: static layers (cached with the map, re-rendered only when their sig() changes) and
+// overlays for the build preview, highlights and trains (drawn per frame; frames happen on input, plus the train loop).
 //
 //   region (z 59)   dims land outside the scenario's region (precomputed Path2D)
 //   links  (z 56.5) your built links: casing + colour by status, stations on connected metros; hover tooltips
 //   demand (z 84)   contract "desire lines" between the two ends (dashed = open, solid = served); hover tooltips
 //   overlays        world (z 95): route preview, start / hover hex, highlighted contract; screen (z 101): cost label
+//                   world (z 94): trains on served routes (trains.js), only while the train loop below runs
+//
+// Train loop: a requestAnimationFrame loop asks the engine for a frame at most TRAIN_FPS times a second. It runs only
+// while the Trains toggle is on, a game is in play (not over), something is served, the tab is visible and the user
+// has not asked for reduced motion; otherwise it stops and the trains overlay draws nothing. Exiting the game stops it
+// (ctx.onCleanup). Animation is view-only: it reads game.ev / game.state and never writes them.
 import { esc, money } from "../../format.js";
 import * as S from "./sim/index.js";
+import { buildRoutes, trainsAt } from "./trains.js";
+
+const TRAIN_FPS = 30;
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const cr = (x) => `${(Math.round(x * 10) / 10).toFixed(1)} cr`;
@@ -342,17 +351,96 @@ export function makeView(ctx, game) {
     },
   };
 
+  // --- trains (overlay only; never cached, never in the share image) ---
+  const reduceMotion = typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
+  let routesEv = null, routes = [];
+  function trainRoutes() {
+    // evaluate() makes a new ev on every action, so its identity is the cache key: rebuilt per network change only
+    if (routesEv !== game.ev) {
+      routesEv = game.ev;
+      routes = game.ev ? buildRoutes({ served: game.ev.served, links: game.state.links, express: game.state.express, cx: g.cx, cy: g.cy, minGap: g.R * 2.2 }) : [];
+    }
+    return routes;
+  }
+  /** Should trains move right now? */
+  function trainsOn() {
+    return !!(game.ui.trains && game.state && !game.state.over && game.ui.screen === "game" && game.ev?.served.size &&
+      !reduceMotion?.matches && (typeof document === "undefined" || document.visibilityState !== "hidden"));
+  }
+  const trainLayer = {
+    id: "trains", z: 94, space: "world", snapshot: false,
+    draw(c, cam) {
+      if (!trainsOn()) return;
+      const s = cam.scale;
+      const hw = cam.w / 2 / s, hh = cam.h / 2 / s, m = 20 / s;
+      const x0 = cam.x - hw - m, x1 = cam.x + hw + m, y0 = cam.y - hh - m, y1 = cam.y + hh + m;
+      const t = performance.now() / 1000;
+      // marker size in screen px, a little bigger zoomed in; drawn in world units
+      const L = clamp(4 + s * 1.5, 7, 13) / s, W = L * 0.48, r = W * 0.45;
+      c.lineWidth = 1.4 / s;
+      c.strokeStyle = "rgba(16,10,4,.9)";
+      for (const rt of trainRoutes()) {
+        c.fillStyle = rt.express ? "#bfe8ff" : "#ffe6b0";
+        for (const p of trainsAt(rt, t)) {
+          if (p.x < x0 || p.x > x1 || p.y < y0 || p.y > y1) continue;
+          c.save();
+          c.translate(p.x, p.y);
+          c.rotate(p.a);
+          c.beginPath();
+          if (c.roundRect) c.roundRect(-L / 2, -W / 2, L, W, r);
+          else c.rect(-L / 2, -W / 2, L, W);
+          c.fill();
+          c.stroke();
+          // a dark nose shows which way it runs
+          c.fillStyle = "rgba(40,24,8,.85)";
+          c.fillRect(L / 2 - L * 0.22, -W / 2 + c.lineWidth, L * 0.16, W - 2 * c.lineWidth);
+          c.restore(); // back to this route's fill
+        }
+      }
+    },
+  };
+
+  let raf = 0, lastTick = 0, wasOn = false;
+  function tick(now) {
+    raf = 0;
+    if (!trainsOn()) { syncTrains(); return; }
+    if (now - lastTick >= 1000 / TRAIN_FPS - 2) { lastTick = now; app.requestDraw(); }
+    raf = requestAnimationFrame(tick);
+  }
+  /** Start or stop the loop to match trainsOn(); cheap, so call it after anything that might change the answer. */
+  function syncTrains() {
+    const on = trainsOn();
+    if (on && !raf) raf = requestAnimationFrame(tick);
+    else if (!on && raf) { cancelAnimationFrame(raf); raf = 0; }
+    if (wasOn && !on) app.requestDraw(); // one more frame so the stopped trains disappear
+    wasOn = on;
+  }
+  const onVis = () => syncTrains();
+  if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVis);
+  reduceMotion?.addEventListener?.("change", onVis);
+  ctx.onCleanup(() => {
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVis);
+    reduceMotion?.removeEventListener?.("change", onVis);
+  });
+
   ctx.addLayer(regionLayer);
   ctx.addLayer(links);
   ctx.addLayer(demandLayer);
+  ctx.addOverlay(trainLayer);
   ctx.addOverlay(world);
   ctx.addOverlay(label);
 
   return {
-    redraw: () => app.requestDraw(),
+    redraw: () => { syncTrains(); app.requestDraw(); },
     /** Static layers changed (network, year, toggles): their sig() covers it, but make sure a frame runs. */
-    refresh: () => app.requestDraw(),
-    reset() { geoKey = ""; demandKey = ""; regionKey = ""; },
+    refresh: () => { syncTrains(); app.requestDraw(); },
+    reset() { geoKey = ""; demandKey = ""; regionKey = ""; routesEv = null; },
+    /** Re-check the train loop (after the Trains toggle changes). */
+    syncTrains,
+    /** Can trains animate at all here (false with prefers-reduced-motion)? */
+    motionOk: () => !reduceMotion?.matches,
     linkTip,
   };
 }

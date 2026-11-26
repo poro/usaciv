@@ -134,7 +134,7 @@ tests/js/         node --test for sim/ (Node is already here; still no npm and n
 | M2 | Demand | FAF and gravity contracts appear. Connected contracts pay out. Connected cities grow faster. A contract panel lists open and served contracts. |
 | M3 | Risk | Disasters are rolled from FEMA county rates. Links get damaged, repaired and hardened. Event cards quote the real rates. |
 | M4 | Win | Score against the baseline, an end screen with a share image, and three scenarios plus Sandbox. |
-| M5 | Feel | Train animation, sound (reuse the Web Audio approach from `web/dev/trailer/score.js`), a 3-step tutorial (✅ built), phone layout. |
+| M5 | Feel | Train animation (✅ built: `trains.js`, a 30 fps overlay loop that stops when idle, hidden, over or reduced-motion; Trains toggle), sound (✅ built: `sound.js`, off-by-default Web Audio blips for build, End turn and disasters), a 3-step tutorial (✅ built), phone layout (✅ first pass: shorter sheet, End turn pinned to its bottom, tabs fit 375px; check on devices). |
 | M6 | Power and fibre | The second and third network types, with power and talent contracts. |
 | Later | | AI rivals, co-op with an AI partner, the `game.json` builder, Alaska and Hawaii, the daily seed. |
 
