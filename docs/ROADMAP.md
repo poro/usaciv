@@ -49,12 +49,19 @@ The design notes for each game are in [GAME_PLAN.md](GAME_PLAN.md).
 
 ## Phase 1: single-player games (v0.1, playable): shipped 2026-11-26
 
-All three are live. Known gaps to close next: Founders' late-game materials pile up, Mainline's late-game cash has
-little to spend on and it has no share image, and Which Metro? small metros need their own name plate at the reveal.
+All three are live. Polished 2026-11-26: Mainline has upgrades, express services, a frontier grant for remote
+Sandbox homes, a share image and a tutorial; Founders has turn helpers and a tutorial, and hides the real cities
+fully; Which Metro? clues no longer give away the biggest metros, and landscape phones have a layout. Still open:
+Which Metro? small metros need their own name plate at the reveal.
 
 **Which Metro?** ✅ (smallest; first to be playable)
-- 5 rounds a day from a date seed. Clues are revealed one at a time (workforce figures → district mix → yields →
-  region), and fewer clues means more points. Guess with city search.
+- 5 rounds a day from a date seed. Clues are revealed one at a time (job mix in five groups → how people live →
+  size band and wealth per person → districts and industries → region), and fewer clues means more points. Guess
+  with city search.
+- No clue before the last shows absolute size (population is a band, yields are per 1,000 residents, industries
+  are shares of jobs), so the biggest metros are not given away by their counts. `tests/js/whichMetro.ambiguity.mjs`
+  measures how many metros each clue leaves plausible; a test keeps clue 1 from ever singling one out.
+- Landscape phones get the side dock (narrowed, controls pinned above the scrolling clues), not the bottom sheet.
 - Streaks and stats in localStorage. A spoiler-free share text (grid of squares).
 - Practice mode with a random seed.
 
@@ -64,6 +71,9 @@ little to spend on and it has no share image, and Which Metro? small metros need
   grow faster than their real trend.
 - Disasters rolled from real FEMA county rates. Damage, repair, hardening.
 - Score against baseline America, an end screen, scenarios (Texas Triangle, Rust to Rail, Western Grid, Sandbox).
+- Upgrades: double track, terminals (real ports and cargo airports), hardening per hazard, and express services (the
+  late-game project: passenger and express trains on all-double-track corridors that speed growth at every stop; a
+  game model). Sandbox homes with little freight nearby get a frontier grant (a game model for balance).
 
 **Founders** ✅
 - Start with one settler on real terrain. Hex output comes from real land cover, relief, rivers and resource sites.
@@ -74,8 +84,14 @@ little to spend on and it has no share image, and Which Metro? small metros need
 ## Phase 2: polish (v0.2)
 
 - Tutorials, sound, phone layout for every mode, share images of end screens (reuse `render/snapshot.js`).
-- Mainline: power and fibre networks; train animation (overlay only, only while playing).
+- Mainline: power and fibre networks; train animation (overlay only, only while playing). ✅ 3-step first-run
+  tutorial (lay track, serve a contract, end the turn; dismissable, replay from How to play).
 - Founders: more improvements, events, and a simple AI neighbour.
+- [x] Founders polish (2026-11-26): built-up hexes read and yield like the open land around them (sim/terrain.js
+  `openLand`; the cover layer redraws the engine's terrain art from it), so the hidden cities no longer show as flat,
+  empty patches; turn helpers for big countries (per-town Auto, R repeat last order, N next that needs orders, End
+  turn warns only when a party or spare materials sit idle; sim/auto.js); a three-step first-run tutorial, replayable
+  from How to play.
 - A `pipeline/build/game.py` builder for richer data: hundreds of FAF flows, per-hex hazard rates, per-hex build costs.
 
 ## Phase 3: accounts and multiplayer (v0.3+)

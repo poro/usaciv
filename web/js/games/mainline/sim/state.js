@@ -7,17 +7,18 @@
 //   v, scenario, home, seed, year (the year being played), over, cash (cr),
 //   links: {edgeKey: {a, b, cost, year, h (hardened: bitmask over events.HZ_TYPES), d (damaged 0|1),
 //          dt (double track 0|1)}}, nv (network version, bumps on change),
-//   hubs: {cityId: terminal level 1..HUB_MAX},
+//   hubs: {cityId: terminal level 1..HUB_MAX}, express: {contractId: year launched} (express services, express.js),
 //   cities, base: {cityId: {gdp, pop}}   (your world and baseline America),
-//   undo: [{cash, changes: [[key, previous link | null]], hubs?}]   (this turn only),
+//   undo: [{cash, changes: [[key, previous link | null]], hubs?, express?}]   (this turn only),
 //   events: [...]   (last turn's disaster cards), last: {...} (last turn's report), hist: [...] (one row per turn),
-//   totals: {revenue, potential, maint, built, repairs, hardening, upgrades, hits, damaged}, rng (uint32)
+//   totals: {revenue, potential, maint, built, repairs, hardening, upgrades, express, hits, damaged}, rng (uint32)
 // }
 //
 // endTurn order: disasters roll → freight revenue and upkeep on intact links → growth → next year.
 // actions: {type: "build", path: [cell, …]} · {type: "undo"} · {type: "repair", key} · {type: "repairAll"} ·
 //          {type: "harden", key, hz?} (one hazard type, or every one the link is exposed to) ·
 //          {type: "double", key} (double-track a link) · {type: "hub", city} (build or raise a terminal) ·
+//          {type: "express", id} (launch an express service on a served contract) · {type: "closeExpress", id} ·
 //          {type: "endTurn"}
 //
 // Upgrades are the late-game money sinks, and each answers a different question:
@@ -25,6 +26,9 @@
 //   terminals      +5/7/10% pay per level on contracts touching the metro (rail terminal / air cargo / port), and
 //                  +HUB_GROWTH GDP growth per level × the metro's network access; upkeep HUB_MAINT of the investment
 //   hardening      per hazard type, priced by that hazard's real FEMA rate in the link's counties
+//   express        passenger and express trains between two metros on an all-double-track route: a launch price and
+//                  a yearly operating cost buy GDP growth at both ends (a game model; see express.js). The late game's
+//                  project: it turns surplus cash into growth, and its upkeep keeps the cash honest.
 //
 // Determinism: every number that reaches cash, a comparison or a roll is either exact (+ − × ÷ sqrt on doubles) or
 // rounded to fixed decimals first (r1, fix), so engines that differ in the last digit of exp / log / pow agree.
@@ -35,6 +39,7 @@ import { accessShares, grow, PRODUCTIVITY, DEFAULT_POP_GROWTH } from "./growth.j
 import { rollDisasters, linkHazards, HZ_BIT, HZ_ALL, fix } from "./events.js";
 import { HUB_MAX } from "./env.js";
 import { regionGdp } from "./score.js";
+import { expressCost, expressUpkeep, corridorStatus, expressBonus } from "./express.js";
 
 export const SAVE_VERSION = 2;
 export const MAINT_RATE = 0.03; // of a link's build cost, every turn
@@ -57,11 +62,11 @@ export function newGame(env, { seed = 1 } = {}) {
   const rng = makeRng(seedFrom(`mainline:${env.scenario.id}:${env.home?.id}:${seed}`));
   return {
     v: SAVE_VERSION, scenario: env.scenario.id, home: env.home?.id ?? null, seed,
-    year: START_YEAR, over: false, cash: env.scenario.cash,
-    links: {}, nv: 0, hubs: {},
+    year: START_YEAR, over: false, cash: env.startCash ?? env.scenario.cash,
+    links: {}, nv: 0, hubs: {}, express: {},
     cities, base: structuredCopy(cities),
     undo: [], events: [], last: null, hist: [],
-    totals: { revenue: 0, potential: 0, maint: 0, built: 0, repairs: 0, hardening: 0, upgrades: 0, hits: 0, damaged: 0 },
+    totals: { revenue: 0, potential: 0, maint: 0, built: 0, repairs: 0, hardening: 0, upgrades: 0, express: 0, hits: 0, damaged: 0 },
     rng: rng.state,
   };
 }
@@ -75,11 +80,11 @@ function structuredCopy(world) {
 /** A save from an older version, brought up to date (or null if it cannot be). v1 hardening covered every hazard. */
 export function migrate(s) {
   if (!s || typeof s !== "object" || !s.links || !s.cities || !s.base) return null;
-  if (s.v === SAVE_VERSION) return s;
+  if (s.v === SAVE_VERSION) return s.express ? s : { ...s, express: {} }; // saves from before express services
   if (s.v !== 1) return null;
   const links = {};
   for (const [k, l] of Object.entries(s.links)) links[k] = { ...l, h: l.h ? HZ_ALL : 0, dt: 0 };
-  return { ...s, v: SAVE_VERSION, links, hubs: {}, totals: { upgrades: 0, ...s.totals } };
+  return { ...s, v: SAVE_VERSION, links, hubs: {}, express: {}, totals: { upgrades: 0, ...s.totals } };
 }
 
 export const repairCost = (env, l) => r1(Math.max(0.5, REPAIR_RATE * env.edgeCost(l.a, l.b)));
@@ -105,6 +110,7 @@ export const maintenance = (state, env = null) => {
   let s = 0;
   for (const l of Object.values(state.links)) s += Math.max(0.05, MAINT_RATE * l.cost) * (l.dt ? DOUBLE_MAINT : 1);
   if (env) for (const [id, lv] of Object.entries(state.hubs || {})) s += HUB_MAINT * hubInvested(env, id, lv);
+  if (env) s += expressUpkeep(env, state.express);
   return r1(s);
 };
 /** Metros with a station: a hex of the city is on your network. */
@@ -211,6 +217,18 @@ export function check(env, state, action) {
       if (!city.cells.some((x) => net.has(x))) return `Connect ${city.name} to your network first`;
       return c > state.cash + 1e-9 ? `Not enough money: ${c} cr needed` : null;
     }
+    case "express": {
+      const c = env.contractById.get(action.id);
+      if (!c) return "No such contract";
+      if (state.express?.[action.id]) return "Express already runs there";
+      const served = serveContracts(env, networkGraph(env, state.links, { intactOnly: true }), growthOf(env, state), state.hubs);
+      const st = corridorStatus(env, state.links, served, action.id);
+      if (!st.ok) return st.why;
+      const cost = expressCost(c);
+      return cost > state.cash + 1e-9 ? `Not enough money: ${cost} cr needed` : null;
+    }
+    case "closeExpress":
+      return state.express?.[action.id] ? null : "No express runs there";
     case "repairAll": {
       const dmg = Object.values(state.links).filter((l) => l.d);
       if (!dmg.length) return "Nothing is damaged";
@@ -282,6 +300,21 @@ export function apply(env, state, action) {
         undo: [...state.undo, { cash: state.cash, changes: [], hubs: state.hubs, what: "hub", totals: state.totals }],
       };
     }
+    case "express": case "closeExpress": {
+      const express = { ...(state.express || {}) };
+      let cash = state.cash;
+      const t = { ...state.totals };
+      if (action.type === "express") {
+        const cost = expressCost(env.contractById.get(action.id));
+        express[action.id] = state.year;
+        cash = r1(cash - cost);
+        t.express = r1((t.express || 0) + cost);
+      } else delete express[action.id];
+      return {
+        ...state, express, nv: state.nv + 1, cash, totals: t,
+        undo: [...state.undo, { cash: state.cash, changes: [], express: state.express || {}, what: action.type, totals: state.totals }],
+      };
+    }
     case "repairAll": {
       // cheapest first, as many as the money allows
       const dmg = Object.keys(state.links).filter((k) => state.links[k].d).sort((x, y) => repairCost(env, state.links[x]) - repairCost(env, state.links[y]) || (x < y ? -1 : 1));
@@ -310,7 +343,7 @@ export function apply(env, state, action) {
         else delete links[key];
       }
       return {
-        ...state, links, hubs: u.hubs || state.hubs, nv: state.nv + 1, cash: u.cash, undo: state.undo.slice(0, -1), totals: u.totals || state.totals,
+        ...state, links, hubs: u.hubs || state.hubs, express: u.express || state.express, nv: state.nv + 1, cash: u.cash, undo: state.undo.slice(0, -1), totals: u.totals || state.totals,
       };
     }
     case "endTurn":
@@ -378,7 +411,8 @@ function endTurn(env, state) {
   const cash = r1(state.cash + revenue - maint - interest);
   // 3. growth: baseline on trend, your metros with the access bonus of the intact network
   const access = accessShares(env, ev.graph);
-  const cities = grow(env, state.cities, access, state.hubs);
+  const extra = expressBonus(env, hit.links, ev.served, state.express, state.cities);
+  const cities = grow(env, state.cities, access, state.hubs, extra);
   const base = grow(env, state.base, null);
   const damaged = roll.events.reduce((s, e) => s + e.damaged, 0);
   const you = regionGdp(env, cities), bl = regionGdp(env, base);

@@ -6,7 +6,7 @@
 import { makeHexMap } from "../../shared/hexmap.js";
 import { scenarioById } from "./scenarios.js";
 import { riverCrossings, realRail, costTable } from "./costs.js";
-import { buildContracts } from "./contracts.js";
+import { buildContracts, payFor } from "./contracts.js";
 import { hazardTable } from "./events.js";
 import { yearlyRate, partnerWeights } from "./growth.js";
 
@@ -35,6 +35,27 @@ function hubSites(env, infrastructure) {
     out.set(c.id, { kind, name, detail, rate: HUB_KIND[kind].rate, base });
   }
   return out;
+}
+
+/**
+ * Sandbox's frontier grant, a game model for balance. A remote home (the West, the Florida peninsula) has few, small
+ * flows within reach, so the same budget buys a network that earns a third of what an Ohio Valley one does and never
+ * compounds (diagnosed with the bot: Phoenix, Seattle and Denver missed the goal on 240 cr and cleared it on 300+).
+ * The grant tops up the start: market = the full pay of every contract with both ends within grant.km of home;
+ * grant = max × (1 − market ÷ ref), at least 0. It echoes the 1862 Pacific Railway Act, which backed the first
+ * transcontinental line with federal bonds per mile. → {market, grant, startCash}
+ */
+export function frontierGrant(env) {
+  const g = env.scenario.grant;
+  const startCash = env.scenario.cash;
+  if (!g || !env.home) return { market: null, grant: 0, startCash };
+  let market = 0;
+  for (const c of env.contracts) {
+    if (env.km(env.home.cell, c.a.cell) < g.km && env.km(env.home.cell, c.b.cell) < g.km) market += payFor(c.value, 1, c.km);
+  }
+  market = Math.round(market * 10) / 10;
+  const grant = Math.round(g.max * Math.max(0, 1 - market / g.ref));
+  return { market, grant, startCash: startCash + grant };
 }
 
 export const DEFAULT_GDP_PER_HEAD = 75000; // only for a city with no BEA GDP (none today)
@@ -98,6 +119,9 @@ export function makeEnv(data, scenarioId, { home = null, hexmap = null } = {}) {
     c.cells = (c.footprint || [c.cell]).filter((x) => region[x] === 1);
     if (!c.cells.includes(c.cell)) c.cells.push(c.cell);
   }
+  // hex → the region metro whose footprint holds it (the biggest, if two overlap): express stations
+  const cellMetro = new Map();
+  cities.forEach((c, i) => { for (const x of c.cells) if (!cellMetro.has(x)) cellMetro.set(x, i); });
   const homeId = scenario.home || home || cities[0]?.id;
   const homeCity = cities.find((c) => c.id === homeId) || cities[0];
 
@@ -118,6 +142,7 @@ export function makeEnv(data, scenarioId, { home = null, hexmap = null } = {}) {
   const env = {
     scenario, world, hexmap, km, cityById, trade: data.trade, region, inRegion, bbox, ext,
     cities, cityIdx: new Map(cities.map((c, k) => [c.id, k])), home: homeCity,
+    cellMetro,
     rivers: riverCache.get(world),
     rail: realRail(data.infrastructure, hexmap),
     hazard: hazardTable(world, data.disasters),
@@ -130,6 +155,7 @@ export function makeEnv(data, scenarioId, { home = null, hexmap = null } = {}) {
   };
   env.contracts = buildContracts(env, { models: scenario.models });
   env.contractById = new Map(env.contracts.map((c) => [c.id, c]));
+  Object.assign(env, frontierGrant(env));
   env.partners = partnerWeights(env);
   env.homeCells = new Set(homeCity ? homeCity.cells : []);
   env.hubs = hubSites(env, data.infrastructure);

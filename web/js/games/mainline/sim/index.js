@@ -11,4 +11,7 @@ export { TYPE_NAME, HZ_TYPES, linkHazards } from "./events.js";
 export { greedyTurn } from "./bot.js";
 export { payFor, DOUBLE_BONUS } from "./contracts.js";
 export { HUB_GROWTH } from "./growth.js";
+export {
+  corridors, corridorStatus, expressCost, expressOps, EXPRESS_GROWTH, EXPRESS_CAP, EXPRESS_OPS,
+} from "./express.js";
 export { stateHash } from "./hash.js";

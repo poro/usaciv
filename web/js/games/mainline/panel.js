@@ -22,7 +22,35 @@ export const HOW_TO = `<ol class="ml-how">
   <li><b>Spend the surplus.</b> Double-track busy links (+${Math.round(S.DOUBLE_BONUS * 100)}% pay on routes over them) and
   build terminals in connected metros (the <i>Terminals</i> tab): a real port or cargo airport pays the most, and every
   level speeds the metro's growth.</li>
+  <li><b>Run express trains.</b> Once a served contract's whole route is double track, launch passenger and express
+  service on it (the <i>Express</i> tab). It costs a launch price and a yearly operating cost, and speeds the growth of
+  every metro it stops at: the late game's way to turn cash into growth. Its growth effect is a game model.</li>
 </ol>`;
+
+/** The first-run coach: three short steps (index.js moves them on as you play). */
+const COACH = [
+  (m) => `<b>Lay track.</b> Click a hex in <b>${esc(m.env.home?.name || "your home metro")}</b> (the gold station), then a hex
+    toward another city: rail follows the cheapest route. The box below previews the cost before you build. Hills,
+    mountains, cities, wetland and river crossings cost more; upgrading a real rail line costs much less.`,
+  (m) => `${m.ev.served.size ? `<span class="ml-good">${m.ev.served.size} contract${m.ev.served.size === 1 ? "" : "s"} served.</span> ` : ""}<b>Serve a contract.</b>
+    A contract pays every year once your track joins <i>both</i> of its cities. Click one in the Open list to see its ends
+    on the map, then lay track to them.`,
+  (m) => `<b>End the turn.</b> Press <b>End ${m.state.year}</b> (or <kbd>E</kbd>): contracts pay, disasters roll, metros grow.
+    Keep going to 2050 and beat baseline America.`,
+];
+export const COACH_STEPS = COACH.length;
+
+function coachHtml(m) {
+  const k = m.ui.coach;
+  if (k == null || k >= COACH.length || !COACH[k]) return "";
+  return `<div class="ml-coach" role="note">
+    <div class="g-row"><span class="ml-coach-n">Tutorial ${k + 1} of ${COACH.length}</span>
+      <button class="icon-btn ml-x" data-act="coachSkip" aria-label="Skip the tutorial" title="Skip the tutorial">✕</button></div>
+    <p>${COACH[k](m)}</p>
+    <div class="g-row"><button class="g-btn" data-act="coachNext">${k + 1 < COACH.length ? "Next" : "Got it"}</button>
+      <button class="g-btn ml-link-btn" data-act="coachSkip">Skip tutorial</button></div>
+  </div>`;
+}
 
 const HZ_ICON = { hurricane: "🌀", flood: "🌊", fire: "🔥", severe_storm: "⛈️", winter: "❄️", other: "⚠️" };
 
@@ -59,20 +87,22 @@ export function gameHtml(m) {
   const dmg = Object.keys(state.links).filter((k) => state.links[k].d);
   const repairAll = dmg.reduce((s, k) => s + S.repairCost(env, state.links[k]), 0);
   return `
-  ${ui.help ? `<div class="ml-helpbox"><div class="g-row"><b>How to play</b><button class="icon-btn ml-x" data-act="help" aria-label="Close">✕</button></div>${HOW_TO}<button class="g-btn primary" data-act="help">Got it</button></div>` : ""}
+  ${ui.help ? `<div class="ml-helpbox"><div class="g-row"><b>How to play</b><button class="icon-btn ml-x" data-act="help" aria-label="Close">✕</button></div>${HOW_TO}<div class="g-row"><button class="g-btn primary" data-act="help">Got it</button><button class="g-btn" data-act="coachReplay">Replay the tutorial</button></div></div>` : ""}
+  ${coachHtml(m)}
   <div class="ml-top">
     <div class="ml-year"><b>${state.year}</b><span>turn ${turn} of 25</span></div>
     <div class="g-stat" title="${esc(crTitle(state.cash))}${state.cash < 0 ? esc(` · in debt: ${Math.round(S.DEBT_RATE * 100)}% interest a year, nothing but repairs until it is paid off`) : ""}"><b class="${state.cash < 0 ? "ml-bad" : ""}">${cr(state.cash)}</b><span>${state.cash < 0 ? "debt" : "cash"}</span></div>
     <div class="g-stat" title="${esc(`Freight revenue ${cr(ev.revenue)} minus upkeep ${cr(ev.maint)} a year, at today's network`)}"><b class="${net >= 0 ? "ml-good" : "ml-bad"}">${net >= 0 ? "+" : "−"}${Math.abs(net).toFixed(1)}</b><span>per year</span></div>
   </div>
   <div class="g-row ml-actions">
-    <button class="g-btn primary" data-act="end" title="End the year (E)">End ${state.year} <kbd>E</kbd></button>
+    <button class="g-btn primary${ui.coach === 2 ? " ml-pulse" : ""}" data-act="end" title="End the year (E)">End ${state.year} <kbd>E</kbd></button>
     <button class="g-btn" data-act="undo" ${state.undo.length ? "" : "disabled"} title="Undo the last build, repair or hardening this turn (Z)">Undo <kbd>Z</kbd></button>
   </div>
   <div class="ml-goal" title="${esc(`Your region's metros: ${money(sum.you)} GDP; baseline America (same metros, real trend, no network): ${money(sum.base)}. Goal: ${signed(sum.goal)} by 2050.`)}">
     <div class="ml-goal-txt"><span>GDP vs baseline America</span><b class="${sum.uplift >= sum.goal ? "ml-good" : ""}">${signed(sum.uplift, 2)}</b><span class="muted">goal ${signed(sum.goal)}</span></div>
     <div class="ml-bar"><i style="width:${(goalPct * 100).toFixed(1)}%"></i><em style="left:${(goalMark * 100).toFixed(1)}%"></em></div>
   </div>
+  ${env.grant && state.year === S.START_YEAR ? `<div class="g-note ml-grant" title="${esc(`Contracts with both ends within ${env.scenario.grant.km} km of ${env.home?.name} pay ${env.market} cr a year in all; the grant tops up homes below ${env.scenario.grant.ref}.`)}">Frontier grant: <b>+${env.grant} cr</b> at the start, because ${esc(env.home?.name || "your home")} has little freight within ${env.scenario.grant.km} km. A game model for balance, after the 1862 Pacific Railway Act's federal bonds.</div>` : ""}
   <div id="ml-build" class="ml-build">${buildHtml(m)}</div>
   ${ui.link && state.links[ui.link] ? linkHtml(m) : ""}
   ${eventsHtml(state)}
@@ -161,6 +191,34 @@ function hubsHtml(m) {
   return `<ul class="ml-contracts ml-hubs">${rows}</ul>`;
 }
 
+function expressHtml(m) {
+  const { env, state, ev } = m;
+  const list = S.corridors(env, state, ev.served);
+  const intro = `<li class="g-note ml-xnote">Passenger and express trains between metros on an all-double-track route. Each
+    stop grows up to ${(S.EXPRESS_GROWTH * 100).toFixed(1)}% a year faster (more when the other stops are big; at most
+    ${(S.EXPRESS_CAP * 100).toFixed(1)}% a metro), for a launch price and ${Math.round(S.EXPRESS_OPS * 100)}% of it a year
+    in upkeep. The growth effect is a game model, not a forecast.</li>`;
+  if (!list.length) return `<ul class="ml-contracts ml-hubs">${intro}<li class="muted ml-empty">Serve a contract between two metros first.</li></ul>`;
+  const rows = list.map((k) => {
+    const dc = k.keys.reduce((t, key) => t + (state.links[key] && !state.links[key].d ? S.doubleCost(env, state.links[key]) : 0), 0);
+    const tip = `${k.a.name} ↔ ${k.b.name}: ${k.stops} metro${k.stops === 1 ? "" : "s"} with a station on the route. At today's sizes about ${money(k.gain)} more GDP a year before the per-metro cap (a game model). Launch ${cr(k.cost)}, upkeep ${cr(k.ops)} a year.`;
+    let right;
+    if (k.on) {
+      right = `${k.ok ? `<span class="ml-good">running</span>` : `<span class="ml-bad" title="${esc(k.why || "")}">suspended</span>`}
+        <button class="icon-btn ml-x" data-act="closeExpress" data-id="${esc(k.id)}" title="Close this service (no refund)" aria-label="Close">✕</button>`;
+    } else if (k.ok) {
+      right = `<button class="g-btn ml-hubbtn" data-act="express" data-id="${esc(k.id)}" ${k.cost > state.cash ? "disabled" : ""} title="${esc(`${crTitle(k.cost)}; then ${cr(k.ops)} a year`)}">Launch ${k.cost.toFixed(0)}</button>`;
+    } else if (k.keys.length) {
+      right = `<button class="g-btn ml-hubbtn" data-act="dtroute" data-id="${esc(k.id)}" ${dc > state.cash ? "disabled" : ""} title="${esc(`Double-track the ${k.keys.length} single-track link${k.keys.length === 1 ? "" : "s"} left on the route: ${crTitle(dc)}`)}">2× track ${dc.toFixed(0)}</button>`;
+    } else right = `<span class="muted" title="${esc(k.why || "")}">blocked</span>`;
+    return `<li class="ml-xrow${k.on ? " served" : ""}" title="${esc(tip)}">
+      <span class="ml-kind ${k.c.kind}">${k.c.kind === "faf" ? "FAF" : "model"}</span>
+      <span class="ml-cname">${esc(k.a.name)} ↔ ${esc(k.b.name)}<small class="muted"> · ${k.stops} stops, +${money(k.gain)}/yr${k.on || k.ok ? "" : ` · ${k.keys.length} single`}</small></span>
+      <span class="ml-xact">${right}</span></li>`;
+  }).join("");
+  return `<ul class="ml-contracts ml-hubs">${intro}${rows}</ul>`;
+}
+
 function eventsHtml(state) {
   if (!state.events?.length || !state.last) return "";
   const cards = state.events.map((e) => `<div class="ml-card hz-${esc(e.type)}">
@@ -196,12 +254,14 @@ function contractsHtml(m) {
       <span class="ml-pay ${s ? "ml-good" : ""}">${s ? "+" : ""}${pay.toFixed(1)}${boost > 1.005 ? `<small title="Double track and terminals: ×${boost.toFixed(2)}">×${boost.toFixed(2)}</small>` : ""}</span></li>`;
   }).join("");
   const nHubs = Object.values(state.hubs || {}).reduce((a, b) => a + b, 0);
+  const nExp = Object.keys(state.express || {}).length;
   return `<div class="ml-tabs" role="tablist">
       <button role="tab" data-act="tab" data-tab="open" aria-selected="${tab === "open"}">Open (${open.length})</button>
       <button role="tab" data-act="tab" data-tab="served" aria-selected="${tab === "served"}">Served (${served.length})</button>
       <button role="tab" data-act="tab" data-tab="hubs" aria-selected="${tab === "hubs"}">Terminals${nHubs ? ` (${nHubs})` : ""}</button>
-      <span class="g-note">${tab === "hubs" ? "level · cost cr" : "value · cr / yr"}</span></div>
-    ${tab === "hubs" ? hubsHtml(m) : `<ul class="ml-contracts">${rows || `<li class="muted ml-empty">${tab === "served" ? "Nothing served yet." : "Every contract is served."}</li>`}</ul>`}`;
+      <button role="tab" data-act="tab" data-tab="express" aria-selected="${tab === "express"}">Express${nExp ? ` (${nExp})` : ""}</button>
+      <span class="g-note">${tab === "hubs" ? "level · cost cr" : tab === "express" ? "stops · cost cr" : "value · cr / yr"}</span></div>
+    ${tab === "hubs" ? hubsHtml(m) : tab === "express" ? expressHtml(m) : `<ul class="ml-contracts">${rows || `<li class="muted ml-empty">${tab === "served" ? "Nothing served yet." : "Every contract is served."}</li>`}</ul>`}`;
 }
 
 /** Plain-text description of a contract (native title tooltips and the map tooltip). */
@@ -244,6 +304,7 @@ export function endHtml(m, best) {
     <table class="ml-table"><tr><th>Region</th><td colspan="3">${money(sum.you)} with your network vs ${money(sum.base)} baseline (${env.cities.length} metros)</td></tr>
       <tr><th>Freight</th><td colspan="3">${cr(state.totals.revenue)} earned (≈ ${usd(state.totals.revenue)}), ${links} links built for ${cr(state.totals.built)}</td></tr>
       <tr><th>Upgrades</th><td colspan="3">${cr(state.totals.upgrades || 0)} on double track and terminals, ${cr(state.totals.hardening)} on hardening</td></tr>
+      <tr><th>Express</th><td colspan="3">${Object.keys(state.express || {}).length} service${Object.keys(state.express || {}).length === 1 ? "" : "s"} launched for ${cr(state.totals.express || 0)}; ${cr(state.cash)} left unspent</td></tr>
       <tr><th>Resilience</th><td colspan="3">${pct(sum.resilience, 0)} of possible revenue survived ${state.totals.hits} disasters (${state.totals.damaged} links damaged)</td></tr></table>
     <div class="g-section">By state</div>
     <table class="ml-table ml-states"><tr><th></th><th>You</th><th>Baseline</th><th>Δ</th></tr>${rows}</table>
@@ -253,8 +314,9 @@ export function endHtml(m, best) {
       <button class="g-btn" data-act="share">Copy result</button>
       <button class="g-btn" data-act="image">Download image</button>
     </div>
-    <p class="g-note">Score = GDP uplift in basis points + credits earned ÷ 10, scaled by resilience. Growth bonuses and
-    model contracts are game models; FAF flows, metro trends and FEMA rates are real data.</p>
+    <p class="g-note">Score = GDP uplift in basis points + credits earned ÷ 10, scaled by resilience. Growth bonuses,
+    express services, the frontier grant and model contracts are game models; FAF flows, metro trends and FEMA rates are
+    real data.</p>
   </div>`;
 }
 

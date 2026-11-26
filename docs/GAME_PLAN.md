@@ -51,6 +51,10 @@ resiliently than the "baseline America" that simply keeps its current growth.
      **upgrade** at a discount: a real rail link costs much less to double-track than building in open country.
    - **Hubs**: upgrade a real port or airport, or build a terminal in a city hex.
    - **Hardening** a link or hub against one hazard type (levees, firebreaks, buried lines).
+   - **Express service** (built): passenger and express trains on a served contract between two metros once its whole
+     route is double track. A launch price plus a yearly operating cost buy faster GDP growth at every metro the
+     route stops at (more when the other stops are big, capped per metro). It is the late-game project that turns
+     surplus cash into growth, and its upkeep keeps cash tight. The growth effect is a game model and is labelled so.
 3. **Demand resolves.** Contracts whose two ends are connected by your network deliver. Their pay scales with the
    real flow value and drops with path length against the straight-line distance (detours cost).
 4. **Growth.** Every city grows along its real 2021–2025 trend (`growth`). Cities on your network grow faster: a
@@ -82,7 +86,10 @@ resiliently than the "baseline America" that simply keeps its current growth.
   - *Texas Triangle*: Houston, Dallas, San Antonio and Austin, with hurricane risk.
   - *Rust to Rail*: rebuild Great Lakes freight with cheap upgrades of old rail.
   - *Western Grid*: wire Southwest solar and Pacific Northwest hydro to cities through mountains.
-  - *Sandbox*: the whole lower 48.
+  - *Sandbox*: the whole lower 48. A home with little freight within 900 km (the West, the Florida peninsula) starts
+    with a **frontier grant** of up to 240 cr, scaled by how far its local market falls short (a game model for
+    balance, after the 1862 Pacific Railway Act's bonds). Without it, Phoenix, Seattle and Denver missed the 1% goal:
+    their few, small nearby flows meant the starting network earned a third of an eastern one and never compounded.
   - *Daily*: a seeded scenario that everyone plays the same day (the seed is in the URL hash).
 
 ### Later: rivals and co-op
@@ -127,7 +134,7 @@ tests/js/         node --test for sim/ (Node is already here; still no npm and n
 | M2 | Demand | FAF and gravity contracts appear. Connected contracts pay out. Connected cities grow faster. A contract panel lists open and served contracts. |
 | M3 | Risk | Disasters are rolled from FEMA county rates. Links get damaged, repaired and hardened. Event cards quote the real rates. |
 | M4 | Win | Score against the baseline, an end screen with a share image, and three scenarios plus Sandbox. |
-| M5 | Feel | Train animation, sound (reuse the Web Audio approach from `web/dev/trailer/score.js`), a 3-step tutorial, phone layout. |
+| M5 | Feel | Train animation, sound (reuse the Web Audio approach from `web/dev/trailer/score.js`), a 3-step tutorial (✅ built), phone layout. |
 | M6 | Power and fibre | The second and third network types, with power and talent contracts. |
 | Later | | AI rivals, co-op with an AI partner, the `game.json` builder, Alaska and Hawaii, the daily seed. |
 

@@ -14,7 +14,7 @@ export const SCENARIOS = [
     blurb: "Houston, Dallas, San Antonio and Austin: four fast-growing metros, Gulf freight and hurricane country.",
     home: "26420", // Houston
     cash: 70,
-    goal: 0.04,
+    goal: 0.045,
     states: ["TX", "LA", "OK"],
     bounds: { cities: ["26420", "19100", "41700", "12420", "35380", "36420"], padKm: 110 },
     models: 26,
@@ -25,7 +25,7 @@ export const SCENARIOS = [
     blurb: "Rebuild Great Lakes freight from Chicago. Old rail is everywhere, so upgrades are cheap; winters and floods are not.",
     home: "16980", // Chicago
     cash: 80,
-    goal: 0.05,
+    goal: 0.055,
     states: ["IL", "IN", "MI", "OH", "WI", "PA", "IA"],
     bounds: { cities: ["16980", "19820", "18140", "38300", "17410", "33340", "26900", "19780"], padKm: 90 },
     models: 20,
@@ -36,7 +36,7 @@ export const SCENARIOS = [
     blurb: "The densest freight market in the country, from Washington to Boston. Every hex is expensive and the coast floods.",
     home: "35620", // New York
     cash: 70,
-    goal: 0.053,
+    goal: 0.058,
     states: ["VA", "DC", "MD", "DE", "PA", "NJ", "NY", "CT", "RI", "MA", "NH", "VT"],
     bounds: { cities: ["47900", "12580", "37980", "35620", "25540", "39300", "14460"], padKm: 90 },
     models: 16,
@@ -52,6 +52,9 @@ export const SCENARIOS = [
     bounds: null,
     models: 45,
     homeModels: 5, // plus the home metro's five best partners, whatever home you pick
+    // frontier grant (a game model, for balance): a home with little freight within `km` starts with up to `max` cr
+    // more, scaled by how far its local market falls short of `ref` cr a year of contract pay (see env.js)
+    grant: { max: 240, ref: 75, km: 900 },
   },
 ];
 

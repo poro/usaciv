@@ -7,6 +7,7 @@ import { linkCost, cellFactor, RAIL_DISCOUNT } from "../../web/js/games/mainline
 import { rollDisasters, HZ_ALL } from "../../web/js/games/mainline/sim/events.js";
 import { makeRng } from "../../web/js/games/shared/rng.js";
 import { parseParam, formatParam } from "../../web/js/games/mainline/params.js";
+import { gameHtml, COACH_STEPS } from "../../web/js/games/mainline/panel.js";
 
 const R = (n) => JSON.parse(readFileSync(new URL(`../../web/data/${n}.json`, import.meta.url)));
 const data = { world: R("world"), cities: R("cities"), trade: R("trade"), infrastructure: R("infrastructure"), disasters: R("disasters") };
@@ -213,6 +214,81 @@ test("double track and terminals raise pay; terminals need a station; undo resto
   assert.equal(u.cash, s.cash);
 });
 
+test("express service: needs an all-double-track route, costs launch + upkeep, speeds growth at its stops", () => {
+  const e = env("texas");
+  let s = { ...S.newGame(e, { seed: 3 }), cash: 2000 };
+  s = S.apply(e, s, { type: "build", path: S.plan(e, s, e.home.cell, e.cityById.get("19100").cell).path });
+  const id = [...S.evaluate(e, s).served.keys()].find((k) => {
+    const c = e.contractById.get(k);
+    return [c.a.name, c.b.name].sort().join() === "Dallas,Houston";
+  });
+  assert.ok(id, "Houston–Dallas is served");
+  assert.match(S.check(e, s, { type: "express", id }), /single track/);
+  const k0 = S.corridors(e, s, S.evaluate(e, s).served).find((k) => k.id === id);
+  assert.ok(k0.keys.length > 0 && k0.stops >= 2 && k0.gain > 0 && !k0.ok);
+  // double-track the route, then launch
+  let d = s;
+  for (const key of k0.keys) d = S.apply(e, d, { type: "double", key });
+  assert.equal(S.check(e, d, { type: "express", id }), null);
+  const x = S.apply(e, d, { type: "express", id });
+  assert.equal(x.cash, Math.round((d.cash - S.expressCost(e.contractById.get(id))) * 10) / 10);
+  assert.equal(x.totals.express, S.expressCost(e.contractById.get(id)));
+  assert.ok(Math.abs(S.evaluate(e, x).maint - S.evaluate(e, d).maint - S.expressOps(e.contractById.get(id))) < 0.11, "operating cost is upkeep");
+  assert.match(S.check(e, x, { type: "express", id }), /already/);
+  // a year later both end metros are bigger than without it; the rest of the region is not
+  const g1 = S.apply(e, x, { type: "endTurn" }), g0 = S.apply(e, d, { type: "endTurn" });
+  for (const c of ["26420", "19100"]) assert.ok(g1.cities[c].gdp > g0.cities[c].gdp, `${c} grows faster`);
+  assert.equal(g1.cities["41700"].gdp, g0.cities["41700"].gdp, "San Antonio is not on it");
+  assert.equal(g1.base["26420"].gdp, g0.base["26420"].gdp, "baseline America never changes");
+  // a cut link suspends it: no extra growth that year (upkeep still runs)
+  const cut = { ...x, links: Object.fromEntries(Object.entries(x.links).map(([k, l]) => [k, k0.keys.includes(k) ? { ...l, d: 1 } : l])) };
+  const cutD = { ...d, links: cut.links };
+  assert.equal(S.apply(e, cut, { type: "endTurn" }).cities["26420"].gdp, S.apply(e, cutD, { type: "endTurn" }).cities["26420"].gdp);
+  // undo and close
+  const u = S.apply(e, x, { type: "undo" });
+  assert.deepEqual(u.express, {});
+  assert.equal(u.cash, d.cash);
+  const closed = S.apply(e, x, { type: "closeExpress", id });
+  assert.deepEqual(closed.express, {});
+  assert.equal(closed.cash, x.cash, "no refund");
+  assert.match(S.check(e, closed, { type: "closeExpress", id }), /No express/);
+  // a contract whose end has no metro cannot carry one
+  const zone = e.contracts.find((c) => c.kind === "faf" && (!c.a.cities.some((i) => e.cityIdx.has(i)) || !c.b.cities.some((i) => e.cityIdx.has(i))));
+  if (zone) assert.match(S.check(e, x, { type: "express", id: zone.id }), /metro at both ends|not served/);
+});
+
+test("Sandbox frontier grant: remote homes start with more, the freight core with none", () => {
+  const phx = env("sandbox", "38060"), ny = env("sandbox", "35620"), chi = env("sandbox", "16980");
+  assert.ok(phx.grant > 50 && phx.grant <= phx.scenario.grant.max, `Phoenix grant ${phx.grant}`);
+  assert.equal(ny.grant, 0);
+  assert.equal(chi.grant, 0);
+  assert.equal(S.newGame(phx, { seed: 1 }).cash, phx.scenario.cash + phx.grant);
+  assert.equal(env("texas").grant, 0, "scenarios with a fixed home have no grant");
+  assert.equal(S.newGame(env("texas"), { seed: 1 }).cash, S.scenarioById("texas").cash);
+});
+
+test("balance: Sandbox is winnable from western and eastern homes alike", () => {
+  // Phoenix, Seattle and Denver missed the 1% goal before the frontier grant
+  for (const home of ["38060", "42660", "19740", "31080", "12060", "16980"]) {
+    const e = env("sandbox", home);
+    const g = S.summary(e, run(e, 1, S.greedyTurn));
+    assert.ok(g.beat, `${e.home.name}: bot ${(g.uplift * 100).toFixed(2)}% vs ${(e.scenario.goal * 100).toFixed(1)}%`);
+  }
+});
+
+test("first-run tutorial: three coach steps in the panel", () => {
+  const e = env("texas");
+  const s = S.newGame(e, { seed: 1 });
+  const m = (coach) => ({ env: e, state: s, ev: S.evaluate(e, s), sum: S.summary(e, s), ui: { tab: "open", coach }, sel: { start: null }, touch: false });
+  assert.equal(COACH_STEPS, 3);
+  assert.match(gameHtml(m(0)), /Tutorial 1 of 3[\s\S]*Lay track/);
+  assert.match(gameHtml(m(1)), /Tutorial 2 of 3[\s\S]*both/);
+  assert.match(gameHtml(m(2)), /Tutorial 3 of 3[\s\S]*End 2026/);
+  assert.match(gameHtml(m(2)), /ml-pulse/);
+  assert.doesNotMatch(gameHtml(m(null)), /Tutorial/);
+  assert.match(gameHtml({ ...m(null), ui: { tab: "open", coach: null, help: true } }), /data-act="coachReplay"/);
+});
+
 test("repairs may run on credit, so one early storm cannot strand you", () => {
   const e = env("texas");
   let s = S.newGame(e, { seed: 3 });
@@ -237,6 +313,9 @@ test("v1 saves migrate: old hardening covered every hazard", () => {
   assert.equal(m.links[k].h, HZ_ALL);
   assert.deepEqual(m.hubs, {});
   assert.equal(S.migrate({ v: 99, links: {}, cities: {}, base: {} }), null);
+  assert.deepEqual(m.express, {});
+  const v2 = JSON.parse(JSON.stringify({ ...s, express: undefined }));
+  assert.deepEqual(S.migrate(v2).express, {}, "a v2 save from before express services gets none");
   assert.ok(!S.check(e, m, { type: "endTurn" }) && S.apply(e, m, { type: "endTurn" }).year === m.year + 1);
 });
 
@@ -263,7 +342,11 @@ test("balance: the greedy bot beats every goal (Sandbox included) when it upgrad
     const n = S.summary(e, run(e, 1, idle));
     const pct = (x) => `${(x * 100).toFixed(2)}%`;
     assert.ok(g.beat, `${sc.id}: bot ${pct(g.uplift)} beats the ${pct(sc.goal)} goal`);
-    assert.ok(!n.beat && g.score > n.score, `${sc.id}: idling (${pct(n.uplift)}) does not`);
+    assert.ok(!n.beat && g.score > n.score && n.score === 0, `${sc.id}: idling (${pct(n.uplift)}) does not, and scores 0`);
+    // the late game has something worth buying: little cash is left unspent at the end
+    const t = gs.totals;
+    const spend = t.built + t.upgrades + t.hardening + t.repairs + t.express;
+    assert.ok(gs.cash < 0.15 * spend, `${sc.id}: ${gs.cash.toFixed(0)} cr left of ${spend.toFixed(0)} spent`);
     assert.ok(ms < 5000, `${sc.id}: a bot game takes ${ms.toFixed(0)} ms`);
     // the upgrades are a real money sink that pays: the bot spends on them, and scores more than on track alone
     assert.ok(gs.totals.upgrades + gs.totals.hardening > 0, `${sc.id}: bot bought upgrades`);
@@ -280,6 +363,7 @@ test("determinism: a recorded action list replays to the same state hash", () =>
   let s = S.newGame(e, { seed: 11 });
   while (!s.over) s = S.greedyTurn(e, s, { log });
   assert.ok(log.some((a) => a.type === "build") && log.some((a) => a.type === "harden" || a.type === "double" || a.type === "hub"));
+  assert.ok(log.some((a) => a.type === "express"), "the replay covers express services");
   // the log travels as JSON (as it would between browsers), then replays from a fresh game
   const wire = JSON.parse(JSON.stringify(log));
   let r = S.newGame(e, { seed: 11 });

@@ -59,13 +59,16 @@ export function accessShares(env, graph) {
   return out;
 }
 
-/** One year of growth. world = {id: {gdp, pop}}; access = per-city shares or null (baseline); hubs = {cityId: level}. */
-export function grow(env, world, access, hubs = null) {
+/**
+ * One year of growth. world = {id: {gdp, pop}}; access = per-city shares or null (baseline); hubs = {cityId: level};
+ * extra = per-city extra growth (express services, index-aligned with env.cities) or null.
+ */
+export function grow(env, world, access, hubs = null, extra = null) {
   const next = {};
   env.cities.forEach((c, i) => {
     const cur = world[c.id];
     const pg = c.rate;
-    const bonus = access ? (ACCESS_BONUS + HUB_GROWTH * (hubs?.[c.id] || 0)) * access[i] : 0;
+    const bonus = access ? (ACCESS_BONUS + HUB_GROWTH * (hubs?.[c.id] || 0)) * access[i] + (extra ? extra[i] : 0) : 0;
     next[c.id] = {
       pop: cur.pop * (1 + pg + bonus * 0.5),
       gdp: cur.gdp * (1 + pg + PRODUCTIVITY + bonus),

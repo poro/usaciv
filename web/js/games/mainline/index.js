@@ -4,11 +4,12 @@
 // This file is the glue: the dock (panel.js), the map layers and overlays (view.js) and input. All game rules live in
 // the pure, deterministic sim/ (state.js: apply(env, state, action)). Contract: see games/host.js.
 // URL: #play=mainline~<scenario>.<seed>[.<home>]   Save: ctx.storage "save" (the whole state, after every action).
+// First-run tutorial: ctx.storage "tutorial" = the coach step (0..COACH_STEPS; COACH_STEPS = done or skipped).
 import { loadCss } from "../shared/css.js";
 import { esc } from "../../format.js";
 import * as S from "./sim/index.js";
 import { makeView } from "./view.js";
-import { pickerHtml, gameHtml, buildHtml, endHtml, shareText, contractText } from "./panel.js";
+import { pickerHtml, gameHtml, buildHtml, endHtml, shareText, contractText, COACH_STEPS } from "./panel.js";
 import { parseParam, formatParam } from "./params.js";
 import { shareImage } from "./share.js";
 
@@ -38,7 +39,7 @@ export async function start(ctx) {
   const game = {
     env: null, state: null, ev: null,
     sel: { start: null, end: null, hover: null, plan: null },
-    ui: { tab: "open", showDemand: prefs.showDemand !== false, highlight: null, hover: null, link: null, help: false, screen: "picker" },
+    ui: { tab: "open", showDemand: prefs.showDemand !== false, highlight: null, hover: null, link: null, help: false, screen: "picker", coach: null },
     contractTip: (id) => {
       const c = game.env?.contractById.get(id);
       if (!c) return null;
@@ -68,7 +69,10 @@ export async function start(ctx) {
     game.ui.link = null;
     game.ui.tab = "open";
     game.ui.screen = game.state.over ? "end" : "game";
-    game.ui.help = game.ui.screen === "game" && !ctx.storage.get("seenHow", false); // first game: how to play
+    // first game: the three-step coach (replayable from How to play) instead of the full rules
+    const step = coachStep();
+    game.ui.coach = game.ui.screen === "game" && step < COACH_STEPS ? step : null;
+    game.ui.help = game.ui.screen === "game" && game.ui.coach == null && !ctx.storage.get("seenHow", false);
     view.reset();
     ctx.setParam(formatParam({ scenario, seed: game.state.seed, home: env.home?.id }));
     save();
@@ -118,17 +122,38 @@ export async function start(ctx) {
     view.redraw();
   }
 
-  function act(action) {
+  function act(action, { quiet = false } = {}) {
     if (!game.state) return false;
     const err = S.check(game.env, game.state, action);
-    if (err) { ctx.toast(err); return false; }
+    if (err) { if (!quiet) ctx.toast(err); return false; }
     const before = game.state;
+    const servedBefore = game.ev?.served.size ?? 0;
     game.state = S.apply(game.env, game.state, action);
     if (action.type === "endTurn") afterTurn(before);
     if (game.ui.link && !game.state.links[game.ui.link]) game.ui.link = null;
     save();
     refresh();
+    coachAfter(action, servedBefore);
     return true;
+  }
+
+  // --- tutorial (three coach steps; each moves on when you do the thing, or with Next) ---
+  function coachStep() {
+    const v = ctx.storage.get("tutorial", 0);
+    return Number.isInteger(v) && v >= 0 ? Math.min(v, COACH_STEPS) : 0;
+  }
+  function setCoach(step) {
+    ctx.storage.set("tutorial", step);
+    if (step >= COACH_STEPS) ctx.storage.set("seenHow", true); // done or skipped: no full rules popping up next game
+    game.ui.coach = step < COACH_STEPS && game.ui.screen === "game" ? step : null;
+    refresh();
+  }
+  function coachAfter(action, servedBefore) {
+    const k = game.ui.coach;
+    if (k == null) return;
+    if (k === 0 && action.type === "build") setCoach(1);
+    else if (k === 1 && action.type === "build" && game.ev.served.size > servedBefore) setCoach(2);
+    else if (k === 2 && action.type === "endTurn") setCoach(COACH_STEPS);
   }
   function afterTurn(before) {
     game.sel = { start: null, end: null, hover: game.sel.hover, plan: null };
@@ -238,6 +263,19 @@ export async function start(ctx) {
       case "harden": if (game.ui.link) act({ type: "harden", key: game.ui.link, ...(t.dataset.hz ? { hz: t.dataset.hz } : {}) }); break;
       case "double": if (game.ui.link) act({ type: "double", key: game.ui.link }); break;
       case "hub": act({ type: "hub", city: t.dataset.city }); break;
+      case "express": act({ type: "express", id: t.dataset.id }); break;
+      case "closeExpress": act({ type: "closeExpress", id: t.dataset.id }); break;
+      case "dtroute": {
+        // double-track every single-track link left on the contract's route, one action each (undo takes them back one by one)
+        const sv = game.ev.served.get(t.dataset.id);
+        let n = 0;
+        for (const key of sv?.keys || []) if (act({ type: "double", key }, { quiet: true })) n++;
+        if (!n) ctx.toast("Nothing to double-track here (damaged links need repair first)");
+        break;
+      }
+      case "coachNext": setCoach((game.ui.coach ?? 0) + 1); break;
+      case "coachSkip": setCoach(COACH_STEPS); break;
+      case "coachReplay": game.ui.help = false; ctx.storage.set("seenHow", true); setCoach(0); body.scrollTop = 0; break;
       case "unlink": game.ui.link = null; refresh(); break;
       case "tab": game.ui.tab = t.dataset.tab; refresh(); break;
       case "help": toggleHelp(); break;

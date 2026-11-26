@@ -5,7 +5,8 @@
 //      small reserve). Only the few most promising contracts (by a cheap hex-distance estimate) are routed, and every
 //      route search stops at the money in hand, so a whole-country Sandbox stays fast;
 //   3. if it is saving for a contract it cannot afford yet, keep that money; spend the rest on the upgrade with the
-//      best payback over the years left (double track, terminals, hardening per hazard; see upgradeOptions);
+//      best payback over the years left (double track, terminals, hardening per hazard, express services with the
+//      double track their route still needs; see upgradeOptions);
 //   4. end the turn.
 // opts.log (an array) records every action it applied, for replay tests.
 import { apply, check, evaluate, plan, networkCells, connectedCities, hardenOptions, doubleCost, hubCost, DOUBLE_MAINT, MAINT_RATE } from "./state.js";
@@ -14,11 +15,12 @@ import { accessShares, HUB_GROWTH } from "./growth.js";
 import { regionGdp } from "./score.js";
 import { END_YEAR } from "./scenarios.js";
 import { LINK_HIT } from "./events.js";
+import { corridors } from "./express.js";
 
 const CANDIDATES = 8; // contracts routed per pick (out of the 32 best by estimate)
 const EST_PER_HEX = 6; // cr, for the pre-ranking estimate only
 
-export function greedyTurn(env, state, { reserve = 4, maxBuilds = 6, upgrades = true, maxUpgrades = 40, log = null } = {}) {
+export function greedyTurn(env, state, { reserve = 4, maxBuilds = 6, upgrades = true, maxUpgrades = 400, log = null } = {}) {
   let s = state;
   const act = (a) => {
     const n = apply(env, s, a);
@@ -78,11 +80,18 @@ export function greedyTurn(env, state, { reserve = 4, maxBuilds = 6, upgrades = 
   if (upgrades) {
     // one appraisal a turn, then buy down the list (hardening is cheap insurance: it may dip into savings)
     let n = 0;
-    for (const up of upgradeOptions(env, s)) {
+    // idle money: nothing to save for and more than a year of surplus in hand. Then cash is worth less than
+    // anything that scores, so the bar drops and running costs count less (the surplus pays them)
+    const ev = evaluate(env, s);
+    const idle = !saving && s.cash - reserve > Math.max(0, ev.revenue - ev.maint);
+    for (const up of upgradeOptions(env, s, { idle })) {
       if (n >= maxUpgrades) break;
-      const room = s.cash - reserve - (up.action.type === "harden" ? 0 : saving);
-      if (up.cost > room || check(env, s, up.action)) continue;
-      act(up.action);
+      const room = s.cash - reserve - (up.actions[0].type === "harden" ? 0 : saving);
+      if (up.cost > room) continue;
+      // a bundle (an express and the double track its route needs) goes in order; parts already done are skipped
+      const last = up.actions[up.actions.length - 1];
+      if (up.actions.length === 1 && check(env, s, last)) continue;
+      for (const a of up.actions) if (!check(env, s, a)) act(a);
       n++;
     }
   }
@@ -91,18 +100,21 @@ export function greedyTurn(env, state, { reserve = 4, maxBuilds = 6, upgrades = 
 }
 
 /**
- * Upgrades worth buying, best payback over the years left first: [{action, cost, ratio}]. It wants 1.2× back while
- * there is time to reinvest, less near the end (money left in 2050 scores nothing).
+ * Upgrades worth buying, best payback over the years left first: [{actions, cost, ratio}]. It wants 1.2× back while
+ * there is time to reinvest, less near the end, and in the last two years anything that pays at all back (money left
+ * in 2050 scores nothing). With idle money (opts.idle) the bar is low all game. 1 bp of GDP uplift counts as 10 cr
+ * (the score's exchange rate).
  */
-export function upgradeOptions(env, s) {
+export function upgradeOptions(env, s, { idle = false } = {}) {
   const years = END_YEAR - s.year + 1;
-  const bar = years > 6 ? 1.2 : 0.4;
+  const bar = years <= 1 ? 0.01 : idle ? 0.05 : years > 6 ? 1.2 : years > 2 ? 0.4 : 0.1;
   const ev = evaluate(env, s);
   const out = [];
   const consider = (action, cost, benefit) => {
     if (!(cost > 0)) return;
     const ratio = benefit / cost;
-    if (ratio >= bar) out.push({ action, cost, ratio });
+    const actions = Array.isArray(action) ? action : [action];
+    if (ratio >= bar) out.push({ actions, cost, ratio });
   };
   const keys = Object.keys(s.links).sort();
   for (const k of keys) {
@@ -137,6 +149,20 @@ export function upgradeOptions(env, s) {
     const i = env.cityIdx.get(c.id);
     const growth = (s.cities[c.id].gdp / region) * HUB_GROWTH * access[i] * years * 0.5 * 1e5;
     consider({ type: "hub", city: c.id }, cost, pay * site.rate * years + growth - cost * 0.03 * years);
+  }
+  // express services: the growth at both ends less the operating cost, plus the double track's own extra pay
+  for (const k of corridors(env, s, ev.served)) {
+    if (k.on) continue;
+    const doubles = k.keys.filter((key) => !s.links[key].d);
+    if (doubles.length !== k.keys.length) continue;
+    let cost = k.cost, benefit = (k.gain / region) * years * 1e5 - (idle ? 0.25 : 1) * k.ops * years;
+    for (const key of doubles) {
+      const l = s.links[key];
+      cost += doubleCost(env, l);
+      const ld = ev.loads.get(key);
+      benefit += ((ld ? DOUBLE_BONUS * ld.base : 0) - MAINT_RATE * l.cost * (DOUBLE_MAINT - 1)) * years;
+    }
+    consider([...doubles.map((key) => ({ type: "double", key })), { type: "express", id: k.id }], cost, benefit);
   }
   return out.sort((a, b) => b.ratio - a.ratio || a.cost - b.cost);
 }

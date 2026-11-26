@@ -82,6 +82,24 @@
 .ml-hubbtn { grid-area: btn; padding: 3px 8px; font-size: 12px; white-space: nowrap; }
 .ml-hubs li > .ml-pay { grid-area: btn; font-size: 12px; }
 
+/* express tab */
+.ml-hubs li.ml-xnote { display: block; cursor: default; padding: 4px 2px 6px; }
+.ml-hubs li.ml-xrow { grid-template-columns: 48px 1fr auto; grid-template-areas: "kind name act"; }
+.ml-xact { grid-area: act; display: flex; gap: 4px; align-items: center; font-size: 12px; white-space: nowrap; }
+.ml-xact .ml-hubbtn { grid-area: auto; }
+.ml-grant { padding: 6px 8px; border-left: 2px solid var(--gold); background: rgba(232,196,106,.07); }
+
+/* first-run coach */
+.ml-coach { padding: 8px 10px; border: 1px solid var(--gold); border-radius: 6px; background: rgba(232,196,106,.1); display: grid; gap: 6px; }
+.ml-coach p { margin: 0; font-size: 13px; line-height: 1.45; }
+.ml-coach .ml-x { margin-left: auto; }
+.ml-coach-n { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #e8c46a; }
+.ml-coach .g-btn { padding: 3px 10px; font-size: 12px; }
+.ml-link-btn { background: none; border-color: transparent; color: var(--ink-dim); }
+.ml-pulse { animation: ml-pulse 1.4s ease-in-out infinite; }
+@keyframes ml-pulse { 50% { box-shadow: 0 0 0 4px rgba(232,196,106,.45); } }
+@media (prefers-reduced-motion: reduce) { .ml-pulse { animation: none; outline: 2px solid #e8c46a; } }
+
 /* selected link: hardening per hazard */
 .ml-hz { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
 .ml-hz li { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; font-size: 12px; }
