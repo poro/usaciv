@@ -6,7 +6,8 @@ import {
   ROUNDS, MAX_CLUES, POOL_SIZE, LAUNCH_DATE, buildPool, dailyAnswers, practiceAnswers, parseParam, puzzleNumber,
   dayDiff, isDateKey, newPracticeSeed,
 } from "../../web/js/games/whichMetro/sim/puzzle.js";
-import { buildClues, whyLine, roughPeople, roughDollars, sig2, TIER_ORDER } from "../../web/js/games/whichMetro/sim/clues.js";
+import { buildClues, whyLine, roughPeople, roughDollars, sig2, TIER_ORDER, POP_BANDS, popBand } from "../../web/js/games/whichMetro/sim/clues.js";
+import { ambiguity, summarize, parseValue, cluesAgree } from "./whichMetro.ambiguity.mjs";
 import { guessHint } from "../../web/js/games/whichMetro/sim/hint.js";
 import {
   newGame, reveal, guess, nextRound, roundPoints, totalScore, shareText, roundSquares, updateStats, emptyStats,
@@ -249,4 +250,41 @@ test("wrong-guess hints: distance and direction, no names", () => {
     assert.match(off.text, /lower 48/);
   }
   assert.equal(guessHint(null, sea).text, "");
+});
+
+test("ambiguity measure: reads clues as displayed", () => {
+  assert.deepEqual(parseValue("28.2%").nums, [{ kind: "pct", v: 0.282 }]);
+  assert.deepEqual(parseValue("≥2.4× the US share · 5.8% of jobs").nums.map((n) => n.kind), ["ratio", "pct"]);
+  assert.deepEqual(parseValue("$105K").nums, [{ kind: "mag", v: 105000 }]);
+  assert.deepEqual(parseValue("2 to 5 million").nums, []); // a band: words only
+  const f = (value) => ({ facts: [{ label: "x", value }] });
+  assert.ok(cluesAgree(f("20%"), f("21.5%")));
+  assert.ok(!cluesAgree(f("28.2%"), f("9.3%")));
+  assert.ok(cluesAgree(f("$100K"), f("$120K")));
+  assert.ok(!cluesAgree(f("about 20 million"), f("about 13 million")));
+  assert.ok(!cluesAgree(f("2 to 5 million"), f("5 million or more")));
+  assert.ok(!cluesAgree(f("20%"), { facts: [{ label: "y", value: "20%" }] })); // different rows
+});
+
+test("clue 1 never singles out a metro; the 10 biggest need at least 2 clues on average", () => {
+  const res = ambiguity(pool, (c) => buildClues(c, data), 2);
+  const sum = summarize(res, 2);
+  const lone = res.filter((r) => r.counts[0] === 1).map((r) => r.name);
+  assert.deepEqual(lone, [], `clue 1 alone identifies: ${lone.join(", ")}`);
+  assert.ok(sum.after1.median >= 10, `clue 1 leaves a median of ${sum.after1.median} metros plausible`);
+  assert.ok(sum.top10need >= 2, `top 10 need ${sum.top10need} clues on average`);
+});
+
+test("no clue before the last shows absolute size: population is a broad band, never a count", () => {
+  assert.equal(popBand(20e6), "5 million or more");
+  assert.equal(popBand(1.5e6), "1 to 2 million");
+  assert.equal(popBand(300000), POP_BANDS.at(-1).label);
+  const bands = new Set(POP_BANDS.map((b) => b.label));
+  for (const city of pool) {
+    const clues = buildClues(city, data);
+    const size = clues.find((c) => c.id === "size");
+    assert.ok(bands.has(size.facts.find((f) => f.label === "Population").value), city.name);
+    const text = JSON.stringify(clues.slice(0, 4));
+    assert.ok(!/about [\d.,]+( million)?"|\d(K|M) (jobs|workers)|\$[\d.]+ (billion|trillion)/.test(text), `${city.name}: an absolute count in clues 1-4`);
+  }
 });

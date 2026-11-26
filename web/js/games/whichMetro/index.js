@@ -224,7 +224,10 @@ export async function start(ctx) {
     let top;
     if (!r.done) {
       const stake = pointsAtStake(r);
+      // .wm-top holds the controls (sticky in landscape, see whichMetro.css); the wrong guesses stay out of it so
+      // the sticky part keeps a fixed height.
       top = `
+        <div class="wm-top">${pipsHtml()}
         <div class="wm-status"><span>Round <b>${game.idx + 1}</b> of ${ROUNDS} · clue <b>${r.clues}</b> of ${MAX_CLUES}</span>
           <span class="wm-stake" title="Points for a correct guess now">${stake} pt${stake === 1 ? "" : "s"}<span class="sr-only"> for a correct guess now</span></span></div>
         <div class="wm-cluebar" aria-hidden="true">${Array.from({ length: MAX_CLUES }, (_, k) => `<i class="${k < r.clues ? "on" : ""}"></i>`).join("")}</div>
@@ -240,12 +243,12 @@ export async function start(ctx) {
           <button class="g-btn wm-skip" data-act="skip" type="button">${r.clues < MAX_CLUES ? `Next clue <small>−1 pt</small>` : "Give up"}</button>
           <span class="g-note wm-keys">Enter guesses · Shift+Enter ${r.clues < MAX_CLUES ? "next clue" : "gives up"}</span>
           <button class="wm-helpbtn" data-act="help" type="button" aria-label="How to play" title="How to play (?)">?</button>
-        </div>
+        </div></div>
         ${wrong.length ? `<ul class="wm-wrong" aria-label="Wrong guesses">${wrong.map((c) => missChip(c, city)).join("")}</ul>` : ""}`;
     } else {
       const pts = roundPoints(r);
       const last = game.idx >= game.rounds.length - 1;
-      top = `
+      top = `${pipsHtml()}
         <div class="wm-reveal ${r.solved ? "ok" : "miss"}">
           <div class="wm-reveal-head"><span class="wm-verdict">${r.solved ? (pts === MAX_CLUES ? "First clue!" : "Got it") : "Missed"}</span>
             <span class="wm-pts">+${pts}</span></div>
@@ -258,7 +261,7 @@ export async function start(ctx) {
     }
     const list = [];
     for (let k = shown - 1; k >= 0; k--) list.push(clueHtml(clues[k], k, !r.done && k === r.clues - 1, r.done && k >= r.clues));
-    body.innerHTML = `${pipsHtml()}${top}<div class="wm-clues">${list.join("")}</div>`;
+    body.innerHTML = `${top}<div class="wm-clues">${list.join("")}</div>`;
     if (!r.done) {
       const input = body.querySelector(".wm-input");
       wireCombo(input);

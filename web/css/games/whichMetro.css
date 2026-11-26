@@ -168,3 +168,27 @@
   .wm-answer { font-size: 21px; }
 }
 @media (pointer: coarse) { .wm-keys { display: none; } .wm-helpbtn { width: 32px; height: 32px; } }
+
+/* Landscape phones (844×390, 740×360). They are wider than 700px, so the host shows the desktop layout: a side dock
+   under the top bar, not the bottom sheet above. The stock 400px dock leaves the map only 340–440px, and its
+   ~310px of height must hold the controls and the clues. So: a narrower dock, the controls (.wm-top) pinned at
+   the top of the dock while the clues scroll under them, tighter spacing, and a 16px input (iOS zooms the page
+   on focus below 16px, which the 700px rule above only covers in portrait). */
+@media (min-width: 701px) and (max-height: 500px) {
+  body[data-game="whichMetro"] .app-dock.games-dock { width: min(var(--dock-w, 400px), max(300px, 46vw)); }
+  body[data-game="whichMetro"] .games-dock-head { padding: 4px 10px; }
+  body[data-game="whichMetro"] .games-dock-head h2 { font-size: 16px; }
+  .wm-top { position: sticky; top: 0; z-index: 4; margin: -10px -12px 0; padding: 8px 12px 6px;
+    background: var(--panel); border-bottom: 1px solid rgba(201,164,92,.25); }
+  .wm-pips { margin-bottom: 4px; }
+  .wm-pip { width: 20px; height: 20px; font-size: 11px; }
+  .wm-score { font-size: 17px; }
+  .wm-cluebar { display: none; } /* "clue 2 of 5" in the status line says the same */
+  .wm-input { font-size: 16px; padding: 6px 10px; }
+  .wm-list { max-height: 45vh; max-height: 45dvh; }
+  .wm-actions { margin: 5px 0 0; }
+  .wm-clues { margin-top: 8px; }
+  .wm-answer { font-size: 20px; }
+  .wm-big-score { font-size: 36px; }
+  .wm-bar { grid-template-columns: minmax(0, 1.3fr) minmax(50px, 1fr) 48px; }
+}

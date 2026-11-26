@@ -34,12 +34,8 @@ export function roughDollars(n) {
 }
 /** "$87K" (nearest thousand). */
 const kDollars = (n) => (n == null ? "–" : `$${Math.round(n / 1000).toLocaleString("en-US")}K`);
-const compact = (n) => {
-  if (n == null) return "–";
-  if (n >= 1e6) return `${+(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `${+(n / 1e3).toFixed(n >= 1e5 ? 0 : 1)}K`;
-  return String(Math.round(n));
-};
+/** A share of the metro's jobs, "5.8% of jobs" (absolute counts would give the metro's size away). */
+const jobShare = (x) => (x == null ? "–" : `${(x * 100).toFixed(x < 0.01 ? 2 : 1)}% of jobs`);
 const dirOf = (v, nat, k = 1.15) => (v == null || !nat ? null : v / nat >= k ? "up" : v / nat <= 1 / k ? "down" : null);
 
 /** Short names for industries: a district speciality's label when the catalog has one, else the BLS title. */
@@ -54,19 +50,32 @@ const groupLabels = (citizens, row) => new Map((citizens?.groups?.[row] || []).m
 
 // --- the tiers -------------------------------------------------------------------------------------------------
 
+// Clue 1 shows the occupation mix in five broad groups, not citizens.json's nine: the fine split singles out
+// outliers on its own (Washington's managers, San Jose's engineers, Las Vegas's service workers, about 15 of the
+// 150), while these five leave every metro with at least one look-alike (tests/js/whichMetro.ambiguity.mjs).
+// Labels are the game's own, since a merged group has no single label in citizens.json.
+export const WORK_GROUPS = [
+  { key: "professional", label: "Managers, engineers & other professionals", of: ["executive", "engineer", "scholar"] },
+  { key: "health", label: "Health workers", of: ["healer"] },
+  { key: "service", label: "Service, sales & office workers", of: ["service", "clerk"] },
+  { key: "builder", label: "Builders, repairers & farm workers", of: ["builder", "farmer"] },
+  { key: "maker", label: "Factory, transport & warehouse workers", of: ["maker"] },
+];
+
 function workforceClue(city, citizens, nation) {
   const row = citizens?.cities?.[city.id]?.workforce;
   const nat = citizens?.national?.workforce;
-  if (row && nat) {
-    const labels = groupLabels(citizens, "workforce");
-    const bars = (citizens.groups.workforce || []).map((g) => {
-      const share = row.shares[g.key] ?? 0, national = nat.shares[g.key] ?? 0;
-      return { key: g.key, label: labels.get(g.key) || g.key, share, national, ratio: national > 0 ? share / national : 1 };
+  const known = new Set((citizens?.groups?.workforce || []).map((g) => g.key));
+  if (row && nat && WORK_GROUPS.every((g) => g.of.every((k) => known.has(k)))) {
+    const sum = (shares, of) => Math.round(of.reduce((a, k) => a + (shares[k] ?? 0), 0) * 1000) / 1000;
+    const bars = WORK_GROUPS.map((g) => {
+      const share = sum(row.shares, g.of), national = sum(nat.shares, g.of);
+      return { key: g.key, label: g.label, share, national, ratio: national > 0 ? share / national : 1 };
     });
     return {
       id: "workforce", title: "Who works here",
       source: `Employed residents by occupation, ${citizens.vintage || "ACS"}`,
-      lead: "Share of employed residents in each occupation group. Bar: this metro; tick: the US.",
+      lead: "Share of employed residents in each group of jobs. Bar: this metro; tick: the US.",
       bars,
     };
   }
@@ -116,14 +125,14 @@ function economyClue(city, districts) {
     const sub = d.sub && d.sub_lq > 1 ? `${labels.get(d.sub) || d.sub} ${d.sub_lower_bound ? "≥" : ""}${times(d.sub_lq)}` : null;
     chips.push({
       label: cat?.name || d.id, color: cat?.color || null,
-      value: `${d.lower_bound ? "≥" : ""}${times(d.lq)} the US share · ${compact(d.emp)} jobs`,
+      value: `${d.lower_bound ? "≥" : ""}${times(d.lq)} the US share · ${jobShare(d.share ?? (row.emp ? d.emp / row.emp : null))}`,
       note: sub ? `strongest: ${sub}` : null,
     });
   }
   const listed = new Set((row?.districts || []).map((d) => d.sub).filter(Boolean)); // already shown on a district
   const tops = (row?.top || []).filter((t) => t.emp >= 1000 && t.lq >= 1 && !listed.has(t.naics)).sort((a, b) => b.lq - a.lq).slice(0, 3);
   for (const t of tops) {
-    facts.push({ label: labels.get(t.naics) || t.naics, value: `${t.lower_bound ? "≥" : ""}${times(t.lq)}`, note: `${compact(t.emp)} jobs`, dir: t.lq >= 1.15 ? "up" : null });
+    facts.push({ label: labels.get(t.naics) || t.naics, value: `${t.lower_bound ? "≥" : ""}${times(t.lq)}`, note: jobShare(row.emp ? t.emp / row.emp : null), dir: t.lq >= 1.15 ? "up" : null });
   }
   if (row?.avg_pay && districts?.national?.avg_pay) {
     facts.push({ label: "Average pay per job", value: kDollars(row.avg_pay), note: `US ${kDollars(districts.national.avg_pay)}`, dir: dirOf(row.avg_pay, districts.national.avg_pay) });
@@ -135,11 +144,22 @@ function economyClue(city, districts) {
   };
 }
 
+/** Population as a broad band: absolute size is unique at the top, so this tier never shows it more finely. */
+export const POP_BANDS = [
+  { min: 5e6, label: "5 million or more" },
+  { min: 2e6, label: "2 to 5 million" },
+  { min: 1e6, label: "1 to 2 million" },
+  { min: 5e5, label: "500,000 to 1 million" },
+  { min: 0, label: "under 500,000" },
+];
+export const popBand = (n) => (POP_BANDS.find((b) => n >= b.min) || POP_BANDS.at(-1)).label;
+
+// Clue 3: one broad size band, then only figures per person (wealth, prices, growth, yields per 1,000 residents),
+// so New York, Los Angeles and Chicago look like the other ten metros of 5 million or more, not like themselves.
 function sizeClue(city, nation) {
   const facts = [];
   const nat = nation?.nation || {};
-  facts.push({ label: "Population", value: roughPeople(city.population) });
-  if (city.gdp) facts.push({ label: `GDP (${city.gdp_year || "BEA"})`, value: roughDollars(city.gdp) });
+  facts.push({ label: "Population", value: popBand(city.population) });
   if (city.gdp && city.population) {
     const v = city.gdp / city.population, nv = nat.gdp && nat.population ? nat.gdp / nat.population : null;
     facts.push({ label: "GDP per resident", value: kDollars(v), note: nv ? `US ${kDollars(nv)}` : null, dir: dirOf(v, nv) });
@@ -152,12 +172,19 @@ function sizeClue(city, nation) {
     facts.push({ label: `Population change ${y[0] || ""}–${y[1] || ""}`.trim(), value: `${g >= 0 ? "+" : "−"}${Math.abs(g * 100).toFixed(1)}%`, note: nat.growth != null ? `US ${nat.growth >= 0 ? "+" : "−"}${Math.abs(nat.growth * 100).toFixed(1)}%` : null, dir: dirOf(1 + g, 1 + (nat.growth || 0), 1.02) });
   }
   const chips = [];
+  const per1k = (v, pop) => (v != null && pop > 0 ? (v / pop) * 1000 : null);
   for (const y of nation?.yields || []) {
-    const v = city.yields?.[y.key];
-    if (v == null || y.unit === "usd") continue; // gold = GDP, already above
-    chips.push({ label: `${y.emoji || ""} ${y.label}`.trim(), value: y.unit === "usd" ? roughDollars(v) : `${compact(sig2(v))} ${y.unit || ""}`.trim(), color: y.color });
+    if (y.unit === "usd") continue; // gold = GDP, shown per resident above
+    const v = per1k(city.yields?.[y.key], city.population);
+    if (v == null) continue;
+    const nv = per1k(nat.yields?.[y.key], nat.population);
+    const txt = (x) => (x >= 10 ? Math.round(x).toString() : x.toFixed(1));
+    chips.push({ label: `${y.emoji || ""} ${y.label}`.trim(), value: `${txt(v)} per 1,000`, note: nv != null ? `US ${txt(nv)}` : null, color: y.color });
   }
-  return { id: "size", title: "Size and wealth", source: "Population (ACS), GDP (BEA), yields", facts, chips, chipsTitle: chips.length ? "Yields" : null, factsFirst: true };
+  return {
+    id: "size", title: "Size and wealth", source: "Population band (ACS), GDP per resident (BEA), yields per 1,000 residents",
+    facts, chips, chipsTitle: chips.length ? "Yield workers per 1,000 residents" : null, factsFirst: true,
+  };
 }
 
 function whereClue(city, pool) {
@@ -182,6 +209,10 @@ export const TIER_ORDER = ["workforce", "people", "size", "economy", "where"];
  * telling by far (its district badges and top industries single out about half the pool on their own, nearly all
  * of the 25 biggest), so as tier 3 it left tiers 4 and 5 with little to do. Size is the vaguest tier for mid-sized
  * metros, so it now bridges the gap.
+ * Absolute size gives the biggest metros away (only one metro has 20 million people), so no tier shows a count:
+ * clue 1 is a five-group job mix, clue 3 a broad population band plus figures per person, clue 4 shares of jobs.
+ * tests/js/whichMetro.ambiguity.mjs measures how many metros each clue leaves plausible; the tests keep clue 1
+ * from ever singling one out.
  * data = {citizens, districts, nation, pool}  (any may be missing: each tier then falls back to cities.json)
  */
 export function buildClues(city, data = {}) {
