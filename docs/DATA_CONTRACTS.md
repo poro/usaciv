@@ -384,7 +384,7 @@ total line on the national row. Labels are plain words (original names; no game'
 
 ### districts.json (lazy)
 
-Real industry specialisation from BLS QCEW annual averages (`bls_qcew`, ~40 industry slices), as strategy-game
+Real industry specialisation from BLS QCEW annual averages (`bls_qcew`, ~40 industry slices), as city
 districts, built by `pipeline/build/districts.py`. 2025 QCEW publishes metros as totals only, so **metro values are
 sums of member counties** (cities.json `counties`), and LQ = (metro jobs in the district's NAICS ÷ metro total covered
 jobs) ÷ (the same US ratio). The total is QCEW industry 10, all ownerships. About 670 kB: load on demand.
@@ -393,14 +393,14 @@ jobs) ÷ (the same US ratio). The total is QCEW industry 10, all ownerships. Abo
 {
   "version": 1, "vintage": "BLS QCEW 2025 annual averages", "year": 2025, "sources": ["bls_qcew", "ipeds"],
   "rule": {"min_lq": 1.25, "min_jobs": 1000, "min_share": 0.01, "specialty_lq": 3.0, "specialty_jobs": 5000, "specialty_share": 0.005, "max_per_city": 5,
-           "harbor_needs_water": true, "badge_lq": 6.0, "badge_share": 0.03, "college_share": 0.15, "text": "…(quote this in the UI)…", "county_note": "…"},
+           "port_district_needs_water": true, "badge_lq": 6.0, "badge_share": 0.03, "college_share": 0.15, "text": "…(quote this in the UI)…", "county_note": "…"},
   "catalog": [{
-    "id": "campus", "name": "Campus", "icon": "d-campus", "color": "#4a7bd0",
+    "id": "research_park", "name": "Research Park", "icon": "d-research-park", "color": "#4a7bd0",
     "naics": ["5417", "6113", "5415", "5132", "5182"],   // codes summed for the district's score
     "own": [1, 2, 3, 5],                                  // QCEW ownership codes summed
     "sub": {"5417": "Research labs", "6113": "Universities", "5132": "Software", …},  // the listed specialities
     "badge": {"id": "scientific", "label": "Knowledge city", "labels": {"6113": "College town", "5132": "Tech city", …}},
-    "description": "…", "caveat": null        // e.g. encampment: "Civilian defense staff only; …"
+    "description": "…", "caveat": null        // e.g. defense_district: "Civilian defense staff only: …"
   }],
   "industries": {"3344": {"title": "Semiconductor and other electronic component manufacturing", "us_emp": 380000}},
   "national": {"emp": 155732363, "avg_pay": 76000},
@@ -409,60 +409,60 @@ jobs) ÷ (the same US ratio). The total is QCEW industry 10, all ownerships. Abo
     "top": [{"naics": "3344", "emp": 45000, "lq": 15.1, "avg_pay": 251000, "oty_pct": 0.021,
              "suppressed": 0, "lower_bound": false}],           // up to 8 fetched industries by LQ (≥ 1,000 jobs,
                                                                 // all ownerships; the 2-digit 31_33/52/22 excluded)
-    "districts": [{"id": "campus", "lq": 2.82, "emp": 157377, "share": 0.133, "avg_pay": 190000,
+    "districts": [{"id": "research_park", "lq": 2.82, "emp": 157377, "share": 0.133, "avg_pay": 190000,
                    "sub": "5415", "sub_lq": 4.66, "sub_emp": 60000,  // strongest speciality (null if none ≥ 1,000 jobs, LQ > 1)
                    "sub_lower_bound": false,  // the speciality's own value is a lower bound (show ≥)
                    "via": "broad",            // "broad" (the district passes) | "specialty" (only a speciality does)
                    "strength": 101000,        // jobs above the national norm, emp − emp/LQ: the ranking key
                    "suppressed": 2, "lower_bound": true}],   // passing the rule, strongest first, ≤ 5
-    "badge": {"id": "scientific", "label": "Tech city", "district": "campus", "basis": "qcew",
+    "badge": {"id": "scientific", "label": "Tech city", "district": "research_park", "basis": "qcew",
               "text": "Computer services: 4.7× the national share of jobs"}  // "≥4.7×" when a lower bound;
                                                     // "Seat of government"/"Capital city" only for capital metros
-           | {"id": "scientific", "label": "College town", "district": "campus", "basis": "ipeds", "withheld": true,
+           | {"id": "scientific", "label": "College town", "district": "research_park", "basis": "ipeds", "withheld": true,
               "text": "Pennsylvania State University: R1 research university enrolment equal to 34% …"}
            | null
   } | null},                                                    // null: no member county has QCEW data
-  "counties": {"06085": {"emp": 1100000, "districts": [["campus", 2.9, 150000]]}}  // [id, lq, emp], same rule
-}                                                               // (no Harbor water test), every county with a total
+  "counties": {"06085": {"emp": 1100000, "districts": [["research_park", 2.9, 150000]]}}  // [id, lq, emp], same rule
+}                                                               // (no Port District water test), every county with a total
 ```
 
 Districts (fixed ids, in this order; NAICS 2022):
 
 | id | name | summed NAICS (own) | specialities (`sub`) | badge id |
 |---|---|---|---|---|
-| campus | Campus | 5417, 6113, 5415, 5132, 5182 (all) | research labs, universities, software, computer services, data hosting | scientific |
-| commercial_hub | Commercial hub | 52 (all) | 5231 securities, 524 insurance | commercial |
-| industrial_zone | Industrial zone | 31-33, 211, 2121 (all) | 3361 autos, 3344 chips, 3254 pharma, 3241 refining, 331 metals, 211 oil & gas, 2121 coal | industrial |
-| harbor | Harbor | 483, 4883 (all) | shipping lines, port services | maritime |
-| theater_square | Theater square | 711, 512, 516 (all) | arts & sports, film, broadcasting | cultural |
-| entertainment_complex | Entertainment complex | 713, 721 (all) | 7132 casinos, 713 amusement, 721 hotels | entertainment |
-| aerodrome | Aerodrome | 481, 4881, 3364 (all) | airlines, airport services, aerospace | aviation |
-| government_plaza | Government plaza | 921-927 (federal, state) | offices, courts/police/prisons, benefits, economic agencies, 927 space | governmental |
-| encampment | Encampment | 928110 (federal, state) | defense civilians | militaristic |
-| aqueduct | Aqueduct & dam | 22 (all) | 2211 power, 2213 water | utility |
+| research_park | Research Park | 5417, 6113, 5415, 5132, 5182 (all) | research labs, universities, software, computer services, data hosting | scientific |
+| financial_district | Financial District | 52 (all) | 5231 securities, 524 insurance | commercial |
+| industrial_park | Industrial Park | 31-33, 211, 2121 (all) | 3361 autos, 3344 chips, 3254 pharma, 3241 refining, 331 metals, 211 oil & gas, 2121 coal | industrial |
+| port_district | Port District | 483, 4883 (all) | shipping lines, port services | maritime |
+| arts_district | Arts District | 711, 512, 516 (all) | arts & sports, film, broadcasting | cultural |
+| leisure_district | Leisure District | 713, 721 (all) | 7132 casinos, 713 amusement, 721 hotels | entertainment |
+| aviation_hub | Aviation Hub | 481, 4881, 3364 (all) | airlines, airport services, aerospace | aviation |
+| civic_center | Civic Center | 921-927 (federal, state) | offices, courts/police/prisons, benefits, economic agencies, 927 space | governmental |
+| defense_district | Defense District | 928110 (federal, state) | defense civilians | militaristic |
+| utility_district | Utility District | 22 (all) | 2211 power, 2213 water | utility |
 
 * **Rule** (also in `rule.text`): a district appears when its summed LQ ≥ 1.25 and it has ≥ 1,000 jobs or ≥ 1% of the
   metro's jobs (`via: "broad"`), or when one of its specialities has LQ ≥ 3 with ≥ 1,000 jobs (`via: "specialty"`, e.g.
-  Houston's oil and gas inside an average-sized Industrial zone: `lq` is then below 1.25). Districts are ranked by
+  Houston's oil and gas inside an average-sized Industrial Park: `lq` is then below 1.25). Districts are ranked by
   `strength` (jobs above the national norm, the larger of the district's and its qualifying speciality's), so a small,
-  extreme speciality does not outrank what most of a city does; up to 5. Harbor needs a footprint hex that is water or
+  extreme speciality does not outrank what most of a city does; up to 5. A Port District needs a footprint hex that is water or
   next to water, or that a world.json river crosses.
 * **Badge** = the strongest district's `badge`, unless a listed district has LQ ≥ `badge_lq` (6) and ≥ `badge_share`
   (3%) of the metro's jobs, in which case the strongest such district (Huntsville, Alamogordo: Military town). So
   `badge.district` is one of the city's `districts`, not always the first. The label is the speciality's nickname
   (`labels[sub]`) when that speciality has LQ ≥ 3, else the district's generic nickname — one vocabulary of nicknames:
   Knowledge city, Finance city, Factory town, Port city, Arts city, Resort city, Air hub, Government town, Military
-  town, Utility town. A Government plaza in the national capital (cities.json `capital`) is "Capital city".
-  `basis: "ipeds"`: when no Campus district passes because BLS withheld some of a member county's Campus rows, and R1
+  town, Utility town. A Civic Center in the national capital (cities.json `capital`) is "Capital city".
+  `basis: "ipeds"`: when no Research Park passes because BLS withheld some of a member county's Research Park rows, and R1
   universities' IPEDS 12-month enrolment is ≥ `college_share` (15%) of the metro's population, the badge is
-  "College town" (`district: "campus"`, `withheld: true`; the campus is *not* in `districts`; State College, Ithaca,
+  "College town" (`district: "research_park"`, `withheld: true`; the Research Park is *not* in `districts`; State College, Ithaca,
   Champaign, Ames …). null when no district passes and no such rule applies ("diversified").
 * Suppressed county rows (`disclosure_code` N, published as 0) are left out of the sums: `suppressed` = how many member
   counties had a withheld part of that value, `lower_bound` = suppressed > 0 (the UI shows "≥"). A value with no
   disclosed county at all is null, never 0. Big single employers are often withheld (e.g. the University of Michigan in
-  Ann Arbor, Penn State), so Campus undercounts some college towns.
-* Encampment here is QCEW NAICS 928110 (civilian DoD staff and state Guard employees). Uniformed troops come from
-  military.json `cities`: the City View shows an Encampment when either file has one, with military.json's tier label.
+  Ann Arbor, Penn State), so the Research Park undercounts some college towns.
+* The Defense District here is QCEW NAICS 928110 (civilian DoD staff and state Guard employees). Uniformed troops come from
+  military.json `cities`: the City View shows a Defense District when either file has one, with military.json's tier label.
 * QCEW leaves out the self-employed, most farm workers, railroads and uniformed military; jobs are counted where the
   employer's establishment is, not where workers live.
 
@@ -561,8 +561,8 @@ Built by `pipeline/build/military.py` from `mirta` (`sources/mirta.py`), `dmdc_p
   "vintage": {"installations": "DoD MIRTA FY2025 (layer edited …)", "personnel": "DMDC, as of September 30, 2026",
               "spending": "OLDCC FY2024", "acs": "ACS 2024 5-year"},
   "sources": ["mirta", "dmdc_personnel", "oldcc_spending", "acs_5yr"],
-  "rule": "A metro gets an Encampment when …",           // the Encampment rule, quotable as is
-  "rules": {"tier": "…", "ranges": "…", "encampment": "…", "installations": "…",   // every selection rule as text
+  "rule": "A metro gets a Defense District when …",      // the Defense District rule, quotable as is
+  "rules": {"tier": "…", "ranges": "…", "defense_district": "…", "installations": "…",   // every selection rule as text
             "names": "…"},                       // the 2025 Army renames applied to MIRTA names, with the source URL
   "flagships": ["Naval Station Norfolk", …],             // the curated flagship list (names as in MIRTA)
   "caveats": "…",                                         // show where installation/personnel numbers appear
@@ -606,7 +606,7 @@ Built by `pipeline/build/military.py` from `mirta` (`sources/mirta.py`), `dmdc_p
                "veterans": 16900000, "armed_forces_resident": 1100000, "acs_scope": "…"},   // ACS 5-year, 50 states + DC
   "cities": {"22180": {"tier": "garrison|fortress", "armed_forces": 36721, "share": 0.1212, "naval": false,
                        "installations": ["fort-bragg-usa"],   // up to 8 ids, largest first
-                       "installation_count": 1}}             // only cities that pass the Encampment rule
+                       "installation_count": 1}}             // only cities that pass the Defense District rule
 }
 ```
 
@@ -615,7 +615,7 @@ Built by `pipeline/build/military.py` from `mirta` (`sources/mirta.py`), `dmdc_p
   sites are never `major` (`base` from 10 km², else `site`). Other active-duty sites are `base` from 1 km², else `site`.
   Parcels under 1 km² sharing a hex and component with a larger installation are folded into the nearest one
   (`parts`); the two Barry M. Goldwater Range halves (Air Force, Marine Corps) are one installation and one range.
-* Encampment (cities): (a) an active non-Guard installation of tier `major` or `base` in one of the metro's member
+* Defense District (cities): (a) an active non-Guard installation of tier `major` or `base` in one of the metro's member
   counties, or a range covering one of its hexes, **and** (b) ACS armed forces (`B23025_006`, by residence, summed over
   member counties) ≥ 1% of the 16+ population, or ≥ 2,000 **and** ≥ 0.3%: `fortress` at ≥ 3%, else `garrison`.
   `naval` when the qualifying Navy and Marine installations outweigh the Army and Air Force ones, a `major` counting 4

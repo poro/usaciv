@@ -1,5 +1,5 @@
-// City View "Districts": the metro's real industry specialisation (districts.json, BLS QCEW) as strategy-game
-// districts, plus the Encampment tier from military.json (installations + armed-forces residents).
+// City View "Districts": the metro's real industry specialisation (districts.json, BLS QCEW) as city
+// districts, plus the Defense District tier from military.json (installations + armed-forces residents).
 //
 //   cityDistricts(ddata, mil, id) → [district]   the metro's districts, strongest first, each with what the dock and
 //                                                the map plaques need ({id, name, short, color, icon, lq, emp, …})
@@ -14,15 +14,15 @@ import { hasIcon } from "../../icons.js";
 // Icons the district catalog names (d-*) are not drawn yet; until they are, a near icon from the set stands in,
 // and canvas plaques without any icon get the letter in `mark`.
 const FALLBACK = {
-  campus: ["y-science", "🎓"], commercial_hub: ["i-finance", "💰"], industrial_zone: ["i-manufacturing", "🏭"],
-  harbor: ["i-transportation", "⚓"], theater_square: ["i-arts", "🎭"], entertainment_complex: ["i-accommodation", "🎡"],
-  aerodrome: ["i-transportation", "✈️"], government_plaza: ["i-public_admin", "🏛"], encampment: [null, "⛺"],
-  aqueduct: ["i-utilities", "💧"],
+  research_park: ["y-science", "🎓"], financial_district: ["i-finance", "💰"], industrial_park: ["i-manufacturing", "🏭"],
+  port_district: ["i-transportation", "⚓"], arts_district: ["i-arts", "🎭"], leisure_district: ["i-accommodation", "🎡"],
+  aviation_hub: ["i-transportation", "✈️"], civic_center: ["i-public_admin", "🏛"], defense_district: [null, "⛺"],
+  utility_district: ["i-utilities", "💧"],
 };
 const SHORT = {
-  campus: "Campus", commercial_hub: "Commerce", industrial_zone: "Industry", harbor: "Harbor", theater_square: "Theater",
-  entertainment_complex: "Leisure", aerodrome: "Aerodrome", government_plaza: "Gov. plaza", encampment: "Encampment",
-  aqueduct: "Aqueduct",
+  research_park: "Research", financial_district: "Finance", industrial_park: "Industry", port_district: "Port",
+  arts_district: "Arts", leisure_district: "Leisure", aviation_hub: "Aviation", civic_center: "Civic", defense_district: "Defense",
+  utility_district: "Utilities",
 };
 const TIER = { garrison: "Garrison", fortress: "Fortress" };
 
@@ -47,7 +47,7 @@ function installationsById(mil) {
 }
 
 /**
- * The metro's districts: districts.json entries (strongest first), with military.json's Encampment merged in (its
+ * The metro's districts: districts.json entries (strongest first), with military.json's Defense District merged in (its
  * tier label; added at the end when only military.json has one).
  */
 export function cityDistricts(ddata, mil, id) {
@@ -64,14 +64,14 @@ export function cityDistricts(ddata, mil, id) {
       // The map plaque: a speciality-qualified district is labelled by that speciality (its own LQ is the reason).
       short: spec ? c.sub?.[d.sub] || SHORT[d.id] : SHORT[d.id] || c.name || d.id,
       mapLq: spec ? d.sub_lq : d.lq,
-      military: d.id === "encampment" ? mc : null,
+      military: d.id === "defense_district" ? mc : null,
     });
   }
-  if (mc && !out.some((d) => d.id === "encampment")) {
-    const c = cat.get("encampment") || {};
+  if (mc && !out.some((d) => d.id === "defense_district")) {
+    const c = cat.get("defense_district") || {};
     out.push({
-      id: "encampment", name: c.name || "Encampment", color: c.color || "#8a4a3a", icon: iconFor("encampment", c), emoji: "⛺",
-      cat: c, lq: null, emp: null, short: TIER[mc.tier] || "Encampment", mapLq: null, military: mc, militaryOnly: true,
+      id: "defense_district", name: c.name || "Defense District", color: c.color || "#8a4a3a", icon: iconFor("defense_district", c), emoji: "⛺",
+      cat: c, lq: null, emp: null, short: TIER[mc.tier] || "Defense", mapLq: null, military: mc, militaryOnly: true,
     });
   }
   for (const d of out) {
@@ -190,7 +190,7 @@ export function districtsHtml(m, ddata, mil) {
   const cards = list.length
     ? `<div class="cv-dcs">${list.map((d) => districtCard(d, row, ddata, mil)).join("")}</div>`
     : row ? `<p class="muted cv-note">No district passes the rule here: the metro's jobs are spread like the nation's.</p>` : "";
-  const milRule = mil?.rule && list.some((d) => d.military) ? `<p><b>Encampment tier</b> (military.json): ${esc(mil.rule)}</p>` : "";
+  const milRule = mil?.rule && list.some((d) => d.military) ? `<p><b>Defense District tier</b> (military.json): ${esc(mil.rule)}</p>` : "";
   return `${lead}
     ${cards}
     ${topTable(row, ddata)}
@@ -201,6 +201,6 @@ export function districtsHtml(m, ddata, mil) {
       <p>${esc(ddata.rule?.text || "")}</p>${milRule}
       <p>QCEW counts jobs where the employer is, not where workers live; it leaves out the self-employed, most farm workers, railroads and uniformed military.</p>
     </details>
-    <p class="cv-note">${esc(ddata.vintage || "BLS QCEW")}, all ownerships (federal and state only for the Government plaza and Encampment). ×N = location quotient; ≥ = a lower bound (BLS withheld a county's figure).${
-      mil && list.some((d) => d.military) ? ` Encampment tier: ${esc(typeof mil.vintage === "object" ? [mil.vintage.installations, mil.vintage.acs].filter(Boolean).join("; ") : mil.vintage || "")}.` : ""}</p>`;
+    <p class="cv-note">${esc(ddata.vintage || "BLS QCEW")}, all ownerships (federal and state only for the Civic Center and Defense District). ×N = location quotient; ≥ = a lower bound (BLS withheld a county's figure).${
+      mil && list.some((d) => d.military) ? ` Defense District tier: ${esc(typeof mil.vintage === "object" ? [mil.vintage.installations, mil.vintage.acs].filter(Boolean).join("; ") : mil.vintage || "")}.` : ""}</p>`;
 }

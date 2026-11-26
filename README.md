@@ -44,8 +44,8 @@ by a small Python pipeline that uses only the standard library, from public down
 - **City View.** Click a city:
   - Its **citizens** appear as rows of little figures by occupation, age, commute, education and origin, so
     San Jose's row looks different from Elkhart's.
-  - Its **districts** come from real industry specialisation (BLS QCEW location quotients): Campus, Commercial hub,
-    Industrial zone, Harbor, Theater square, Aerodrome and others. It gets a city-type badge such as
+  - Its **districts** come from real industry specialisation (BLS QCEW location quotients): Research Park, Financial
+    District, Industrial Park, Port District, Arts District, Aviation Hub and others. It gets a city-type badge such as
     "Tech city" or "Motor city".
   - It also shows GDP by industry, the workforce, resource sites, peer cities and the metro's hexes on the map.
 - **Advisors.** Docked dashboards for Energy & Resources, Economy, People, Prosperity & Housing, Knowledge, Land,

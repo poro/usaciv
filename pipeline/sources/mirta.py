@@ -150,7 +150,7 @@ class Mirta(Source):
         "Coast Guard (DHS) sites are not included. MIRTA has no headcount or acreage: areas are computed from the "
         "boundaries, and no per-base personnel figure exists in public data.",
         used_for=["Military layer: forts and bases on the map", "Restricted ground (the largest ranges)",
-                  "Encampment district rule for cities"],
+                  "Defense District rule for cities"],
     )
 
     def fetch(self, force=False):

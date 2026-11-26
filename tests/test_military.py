@@ -1,4 +1,4 @@
-"""Military layer: MIRTA/DMDC helpers, the Encampment rule and military.json's check()."""
+"""Military layer: MIRTA/DMDC helpers, the Defense District rule and military.json's check()."""
 
 import copy
 import json
@@ -60,7 +60,7 @@ def inst(id, county, component="army", tier="base", status="act", area=50.0, cel
             "area_km2": area, "cell": cell}
 
 
-class EncampmentRuleTest(unittest.TestCase):
+class DefenseDistrictRuleTest(unittest.TestCase):
     def setUp(self):
         self.loc = SimpleNamespace(cities={
             "A": {"counties": ["01001"], "footprint": [0]},

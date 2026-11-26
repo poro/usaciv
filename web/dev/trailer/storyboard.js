@@ -216,7 +216,7 @@ export function buildStoryboard(stage, cfg = CONFIG) {
   const IMP_T = T_CITY - T_IMP, ZI = 1.0;
   const STAGES = [
     { at: 1.05, on: { roads: true, rail: true }, chip: { icon: "t-road", label: "Interstates & railroads", sub: stripParen(infra.vintage.roads) } },
-    { at: 1.75, on: { hubs: true }, chip: { icon: "d-harbor", label: `U.S.: ${infra.ports.length} ports · ${infra.airports.length} airports`, sub: "Ranked by USACE tonnage and FAA boardings" } },
+    { at: 1.75, on: { hubs: true }, chip: { icon: "d-port-district", label: `U.S.: ${infra.ports.length} ports · ${infra.airports.length} airports`, sub: "Ranked by USACE tonnage and FAA boardings" } },
     { at: 2.45, on: { military: true }, chip: { icon: "m-army", label: `${int(mil.installations.length)} military sites nationwide`, sub: stripParen(mil.vintage.installations) } },
     { at: 3.15, on: { wonders: true }, chip: { icon: "w-landmark", label: `${won.wonders.length} wonders nationwide`, sub: "Top parks by visits, R&D universities, landmarks" } },
   ];

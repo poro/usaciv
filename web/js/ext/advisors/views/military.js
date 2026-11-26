@@ -239,7 +239,7 @@ export async function mount(ctx) {
   // --- garrisons ------------------------------------------------------------------------------------------------
   const gBody = section(el, {
     title: "Garrison cities",
-    note: `${esc(mil.rules?.encampment || mil.rule || "")}`,
+    note: `${esc(mil.rules?.defense_district || mil.rule || "")}`,
   });
   const garrisons = Object.entries(mil.cities || {}).map(([id, c]) => ({ ...c, key: id, row: metros.byKey.get(id) })).filter((g) => g.row);
   const gTable = createTable(gBody, {

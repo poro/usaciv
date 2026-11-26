@@ -13,7 +13,7 @@ import { tips } from "./tips.js";
 const TOGGLES = [
   { id: "roads", label: "Roads", icon: "t-road", def: true, title: "Interstates and major highways (Natural Earth, as map art)", layers: ["roads"] },
   { id: "rail", label: "Railroads", icon: "t-rail", def: true, title: "Main and secondary rail lines (Natural Earth, as map art)", layers: ["rail"] },
-  { id: "hubs", label: "Ports & airports", icon: "d-harbor", def: true, title: "USACE principal ports by tonnage, FAA primary and cargo airports", layers: ["hubs"] },
+  { id: "hubs", label: "Ports & airports", icon: "d-port-district", def: true, title: "USACE principal ports by tonnage, FAA primary and cargo airports", layers: ["hubs"] },
   { id: "military", label: "Military", icon: "m-army", def: true, title: "DoD installations as forts, the largest ranges as restricted ground", layers: ["forts", "restricted", "plates"] },
   { id: "wonders", label: "Wonders", icon: "w-landmark", def: true, title: "Most-visited parks, top research universities and curated landmarks", layers: ["wonders", "protected", "plates"] },
   { id: "trade", label: "Trade routes", icon: "t-trade", def: false, title: "The 40 largest freight flows between states (FAF5 estimates)", layers: ["trade"] },

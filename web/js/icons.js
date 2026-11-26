@@ -658,7 +658,7 @@ const RAW = {
   },
 
   // ---- districts (districts.json catalog `icon` ids)
-  'd-campus': {
+  'd-research-park': {
     bg: '#2c5a9a',
     paths: [
       T('M6.2 10.6v4.6c3.6 2.6 8 2.6 11.6 0v-4.6L12 13.4Z'),
@@ -667,7 +667,7 @@ const RAW = {
       D('M6.8 8.4L12 6l5.2 2.4', 1),
     ],
   },
-  'd-commercial-hub': {
+  'd-financial-district': {
     bg: '#8a6a14',
     paths: [
       F('M9.2 2.4h5.6l-1.8 3.4c4.6 1.2 7.8 5.4 7.8 10 0 4.2-3.6 6.2-8.8 6.2S3.2 20 3.2 15.8c0-4.6 3.2-8.8 7.8-10Z'),
@@ -675,7 +675,7 @@ const RAW = {
       D('M14.3 11.4c-.5-.9-1.4-1.3-2.5-1.3-1.4 0-2.3.7-2.3 1.7s1 1.5 2.3 1.8 2.4.8 2.4 1.9-1 1.8-2.4 1.8c-1.2 0-2.1-.5-2.6-1.4M11.8 9v9.4', 1.3),
     ],
   },
-  'd-industrial-zone': {
+  'd-industrial-park': {
     bg: '#8a4424',
     paths: [
       T(circle(18.2, 3.4, 1.7)), T(circle(15.2, 2.2, 1.2)),
@@ -683,7 +683,7 @@ const RAW = {
         'M3.8 17.2h2.2v2.2H3.8Z' + 'M9 17.2h2.2v2.2H9Z' + 'M14.2 17.2h2.2v2.2h-2.2Z'),
     ],
   },
-  'd-harbor': {
+  'd-port-district': {
     bg: '#1f5f86',
     paths: [
       T('M4.6 8.8h4.2v4.6H4.6Z' + 'M9.4 8.8h4.2v4.6H9.4Z' + 'M7 4.6h4.2v3.8H7Z'),
@@ -692,7 +692,7 @@ const RAW = {
       S('M1.6 21.8q2.6-1.6 5.2 0t5.2 0 5.2 0 5.2 0', 1.6),
     ],
   },
-  'd-theater-square': {
+  'd-arts-district': {
     bg: '#5e3480',
     paths: [
       T('M1.8 19.4h20.4v2.6H1.8Z'),
@@ -702,7 +702,7 @@ const RAW = {
       F(star(12, 12.4, 3.6, 0.45)),
     ],
   },
-  'd-entertainment-complex': {
+  'd-leisure-district': {
     bg: '#8a2f5e',
     paths: [
       T([0, 1, 2, 3, 4, 5, 6, 7].map((k) => circle(12 + 7.4 * Math.cos((k * Math.PI) / 4), 10 + 7.4 * Math.sin((k * Math.PI) / 4), 1.5)).join('')),
@@ -712,14 +712,14 @@ const RAW = {
       F(circle(12, 10, 1.9)),
     ],
   },
-  'd-aerodrome': {
+  'd-aviation-hub': {
     bg: '#3a5a86',
     paths: [
       F(poly(rot([[0, -10.4], [1.3, -8.8], [1.3, -3], [9.6, 1.8], [9.6, 3.8], [1.3, 1.4], [1.2, 6.6], [4, 8.6], [4, 10.2],
         [0, 9.2], [-4, 10.2], [-4, 8.6], [-1.2, 6.6], [-1.3, 1.4], [-9.6, 3.8], [-9.6, 1.8], [-1.3, -3], [-1.3, -8.8]], 12, 12, 45))),
     ],
   },
-  'd-government-plaza': {
+  'd-civic-center': {
     bg: '#4e5a34',
     paths: [
       F(poly([[12, 1.8], [22.6, 8.2], [1.4, 8.2]]) + star(12, 5.8, 1.7, 0.45)),
@@ -727,7 +727,7 @@ const RAW = {
       F(rrect(1.6, 19.2, 20.8, 3.2, 0.6)),
     ],
   },
-  'd-encampment': {
+  'd-defense-district': {
     bg: '#6a3a2a',
     paths: [
       T('M13.4 21.8l5.2-9 4.2 9Z'),
@@ -736,7 +736,7 @@ const RAW = {
       F('M10.4 1.4h6.6l-1.6 1.8 1.6 1.8h-6.6Z'),
     ],
   },
-  'd-aqueduct': {
+  'd-utility-district': {
     bg: '#22706e',
     paths: [
       T('M1.2 2.8h21.6v2.6H1.2Z'),
@@ -932,17 +932,22 @@ export const ALIASES = {
   'i-real-estate': 'l-home',
   'i-public-admin': 'i-public_admin',
   // map-art ids that reuse a glyph
-  't-port': 'd-harbor',
-  't-airport': 'd-aerodrome',
+  't-port': 'd-port-district',
+  't-airport': 'd-aviation-hub',
   'm-air_force': 'm-air-force',
   'm-fort': 'm-army',
   'w-natural': 'w-park',
   'l-faith_tradition': 'l-faith-tradition',
-  'd-commercial_hub': 'd-commercial-hub',
-  'd-industrial_zone': 'd-industrial-zone',
-  'd-theater_square': 'd-theater-square',
-  'd-entertainment_complex': 'd-entertainment-complex',
-  'd-government_plaza': 'd-government-plaza',
+  'd-research_park': 'd-research-park',
+  'd-financial_district': 'd-financial-district',
+  'd-industrial_park': 'd-industrial-park',
+  'd-port_district': 'd-port-district',
+  'd-arts_district': 'd-arts-district',
+  'd-leisure_district': 'd-leisure-district',
+  'd-aviation_hub': 'd-aviation-hub',
+  'd-civic_center': 'd-civic-center',
+  'd-defense_district': 'd-defense-district',
+  'd-utility_district': 'd-utility-district',
 };
 
 export const ICONS = { ...RAW };

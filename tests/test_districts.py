@@ -18,7 +18,7 @@ def priv(emp, wages=None, chg=0):
 def qcew():
     """Nation of 1,000,000 jobs; metro A = counties 01001 + 01003, B = 02001 (inland)."""
     us_frac = {"31_33": 0.08, "3361": 0.006, "3344": 0.003, "483": 0.0005, "4883": 0.0007}
-    us = {c: [None, None, None, None] for c in D.BY_ID["industrial_zone"]["naics"]}
+    us = {c: [None, None, None, None] for c in D.BY_ID["industrial_park"]["naics"]}
     codes = {c for d in D.CATALOG for c in d["naics"] + list(d["sub"])}
     us = {c: [None, None, None, [int(1_000_000 * us_frac.get(c, 0.01)), 1, 0]] for c in codes}
     counties = {c: {} for c in codes}
@@ -69,7 +69,7 @@ class RuleTest(unittest.TestCase):
 
     def test_broad_district_with_lower_bound(self):
         ds = D.evaluate(self.m, ["01001", "01003"], 100000)
-        iz = next(d for d in ds if d["id"] == "industrial_zone")
+        iz = next(d for d in ds if d["id"] == "industrial_park")
         self.assertEqual(iz["via"], "broad")
         self.assertEqual(iz["sub"], "3361")
         self.assertTrue(iz["lower_bound"])
@@ -77,7 +77,7 @@ class RuleTest(unittest.TestCase):
 
     def test_specialty_district(self):
         ds = D.evaluate(self.m, ["02001"], 50000, wet=False)
-        iz = next(d for d in ds if d["id"] == "industrial_zone")
+        iz = next(d for d in ds if d["id"] == "industrial_park")
         self.assertEqual(iz["via"], "specialty")
         self.assertEqual(iz["sub"], "3344")
         self.assertLess(iz["lq"], D.MIN_LQ)
@@ -86,11 +86,11 @@ class RuleTest(unittest.TestCase):
         q = qcew()
         q["counties"]["3344"]["02001"] = priv(400)
         ds = D.evaluate(D.Metrics(q), ["02001"], 50000, wet=False)
-        self.assertNotIn("industrial_zone", [d["id"] for d in ds])
+        self.assertNotIn("industrial_park", [d["id"] for d in ds])
 
-    def test_harbor_needs_water(self):
-        self.assertIn("harbor", [d["id"] for d in D.evaluate(self.m, ["02001"], 50000, wet=True)])
-        self.assertNotIn("harbor", [d["id"] for d in D.evaluate(self.m, ["02001"], 50000, wet=False)])
+    def test_port_district_needs_water(self):
+        self.assertIn("port_district", [d["id"] for d in D.evaluate(self.m, ["02001"], 50000, wet=True)])
+        self.assertNotIn("port_district", [d["id"] for d in D.evaluate(self.m, ["02001"], 50000, wet=False)])
 
     def test_ranked_by_strength_and_capped(self):
         ds = D.evaluate(self.m, ["01001", "01003"], 100000)
@@ -102,10 +102,10 @@ class RuleTest(unittest.TestCase):
         b = D.badge_for(ds[0])
         self.assertEqual(b["district"], ds[0]["id"])
         self.assertIsNone(D.badge_for(None))
-        best = {"id": "industrial_zone", "lq": 1.4, "sub": "3361", "sub_lq": 7.0}
+        best = {"id": "industrial_park", "lq": 1.4, "sub": "3361", "sub_lq": 7.0}
         self.assertEqual(D.badge_for(best)["label"], "Motor city")
         self.assertEqual(D.badge_for(dict(best, sub_lq=2.0))["label"], "Factory town")
-        gov = {"id": "government_plaza", "lq": 3.0, "sub": "926", "sub_lq": 5.0}
+        gov = {"id": "civic_center", "lq": 3.0, "sub": "926", "sub_lq": 5.0}
         self.assertEqual(D.badge_for(gov, capital=True)["label"], "Capital city")
 
     def test_one_vocabulary_of_nicknames(self):
@@ -116,21 +116,21 @@ class RuleTest(unittest.TestCase):
 
     def test_extreme_district_names_the_badge(self):
         # Huntsville-like: a big factory base ranks first, but defense civilians are 13× and 4.7% of jobs
-        ds = [{"id": "industrial_zone", "lq": 1.6, "share": 0.13, "strength": 13245},
-              {"id": "encampment", "lq": 13.0, "share": 0.047, "strength": 11693},
-              {"id": "aerodrome", "lq": 3.0, "share": 0.028, "strength": 5730}]
-        self.assertEqual(D.badge_district(ds)["id"], "encampment")
+        ds = [{"id": "industrial_park", "lq": 1.6, "share": 0.13, "strength": 13245},
+              {"id": "defense_district", "lq": 13.0, "share": 0.047, "strength": 11693},
+              {"id": "aviation_hub", "lq": 3.0, "share": 0.028, "strength": 5730}]
+        self.assertEqual(D.badge_district(ds)["id"], "defense_district")
         ds[1]["share"] = 0.02  # extreme but small: the strongest district stays
-        self.assertEqual(D.badge_district(ds)["id"], "industrial_zone")
+        self.assertEqual(D.badge_district(ds)["id"], "industrial_park")
         self.assertIsNone(D.badge_district([]))
 
-    def test_college_town_when_campus_withheld(self):
+    def test_college_town_when_research_withheld(self):
         univ = [("Penn State", 50000)]
-        b = D.college_badge(univ, 160000, campus_withheld=True)
-        self.assertEqual((b["label"], b["district"], b["basis"], b["withheld"]), ("College town", "campus", "ipeds", True))
-        self.assertIsNone(D.college_badge(univ, 160000, campus_withheld=False))
-        self.assertIsNone(D.college_badge(univ, 1_000_000, campus_withheld=True))  # 5% < 15%
-        self.assertIsNone(D.college_badge([], 160000, campus_withheld=True))
+        b = D.college_badge(univ, 160000, research_withheld=True)
+        self.assertEqual((b["label"], b["district"], b["basis"], b["withheld"]), ("College town", "research_park", "ipeds", True))
+        self.assertIsNone(D.college_badge(univ, 160000, research_withheld=False))
+        self.assertIsNone(D.college_badge(univ, 1_000_000, research_withheld=True))  # 5% < 15%
+        self.assertIsNone(D.college_badge([], 160000, research_withheld=True))
 
 
 class CheckTest(unittest.TestCase):
@@ -165,7 +165,7 @@ class CheckTest(unittest.TestCase):
         cases = {
             "badge": lambda d: d["cities"]["A"].update(badge=None),
             "badge district": lambda d: d["cities"]["A"]["badge"].update(district="spaceport"),
-            "ipeds badge": lambda d: d["cities"]["A"].update(badge={"district": "campus", "basis": "ipeds"}),
+            "ipeds badge": lambda d: d["cities"]["A"].update(badge={"district": "research_park", "basis": "ipeds"}),
             "lower_bound": lambda d: d["cities"]["A"]["districts"][0].update(lower_bound=False, suppressed=3),
             "unknown": lambda d: d["cities"]["A"]["districts"].append({"id": "spaceport", "emp": 1}),
             "catalog": lambda d: d["catalog"].pop(),
@@ -189,7 +189,7 @@ class CapitalTest(unittest.TestCase):
         self.assertFalse(h({"full": "Parkersburg-Vienna, WV Metro Area", "states": ["WV"]}))
 
     def test_seat_of_government_label(self):
-        best = {"id": "government_plaza", "sub": "921", "sub_lq": 9.0, "lq": 2.0, "lower_bound": False,
+        best = {"id": "civic_center", "sub": "921", "sub_lq": 9.0, "lq": 2.0, "lower_bound": False,
                 "sub_lower_bound": True}
         self.assertEqual(D.badge_for(best, state_capital=True)["label"], "Seat of government")
         b = D.badge_for(best, state_capital=False)

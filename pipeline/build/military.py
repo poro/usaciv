@@ -1,5 +1,5 @@
 """Military layer: DoD installations as forts, the largest ranges as restricted ground, troops and defense dollars
-by state, and the Encampment rule for cities. Writes web/data/military.json (loaded eagerly, so kept small).
+by state, and the Defense District rule for cities. Writes web/data/military.json (loaded eagerly, so kept small).
 
 * Installations: MIRTA points in the lower 48 (closed and excess sites left out), with component, joint-base flag,
   boundary area and the hexes their boundary covers. MIRTA has no headcount and DoD publishes none per base, so the
@@ -8,7 +8,7 @@ by state, and the Encampment rule for cities. Writes web/data/military.json (loa
   1 km²) that share a hex and component with a larger installation are folded into it (`parts`).
 * Ranges: the largest boundaries (training and test ranges, the biggest posts), drawn as restricted ground.
 * States: DMDC personnel by duty state and service; OLDCC defense spending (contracts, grants, payroll).
-* Cities: the Encampment tier from installations in the metro plus ACS armed forces by residence.
+* Cities: the Defense District tier from installations in the metro plus ACS armed forces by residence.
 
 Also home to `Locator` (lon/lat → map km, US land cell, county, metro), shared with wonders.py.
 """
@@ -136,7 +136,7 @@ RANGE_RULE = (f"The {RANGES_N} largest MIRTA boundaries in the lower 48 (by area
 
 AF_SHARE_MIN, AF_COUNT_MIN, AF_COUNT_SHARE, FORTRESS_SHARE = 0.01, 2000, 0.003, 0.03
 TIER_WEIGHT = {"major": 4, "base": 1, "site": 0}
-CITY_RULE = ("A metro gets an Encampment when (a) an active non-Guard MIRTA installation of tier 'major' or 'base' "
+CITY_RULE = ("A metro gets a Defense District when (a) an active non-Guard MIRTA installation of tier 'major' or 'base' "
              "(not a small reserve centre or office) lies in one of its member counties, or one of the restricted "
              "ranges covers one of its hexes, and (b) residents in the armed forces (ACS 5-year B23025_006, by place "
              "of residence, summed over the member counties) are at least "
@@ -544,7 +544,7 @@ def build() -> None:
                     "acs": acs_p.get("vintage") or f"ACS {year} 5-year"},
         "sources": ["mirta", "dmdc_personnel", "oldcc_spending", "acs_5yr"],
         "rule": CITY_RULE,
-        "rules": {"tier": TIER_RULE, "ranges": RANGE_RULE, "encampment": CITY_RULE,
+        "rules": {"tier": TIER_RULE, "ranges": RANGE_RULE, "defense_district": CITY_RULE,
                   "installations": "MIRTA installation points in the lower 48 that are active, semi-active or in "
                                    "caretaker status (closed and excess sites are left out). A point just offshore is "
                                    "placed on the nearest US land hex. Large boundaries (200 km² or more) also "
@@ -576,7 +576,7 @@ def build() -> None:
     print(f"    {len(inst)} installations ({', '.join(f'{v} {k}' for k, v in tiers.items())}); "
           f"left out: {dict(dropped)}")
     print(f"    renamed {renamed} rows to their current official names (2025 Army renames)")
-    print(f"    {len(rngs)} ranges ({sum(len(r['cells']) for r in rngs)} hexes); {len(cities)} Encampment cities "
+    print(f"    {len(rngs)} ranges ({sum(len(r['cells']) for r in rngs)} hexes); {len(cities)} Defense District cities "
           f"({sum(c['tier'] == 'fortress' for c in cities.values())} fortress)")
     print(f"    {len(states)} states; OLDCC top counties matched to the map {hits}/{total}"
           + (f"; unmatched state names {unmatched}" if unmatched else ""))
@@ -618,7 +618,7 @@ def check(web_dir) -> list[tuple[str, str]]:
     if not isinstance(d.get("sources"), list) or not d.get("sources"):
         bad.append("sources must be a non-empty list")
     if not isinstance(d.get("rule"), str):
-        bad.append("rule (Encampment rule text) missing")
+        bad.append("rule (Defense District rule text) missing")
     comp_ids = [c.get("id") for c in d.get("components") or []]
     if not comp_ids:
         bad.append("components missing")
@@ -683,7 +683,7 @@ def check(web_dir) -> list[tuple[str, str]]:
         cs = d.get("cities") or {}
         out.append(("PASS", f"military.json: {len(inst)} installations ({tiers.get('major', 0)} major, "
                             f"{tiers.get('base', 0)} base, {tiers.get('site', 0)} site), {len(d.get('ranges') or [])} "
-                            f"ranges, {len(d.get('states') or {})} states, {len(cs)} Encampment cities "
+                            f"ranges, {len(d.get('states') or {})} states, {len(cs)} Defense District cities "
                             f"({sum(c['tier'] == 'fortress' for c in cs.values())} fortress)"))
         no_sp = [a for a, s in (d.get("states") or {}).items() if s.get("spending") is None]
         if no_sp:

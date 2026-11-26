@@ -1,4 +1,4 @@
-"""Districts: real industry specialisation (BLS QCEW) as strategy-game districts, per metro and per county.
+"""Districts: real industry specialisation (BLS QCEW) as city districts, per metro and per county.
 
 QCEW stopped publishing metro areas by industry with the 2025 data, so a metro's jobs in an industry are the sum of
 its member counties (cities.json `counties`). Counties whose row BLS withheld for confidentiality are left out of
@@ -12,15 +12,15 @@ The rule (published in the file as `rule`):
 * A district's score is the LQ of the sum of its industries (`naics`, ownerships `own`).
 * It **appears** when that LQ is at least MIN_LQ and it has at least MIN_JOBS jobs or MIN_SHARE of the metro's
   jobs ("broad"), or when one of its listed specialities (`sub`) has an LQ of at least SPECIALTY_LQ with at least
-  SPECIALTY_JOBS jobs or SPECIALTY_SHARE of the metro's jobs, and never under MIN_JOBS ("specialty": e.g. Houston's oil and gas inside a manufacturing-sized Industrial zone).
+  SPECIALTY_JOBS jobs or SPECIALTY_SHARE of the metro's jobs, and never under MIN_JOBS ("specialty": e.g. Houston's oil and gas inside a manufacturing-sized Industrial Park).
 * Districts are ranked by strength = jobs above the national norm (emp - emp / LQ), taking the larger of the
   district's and its qualifying specialty's; up to MAX_PER_CITY are kept. (Ranking by jobs rather than by LQ
-  stops a small, extreme speciality from outranking what most of a city does.) Harbor needs a footprint hex on or next to water, or on a mapped river.
+  stops a small, extreme speciality from outranking what most of a city does.) A Port District needs a footprint hex on or next to water, or on a mapped river.
 * The city type `badge` comes from the strongest district, unless another listed district is extreme
   (LQ >= BADGE_LQ and >= BADGE_SHARE of the metro's jobs: Huntsville's defense civilians, Elizabethtown's Fort Knox),
   in which case the strongest such district wins. Its label is the speciality's nickname when one qualifies, else
   the district's generic nickname (one vocabulary: 'Factory town', 'Military town', ...). When BLS withholds the
-  Campus jobs but R1 universities enrol at least COLLEGE_SHARE of the metro's population (IPEDS), the badge is
+  Research Park jobs but R1 universities enrol at least COLLEGE_SHARE of the metro's population (IPEDS), the badge is
   'College town' (basis 'ipeds', flagged `withheld`). No district → no badge ("diversified").
 """
 
@@ -55,13 +55,13 @@ RULE_TEXT = (
     f"{MIN_SHARE:.0%} of the metro's jobs, or when one of its listed specialities has a location quotient of at "
     f"least {SPECIALTY_LQ:g} with at least {SPECIALTY_JOBS:,} jobs or {SPECIALTY_SHARE:.1%} of the metro's jobs (and "
     f"never fewer than {MIN_JOBS:,}). Districts are ranked by how many jobs they have "
-    f"above the national norm (jobs minus jobs divided by the quotient); up to {MAX_PER_CITY} per city. A Harbor also needs a metro hex on or next to water or a mapped "
+    f"above the national norm (jobs minus jobs divided by the quotient); up to {MAX_PER_CITY} per city. A Port District also needs a metro hex on or next to water or a mapped "
     f"river. Metro jobs add up the member counties (BLS publishes metros as totals only from 2025 on); counties "
     f"BLS withheld are left out, so such values are lower bounds. The city type is named after the strongest "
     f"district, or after a listed district with a quotient of at least {BADGE_LQ:g} and at least {BADGE_SHARE:.0%} of "
     f"the metro's jobs when there is one, and labelled by its speciality when one passes; 'Seat of government' and "
     f"'Capital city' go only to metros holding a state capital or the national capital. When BLS withholds the "
-    f"Campus jobs but R1 research universities enrol students numbering at least {COLLEGE_SHARE:.0%} of the metro's "
+    f"Research Park jobs but R1 research universities enrol students numbering at least {COLLEGE_SHARE:.0%} of the metro's "
     f"population (IPEDS 12-month headcount, which includes online students), the city type is 'College town'."
 )
 
@@ -75,43 +75,43 @@ def _d(id, name, color, naics, own, sub, badge, labels, description, caveat=None
 
 
 CATALOG = [
-    _d("campus", "Campus", "#4a7bd0", ["5417", "6113", "5415", "5132", "5182"], ALL_OWN,
+    _d("research_park", "Research Park", "#4a7bd0", ["5417", "6113", "5415", "5132", "5182"], ALL_OWN,
        {"5417": "Research labs", "6113": "Universities", "5132": "Software", "5415": "Computer services",
         "5182": "Data centres & hosting"},
        ("scientific", "Knowledge city"),
        {"5417": "Research city", "6113": "College town", "5132": "Tech city", "5415": "Tech city", "5182": "Tech city"},
        "Science and technology: research labs, colleges and universities, software publishers, computer "
        "services and data hosting."),
-    _d("commercial_hub", "Commercial hub", "#d0a23a", ["52"], ALL_OWN,
+    _d("financial_district", "Financial District", "#d0a23a", ["52"], ALL_OWN,
        {"5231": "Securities & brokerage", "524": "Insurance"},
        ("commercial", "Finance city"), {"5231": "Finance capital", "524": "Insurance city"},
        "Finance and insurance: banks, securities and commodity trading, insurers."),
-    _d("industrial_zone", "Industrial zone", "#c2643a", ["31_33", "211", "2121"], ALL_OWN,
+    _d("industrial_park", "Industrial Park", "#c2643a", ["31_33", "211", "2121"], ALL_OWN,
        {"3361": "Motor vehicles", "3344": "Semiconductors", "3254": "Pharmaceuticals", "3241": "Oil refining",
         "331": "Primary metals", "211": "Oil & gas", "2121": "Coal mining"},
        ("industrial", "Factory town"),
        {"3361": "Motor city", "3344": "Silicon city", "3254": "Pharma city", "3241": "Refinery town",
         "331": "Steel town", "211": "Oil town", "2121": "Coal town"},
-       "Manufacturing plus oil and gas extraction and coal mining (the strategy-game home of power plants)."),
-    _d("harbor", "Harbor", "#2f8fb0", ["483", "4883"], ALL_OWN,
+       "Manufacturing plus oil and gas extraction and coal mining."),
+    _d("port_district", "Port District", "#2f8fb0", ["483", "4883"], ALL_OWN,
        {"483": "Shipping lines", "4883": "Port services"},
        ("maritime", "Port city"), {"483": "Port city", "4883": "Port city"},
        "Water transport: shipping and barge lines, and port and harbour services (cargo handling, pilots, "
        "marinas).", "Only for metros with a hex on or next to water or a mapped river."),
-    _d("theater_square", "Theater square", "#a15bc4", ["711", "512", "516"], ALL_OWN,
+    _d("arts_district", "Arts District", "#a15bc4", ["711", "512", "516"], ALL_OWN,
        {"711": "Performing arts & sports", "512": "Film & recording", "516": "Broadcasting"},
        ("cultural", "Arts city"), {"711": "Arts city", "512": "Film capital", "516": "Media city"},
        "Culture and media: theatres, orchestras, spectator sports, film and music studios, broadcasters."),
-    _d("entertainment_complex", "Entertainment complex", "#d0508a", ["713", "721"], ALL_OWN,
+    _d("leisure_district", "Leisure District", "#d0508a", ["713", "721"], ALL_OWN,
        {"7132": "Casinos", "713": "Amusement & recreation", "721": "Hotels & resorts"},
        ("entertainment", "Resort city"), {"7132": "Casino city", "713": "Resort city", "721": "Resort city"},
        "Leisure: theme parks, casinos, golf, ski and fitness, plus hotels and resorts. Casino hotels count as "
        "hotels (NAICS 721120)."),
-    _d("aerodrome", "Aerodrome", "#6a8fb8", ["481", "4881", "3364"], ALL_OWN,
+    _d("aviation_hub", "Aviation Hub", "#6a8fb8", ["481", "4881", "3364"], ALL_OWN,
        {"481": "Airlines", "4881": "Airport services", "3364": "Aerospace"},
        ("aviation", "Air hub"), {"481": "Air hub", "4881": "Air hub", "3364": "Aerospace city"},
        "Aviation: airlines, airport services and aerospace manufacturing."),
-    _d("government_plaza", "Government plaza", "#8a9a5b", ["921", "922", "923", "924", "925", "926", "927"], [1, 2],
+    _d("civic_center", "Civic Center", "#8a9a5b", ["921", "922", "923", "924", "925", "926", "927"], [1, 2],
        {"921": "Government offices", "922": "Courts, police & prisons", "923": "Benefit agencies",
         "926": "Economic agencies", "927": "Space agency"},
        ("governmental", "Government town"),
@@ -119,13 +119,13 @@ CATALOG = [
         "927": "Space city"},
        "Federal and state public administration (NAICS 92 without national security). Local government offices "
        "are in every county and are left out.",
-       "State universities and hospitals are not public administration (they count in Campus)."),
-    _d("encampment", "Encampment", "#8a4a3a", ["928110"], [1, 2],
+       "State universities and hospitals are not public administration (they count in the Research Park)."),
+    _d("defense_district", "Defense District", "#8a4a3a", ["928110"], [1, 2],
        {"928110": "Defense civilians"},
        ("militaristic", "Military town"), {"928110": "Military town"},
        "National security: civilian Department of Defense staff and state National Guard employees.",
        "Civilian defense staff only: uniformed troops are not in QCEW (see the Military layer)."),
-    _d("aqueduct", "Aqueduct & dam", "#3aa0a0", ["22"], ALL_OWN,
+    _d("utility_district", "Utility District", "#3aa0a0", ["22"], ALL_OWN,
        {"2211": "Power utilities", "2213": "Water & sewer"},
        ("utility", "Utility town"), {"2211": "Power town", "2213": "Waterworks town"},
        "Utilities: electric power generation and distribution, water, sewage and gas."),
@@ -212,7 +212,7 @@ def evaluate(m: Metrics, fips: list[str], total: int | None, wet: bool = True) -
     if not total:
         return out
     for d in CATALOG:
-        if d["id"] == "harbor" and not wet:
+        if d["id"] == "port_district" and not wet:
             continue
         v = m.industry(d["naics"], d["own"], fips)
         if v["emp"] is None:
@@ -256,17 +256,17 @@ def badge_district(dists: list[dict]) -> dict | None:
     return max(extreme, key=lambda d: d["strength"]) if extreme else dists[0]
 
 
-def college_badge(univs: list[tuple[str, int]], pop, campus_withheld: bool) -> dict | None:
-    """'College town' from IPEDS when BLS withholds the Campus jobs of a metro dominated by R1 universities."""
-    if not campus_withheld or not univs or not pop:
+def college_badge(univs: list[tuple[str, int]], pop, research_withheld: bool) -> dict | None:
+    """'College town' from IPEDS when BLS withholds the Research Park jobs of a metro dominated by R1 universities."""
+    if not research_withheld or not univs or not pop:
         return None
     enrolled = sum(e for _, e in univs)
     if enrolled < COLLEGE_SHARE * pop:
         return None
     names = ", ".join(n for n, _ in sorted(univs, key=lambda t: -t[1])[:2])
-    return {"id": "scientific", "label": "College town", "district": "campus", "basis": "ipeds", "withheld": True,
+    return {"id": "scientific", "label": "College town", "district": "research_park", "basis": "ipeds", "withheld": True,
             "text": f"{names}: R1 research university enrolment equal to {enrolled / pop:.0%} of the metro's people "
-                    f"(IPEDS, 12-month headcount). BLS withholds part of the Campus jobs here, so that district cannot be measured."}
+                    f"(IPEDS, 12-month headcount). BLS withholds part of the Research Park jobs here, so that district cannot be measured."}
 
 
 # State capitals of the lower 48 (city name, state): 'Seat of government' goes only to metros holding one.
@@ -301,9 +301,9 @@ def badge_for(best: dict | None, capital: bool = False, state_capital: bool = Fa
     sub = best["sub"]
     use_sub = sub is not None and best["sub_lq"] is not None and best["sub_lq"] >= SPECIALTY_LQ
     label = d["badge"]["labels"].get(sub, d["badge"]["label"]) if use_sub else d["badge"]["label"]
-    if capital and d["id"] == "government_plaza":
+    if capital and d["id"] == "civic_center":
         label = "Capital city"
-    elif d["id"] == "government_plaza" and use_sub and sub == "921" and state_capital:
+    elif d["id"] == "civic_center" and use_sub and sub == "921" and state_capital:
         label = "Seat of government"
     if use_sub:
         ge = "≥" if best.get("sub_lower_bound") else ""
@@ -351,7 +351,7 @@ def build() -> None:
     for i in load_interim_payload("ipeds")["data"]["institutions"].values():
         if i.get("research") == 1 and i.get("cbsa") and i.get("enrollment"):
             r1.setdefault(i["cbsa"], []).append((i["name"].replace("-Main Campus", ""), i["enrollment"]))
-    campus = BY_ID["campus"]
+    research = BY_ID["research_park"]
 
     detail = [c for c in titles if c not in ("10", "31_33", "52", "22")]
     industries = {}
@@ -393,8 +393,8 @@ def build() -> None:
             "districts": dists,
             "badge": None,
         }
-        withheld = (not any(d["id"] == "campus" for d in dists)
-                    and m.industry(campus["naics"], campus["own"], fips)["suppressed"] > 0)
+        withheld = (not any(d["id"] == "research_park" for d in dists)
+                    and m.industry(research["naics"], research["own"], fips)["suppressed"] > 0)
         out_cities[c["id"]]["badge"] = (college_badge(r1.get(c["id"], []), c.get("population"), withheld)
                                         or badge_for(badge_district(dists), bool(c.get("capital")),
                                                      holds_state_capital(c)))
@@ -419,9 +419,9 @@ def build() -> None:
         "sources": ["bls_qcew", "ipeds"],
         "rule": {"min_lq": MIN_LQ, "min_jobs": MIN_JOBS, "min_share": MIN_SHARE, "specialty_lq": SPECIALTY_LQ,
                  "specialty_jobs": SPECIALTY_JOBS, "specialty_share": SPECIALTY_SHARE,
-                 "max_per_city": MAX_PER_CITY, "harbor_needs_water": True, "badge_lq": BADGE_LQ,
+                 "max_per_city": MAX_PER_CITY, "port_district_needs_water": True, "badge_lq": BADGE_LQ,
                  "badge_share": BADGE_SHARE, "college_share": COLLEGE_SHARE, "text": RULE_TEXT,
-                 "county_note": "County districts use the same rule without the Harbor water test."},
+                 "county_note": "County districts use the same rule without the Port District water test."},
         "catalog": catalog,
         "industries": industries,
         "national": {"emp": m.us_emp, "avg_pay": round(m.us_wages / m.us_emp)},
@@ -520,8 +520,8 @@ def check(web_dir: Path) -> list[tuple[str, str]]:
         if b is not None:
             n_badge += 1
             if b.get("basis") == "ipeds":
-                if b.get("withheld") is not True or b.get("district") != "campus":
-                    bad(f"city {cid}: an IPEDS badge must be a withheld Campus")
+                if b.get("withheld") is not True or b.get("district") != "research_park":
+                    bad(f"city {cid}: an IPEDS badge must be a withheld Research Park")
             elif not dl or b.get("district") not in {d.get("id") for d in dl}:
                 bad(f"city {cid}: badge does not name one of its districts")
         elif dl:

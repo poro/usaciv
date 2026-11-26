@@ -71,7 +71,7 @@ resiliently than the "baseline America" that simply keeps its current growth.
 - **Power contracts.** A real generation site (`resources.json` nuclear, hydro, wind, solar, gas, coal) can be wired
   to a city. The value comes from the site's MW and the city's population. Coal and gas sites carry a rising
   "transition cost" that grows each decade, which creates a real strategic tension without editorialising.
-- **Talent contracts.** Fibre from an R1 university (`wonders.json`) to cities with Campus-type districts adds Science.
+- **Talent contracts.** Fibre from an R1 university (`wonders.json`) to cities with Research Park districts adds Science.
 
 ### Score and winning
 - **Score** = GDP carried by your network in 2050, plus resilience (the share of contract value that survived
@@ -138,11 +138,10 @@ another. No multi-agent workflow is needed.
 
 1. **Fork or extension?** The plan adds a `game` extension inside this copy. Decide whether this becomes your own
    repo (for example `poro/usaciv-game`) with the MIT notice kept.
-2. **Rename the Civ-style district names before shipping a game.** `districts.json` uses names that come straight
-   from a well-known commercial series (Campus, Theater Square, Encampment, Aqueduct, Aerodrome, Commercial Hub,
-   Government Plaza…). They are fine in a data visualizer, but a game should use its own names (for example Research
-   Park, Arts District, Garrison, Waterworks, Airfield, Market District, Civic Center). The same applies to "Gold",
-   "Wonders" and "Advisors" in the game's own UI.
+2. **Original names in the game.** `districts.json` now uses plain, descriptive district names (Research Park,
+   Financial District, Industrial Park, Port District, Arts District, Leisure District, Aviation Hub, Civic Center,
+   Defense District, Utility District; see ROADMAP Phase 0). Check "Gold", "Wonders" and "Advisors" in the game's own
+   UI the same way.
 3. **Money scale.** Real GDP runs from millions to trillions. Use a log-scaled in-game currency, and show the real dollar
    figure in tooltips, so New York does not dwarf everything.
 4. **Tone of disasters.** Use rates and types, never named real events with deaths, in random event cards.

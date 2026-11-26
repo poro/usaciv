@@ -27,7 +27,7 @@ The design notes for each game are in [GAME_PLAN.md](GAME_PLAN.md).
 ## Phase 0: engine and framework (now)
 
 - [x] Private repo `poro/usaciv`, starting from the original source (MIT, credit kept).
-- [ ] Rename the city districts to plain names, in the pipeline, the data, the UI, the tests and the docs:
+- [x] Rename the city districts to plain names, in the pipeline, the data, the UI, the tests and the docs:
 
   | Old id / name | New id / name |
   |---|---|

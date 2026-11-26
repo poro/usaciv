@@ -27,7 +27,7 @@ const SHORT = {
   faith_tradition: "Largest tradition", amenities: "Amen&shy;ities", mhlth: "Mental distress", loneliness: "Lone&shy;liness", disasters: "Disas&shy;ters",
   veterans_pct: "Veterans share", armed_forces: "Armed forces", armed_forces_pct: "Armed forces share", mil_active: "Active duty",
   mil_guard_reserve: "Guard & Reserve", mil_civilian: "DoD civilians", def_spending: "Defense $", def_per_resident: "Defense $ per resident",
-  def_pct_gdp: "Defense % of GDP", installations: "Instal&shy;lations", encampment: "Garrison", city_type: "City type", n_districts: "Districts (n)",
+  def_pct_gdp: "Defense % of GDP", installations: "Instal&shy;lations", garrison: "Garrison", city_type: "City type", n_districts: "Districts (n)",
   qcew_jobs: "Jobs (QCEW)", qcew_pay: "Pay (QCEW)", top_industry: "Top industry", top_lq: "Top LQ", cz_median_age: "Median age (1-yr)",
   cz_degree: "Degree (1-yr)", cz_specialist: "Top citizen", cz_drove_alone: "Drive alone", cz_transit: "Transit", cz_home: "Work from home",
 };

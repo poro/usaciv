@@ -372,12 +372,12 @@ function extendMilitary(data, mil) {
     });
   }
   metros.addFields([
-    F4("encampment", "Garrison", "text", { source: "mirta", group: "Military", description: `Fortress or garrison when the metro passes the Encampment rule; blank otherwise. ${mil.rules?.encampment || mil.rule || ""}` }),
+    F4("garrison", "Garrison", "text", { source: "mirta", group: "Military", description: `Fortress or garrison when the metro passes the Defense District rule; blank otherwise. ${mil.rules?.defense_district || mil.rule || ""}` }),
     F4("installations", "Installations", "int", { unit: "MIRTA sites", source: "mirta", group: "Military", description: `DoD installations (MIRTA) whose point lies in the metro's member counties (${v.installations || "MIRTA"}). Sizes are not comparable.` }),
   ]);
   for (const r of metros.rows) {
     const c = mil.cities?.[r.key];
-    r.v.encampment = c ? (c.tier === "fortress" ? "Fortress" : "Garrison") + (c.naval ? " (naval)" : "") : null;
+    r.v.garrison = c ? (c.tier === "fortress" ? "Fortress" : "Garrison") + (c.naval ? " (naval)" : "") : null;
     r.v.installations = byMetro.get(r.key) || 0;
   }
 }

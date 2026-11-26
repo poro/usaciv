@@ -36,7 +36,7 @@ BASE = "https://data.bls.gov/cew/data/api"
 # NAICS 2022 codes as used by the API slices (ranges use underscores). Titles are BLS's own.
 INDUSTRIES: dict[str, str] = {
     "10": "Total, all industries",
-    # industrial zone
+    # industrial park
     "31_33": "Manufacturing",
     "3361": "Motor vehicle manufacturing",
     "3344": "Semiconductor and other electronic component manufacturing",
@@ -45,32 +45,32 @@ INDUSTRIES: dict[str, str] = {
     "331": "Primary metal manufacturing",
     "211": "Oil and gas extraction",
     "2121": "Coal mining",
-    # commercial hub
+    # financial district
     "52": "Finance and insurance",
     "5231": "Securities and commodity contracts intermediation and brokerage",
     "524": "Insurance carriers and related activities",
-    # campus
+    # research park
     "5417": "Scientific research and development services",
     "6113": "Colleges, universities, and professional schools",
     "5415": "Computer systems design and related services",
     "5132": "Software publishers",
     "5182": "Computing infrastructure providers, data processing, web hosting, and related services",
-    # harbor
+    # port district
     "483": "Water transportation",
     "4883": "Support activities for water transportation",
-    # theater square
+    # arts district
     "711": "Performing arts, spectator sports, and related industries",
     "512": "Motion picture and sound recording industries",
     "516": "Broadcasting and content providers",
-    # entertainment complex
+    # leisure district
     "713": "Amusement, gambling, and recreation industries",
     "7132": "Gambling industries",
     "721": "Accommodation",
-    # aerodrome
+    # aviation hub
     "481": "Air transportation",
     "4881": "Support activities for air transportation",
     "3364": "Aerospace product and parts manufacturing",
-    # government plaza (public administration without national security)
+    # civic center (public administration without national security)
     "921": "Executive, legislative, and other general government support",
     "922": "Justice, public order, and safety activities",
     "923": "Administration of human resource programs",
@@ -78,9 +78,9 @@ INDUSTRIES: dict[str, str] = {
     "925": "Administration of housing programs, urban planning, and community development",
     "926": "Administration of economic programs",
     "927": "Space research and technology",
-    # encampment
+    # defense district
     "928110": "National security",
-    # aqueduct / dam
+    # utility district
     "22": "Utilities",
     "2211": "Electric power generation, transmission and distribution",
     "2213": "Water, sewage and other systems",

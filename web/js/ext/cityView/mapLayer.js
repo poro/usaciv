@@ -60,7 +60,7 @@ function hexScreen(ctx, sx, sy, r) {
   ctx.closePath();
 }
 
-// A district without an icon in the set (the Encampment): a small tent on a disc in its colour.
+// A district without an icon in the set (the Defense District): a small tent on a disc in its colour.
 function tentMark(ctx, x, y, r) {
   const k = r * 0.5;
   ctx.beginPath();

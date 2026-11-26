@@ -5,7 +5,7 @@
 //   * URL: #city=<id>&view=city round-trips (the "view" hash key); Back leaves the view.
 //   * Map: the metro footprint is outlined in its state colour with a glow, the rest is dimmed; each hex shows
 //     estimated residents and its main land use; the metro's resource sites are labelled; its real districts
-//     (districts.json, BLS QCEW, plus military.json's Encampment) stand on nearby hexes at schematic positions.
+//     (districts.json, BLS QCEW, plus military.json's Defense District) stand on nearby hexes at schematic positions.
 //   * Screen: a right-hand dock (a bottom sheet on phones), see screen.js.
 //   * Banners: zoomed in, the banners that show their yield row also carry the city-type badge (districts.json),
 //     handed to render/banners.js as app.state.cityBadges; districts.json loads the first time the map is zoomed in
