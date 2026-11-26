@@ -926,6 +926,11 @@ async function main() {
       state.hoverCell = cell;
       requestDraw();
     }
+    if (state.hideCities) {
+      hideTooltip();
+      if (events.has("hover")) emitHover(cell, null, null, mx, my, null);
+      return;
+    }
     const lh = city ? null : hitLayer(mx, my);
     let tip = null;
     if (lh && typeof lh.layer.tooltip === "function") {
@@ -1199,6 +1204,8 @@ async function main() {
       return h ? { layer: h.layer.id, item: h.item } : null;
     },
     setHighlight(h) { state.highlight = h || null; requestDraw(); },
+    // Hide every city banner and every hover tooltip (they name places), e.g. while a guessing game is open.
+    setCitiesHidden(on) { state.hideCities = !!on; hideTooltip(); requestDraw(); },
     highlightBounds: (h = state.highlight) => highlightBounds(w, h),
     setResourceFilter(f) { state.resourceFilter = f || null; requestDraw(); },
     setShowResources(on) {

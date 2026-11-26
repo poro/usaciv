@@ -795,6 +795,11 @@ city banners: the first non-null `hit()` wins and its `tooltip(item)` is shown (
 first (true consumes it), then the `"mapclick"` handlers, then the default (select city/state). While a mode is active
 (City View, advisors) the `"mapclick"` handlers go first and the layer's `click` only after them.
 
+**Hiding places.** `app.setCitiesHidden(on)` hides every city banner (so cities can't be hovered or clicked by
+their banner) and every hover tooltip (city, cell and layer tooltips all name places); the `"hover"` event still fires,
+with `city`, `resource`, `layer` and `item` null. For games that must not give the answer away (Which Metro?). Whoever
+turns it on turns it off (game modes do it on exit).
+
 **Map toggles.** `app.ui.addMapToggle({id, label, icon, get() → bool, set(on), title?, default?}) → remove()`: a switch
 in the "Map" menu next to the Resources toggle in the lens dock (one button + a small menu, so it fits phones). `set` is
 yours (flip the state your layer's `visible()` reads); main redraws. The hash key `layers` lists the switches that are on

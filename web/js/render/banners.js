@@ -575,6 +575,7 @@ function popFloor(Rpx) {
  * slid inside them, with the pointer still aimed at the city.
  */
 export function drawBanners(ctx, cam, w, state, yields, nation = state.nation) {
+  if (state.hideCities) return []; // a game that must not name places (app.setCitiesHidden)
   const { grid } = w;
   const Rpx = grid.R * cam.scale;
   const minPop = popFloor(Rpx);

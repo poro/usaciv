@@ -1,9 +1,8 @@
 // Which Metro? A daily data puzzle: name the metro from its workforce, way of life, industries, size and place.
 // Contract: games/host.js (start(ctx) → session). Pure logic lives in ./sim/ (unit-tested in tests/js).
 //
-// Map etiquette while a round is open: no highlight, no fly-to, every banner softened (app.state.bannerFocus = an
-// empty Set, so no yield rows or city-type tabs either) and map clicks swallowed, so nothing on the map points at
-// the answer. When a round ends the answer's footprint is outlined and framed and its banner comes back.
+// Map etiquette while a round is open: no highlight, no fly-to, no banners and no hover tooltips
+// (app.setCitiesHidden) and map clicks swallowed, so nothing on the map points at the answer. When a round ends the answer's footprint is outlined and framed and its banner comes back.
 import { loadCss } from "../shared/css.js";
 import { esc } from "../../format.js";
 import {
@@ -33,13 +32,17 @@ export async function start(ctx) {
     if (restored) return;
     restored = true;
     if (app.state) app.state.bannerFocus = prevFocus;
+    app.setCitiesHidden?.(false);
     app.setHighlight?.(null);
     app.requestDraw?.();
   };
   ctx.onCleanup(restore);
+  // No answer on screen: while no city is in focus, banners and hover tooltips are hidden outright
+  // (app.setCitiesHidden); once a round ends only the answer's banner is at full strength.
   const softenBanners = (ids) => {
     if (!app.state) return;
     app.state.bannerFocus = new Set(ids || []);
+    app.setCitiesHidden?.(!ids || ids.length === 0);
     app.requestDraw?.();
   };
   softenBanners([]);
