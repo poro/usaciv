@@ -1,0 +1,89 @@
+# Monthly data refresh: re-download every public source, rebuild web/data and run the data check.
+# If the data changed and the check has no FAIL, open (or update) a pull request with a summary. Nothing is
+# merged automatically: review the PR, then merge to publish. A FAIL (a publisher changed a format, a site
+# was down) fails the job, and GitHub emails you; the logs and check report are attached to the run.
+name: Refresh data
+
+on:
+  schedule:
+    - cron: "17 9 3 * *" # 09:17 UTC on the 3rd of every month
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Fresh downloads every month (about 500 MB): no cache, so sources that reuse one URL (FEMA, MSHA…)
+      # always come back current.
+      - name: Fetch, process, build
+        run: |
+          set -o pipefail
+          uv run python -m pipeline fetch 2>&1 | tee fetch.log
+          uv run python -m pipeline process 2>&1 | tee process.log
+          uv run python -m pipeline build --force 2>&1 | tee build.log
+
+      - name: Data check
+        run: |
+          set -o pipefail
+          uv run python -m pipeline check 2>&1 | tee check-report.txt
+
+      - name: Tests
+        run: |
+          uv run python -m unittest discover -s tests
+          if ls tests/js/*.test.mjs >/dev/null 2>&1; then node --test tests/js/*.test.mjs; fi
+
+      - name: Summary
+        if: always()
+        run: |
+          python3 .github/scripts/refresh_summary.py check-report.txt HEAD > summary.md || echo "(summary failed)" > summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- web/data; then
+            echo "web/data unchanged; nothing to do."
+            exit 0
+          fi
+          branch="data-refresh/$(date -u +%Y-%m)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$branch"
+          git add web/data
+          git commit -q -m "Refresh data ($(date -u +%Y-%m-%d))"
+          git push -f origin "$branch"
+          title="Data refresh $(date -u +%Y-%m)"
+          if gh pr view "$branch" --json state -q .state 2>/dev/null | grep -q OPEN; then
+            gh pr edit "$branch" --title "$title" --body-file summary.md
+          else
+            gh pr create --base "${{ github.event.repository.default_branch }}" --head "$branch" --title "$title" --body-file summary.md
+          fi
+
+      - name: Keep logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: refresh-logs
+          path: |
+            *.log
+            check-report.txt
+            summary.md
+          retention-days: 30
