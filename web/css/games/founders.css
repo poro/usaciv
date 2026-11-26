@@ -101,13 +101,14 @@ body[data-game="founders"]:not(.fd-revealed) #topbar .search { display: none !im
 .fd-end-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0; text-align: center; }
 .fd-end-stats .g-stat b { font-size: 20px; }
 .fd-facts { margin: 8px 0; padding: 8px 10px 8px 26px; border-left: 3px solid var(--fd-teal); background: rgba(63, 208, 201, .08); border-radius: 0 4px 4px 0; display: grid; gap: 6px; font-size: 12.5px; line-height: 1.4; }
-.fd-share-text { white-space: pre-wrap; font-size: 11px; padding: 6px 8px; background: rgba(0, 0, 0, .3); border-radius: 4px; user-select: all; }
+.fd-share-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; padding: 6px 8px; background: rgba(0, 0, 0, .3); border-radius: 4px; user-select: all; }
 .fd-res { display: flex; gap: 12px; align-items: center; margin: 10px 0; }
 .fd-big { flex: none; min-width: 74px; font-family: var(--serif); font-size: 28px; color: var(--fd-teal); text-align: center; }
 .fd-big small { font-size: 15px; color: var(--ink-dim); }
 .fd-near { margin: 0 0 6px; padding-left: 18px; font-size: 12.5px; }
 
 @media (max-width: 700px) {
+  /* Phones: the dock is a bottom sheet (style.css .app-dock); 44% of the height leaves the map room to tap hexes. */
   body[data-game="founders"] .app-dock { height: 44vh; height: 44dvh; }
   .fd-stats { grid-template-columns: repeat(2, auto); }
   .fd-year b { font-size: 22px; }
@@ -119,4 +120,19 @@ body[data-game="founders"]:not(.fd-revealed) #topbar .search { display: none !im
   .fd-verdict { font-size: 19px; }
   .fd-proj small { display: none; }
   .fd-tut { padding: 6px 8px 8px; }
+  .fd-tut > b { font-size: 14px; }
+  .fd-tut p { margin: 4px 0; }
+  /* End turn / Next / Yields: sticky to both edges of the sheet's scroller (games.css .games-dock-body), so the row
+     pins to the bottom while the tutorial or a long town panel pushes it below the fold, and to the top once the
+     player scrolls past it. Never needs a scroll to reach. */
+  .fd-actions { position: sticky; top: 0; bottom: 0; z-index: 3; flex-wrap: nowrap; margin: 6px -12px 4px; padding: 6px 12px;
+    background: var(--panel-2); border-top: 1px solid rgba(201, 164, 92, .3); border-bottom: 1px solid rgba(201, 164, 92, .3); }
+  .fd-actions .g-btn { min-height: 40px; }
+  .fd-setup .fd-actions { display: none; } /* nothing to end before the first town: the start list gets the room */
+  /* No keyboard on a phone: drop the key hints, keep the buttons narrow. Touch-sized focus chips and buttons. */
+  .fd .g-btn kbd { display: none; }
+  .fd .g-btn { min-height: 34px; }
+  .fd-chip { padding: 6px 12px; font-size: 13px; }
+  .fd-start { padding: 7px 10px; }
+  .fd-start small { font-size: 11px; }
 }

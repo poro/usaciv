@@ -20,6 +20,7 @@ import { loadCss } from "../shared/css.js";
 import * as S from "./sim/index.js";
 import { prepareCover, prepareLand, coverLayer, landLayer, yieldsLayer, townsLayer, makeOverlay, COLORS } from "./render.js";
 import { esc, int, popShort, compact } from "../../format.js";
+import { shareImage } from "./share.js";
 
 const SAVE_KEY = "save";
 const SAVE_V = 1;
@@ -367,6 +368,7 @@ export async function start(ctx) {
       case "festival": act({ type: "festival", town: +d.town }); break;
       case "how": model.showHow = !model.showHow; if (!model.showHow) ctx.storage.set(HOWTO_KEY, true); break;
       case "share": copyResult(); return;
+      case "image": downloadImage(); return;
       case "pin": act({ type: "pin", town: +d.town, cell: +d.cell }); break;
       case "focus": act({ type: "focus", town: +d.town, focus: d.v }); break;
       case "link": act({ type: "link", a: +d.a, b: +d.b }); break;
@@ -414,6 +416,7 @@ export async function start(ctx) {
 
   function render() {
     const s = model.state;
+    body.classList.toggle("fd-setup", s.phase === "setup");
     if (s.phase === "over" && model.history) { body.innerHTML = endScreen(); return; }
     const n = S.nationOutput(env, s);
     const score = S.prosperity(env, s).score;
@@ -788,6 +791,32 @@ export async function start(ctx) {
     if (!ok) { const pre = body.querySelector(".fd-share-text"); if (pre) pre.hidden = false; }
   }
 
+  /** End screen → PNG (share.js): your country beside the real one, with the verdict and the headline numbers. */
+  async function downloadImage() {
+    const s = model.state, h = model.history;
+    if (!h || !app.cam || !app.w) { ctx.toast("The map can't be drawn here"); return; }
+    try {
+      const sc = S.prosperity(env, s).score;
+      const v = verdict(h, sc);
+      const blob = await shareImage(ctx, model, {
+        head: v.head, rank: v.rank, score: sc, towns: s.towns.length, pop: S.nationOutput(env, s).pop,
+        nearCount: h.nearCount, top: S.TOP_METROS, popInside: h.popInside, popShare: h.popShare,
+        endYear: S.yearOf(s.maxTurns) + S.RULES.yearsPerTurn,
+      });
+      if (!blob) throw new Error("no image");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `founders-${s.seed}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } catch (err) {
+      console.error("founders: share image failed", err);
+      ctx.toast("Could not draw the image");
+    }
+  }
+
   function endScreen() {
     const s = model.state;
     const h = model.history;
@@ -806,7 +835,8 @@ export async function start(ctx) {
         <div class="g-stat"><b>${int(sc.score)}</b><span>Score</span></div>
       </div>
       ${fx ? `<ul class="fd-facts">${fx}</ul>` : ""}
-      <div class="g-row"><button class="g-btn primary" data-act="share">Copy result</button></div>
+      <div class="g-row"><button class="g-btn primary" data-act="share" title="Copy a short result to paste anywhere">Copy result</button>
+        <button class="g-btn" data-act="image" title="A PNG of your country beside the real one">Download image</button></div>
       <pre class="fd-share-text" hidden>${esc(shareText())}</pre>
       <div class="fd-res"><span class="fd-big">${h.nearCount}<small>/${h.towns}</small></span>
         <p>of your towns sit within ${S.NEAR_HEXES} hexes of one of the ${S.TOP_METROS} largest real metros.</p></div>
