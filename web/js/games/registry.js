@@ -1,0 +1,35 @@
+// Game modes. Each entry is a folder under web/js/games/<id>/ whose index.js exports
+//   start(ctx) → session | Promise<session>      session = { stop?(), onEscape?() → true to stay, param?() → string }
+// `ctx` is built by games/host.js (see the comment there for the full surface). The Play menu lists these in order.
+// "explore" is not a game: it is the base map (no mode), always first in the menu.
+export const GAMES = [
+  {
+    id: "whichMetro",
+    title: "Which Metro?",
+    tagline: "A daily puzzle: name the city from its workforce, industries and yields.",
+    players: "Single player · daily",
+    minutes: "3 min",
+    icon: "❓",
+    load: () => import("./whichMetro/index.js"),
+  },
+  {
+    id: "mainline",
+    title: "Mainline",
+    tagline: "Lay rail across the real map from 2026 to 2050. Real freight is your demand, real disaster risk your enemy.",
+    players: "Single player",
+    minutes: "20–40 min",
+    icon: "🚆",
+    load: () => import("./mainline/index.js"),
+  },
+  {
+    id: "founders",
+    title: "Founders",
+    tagline: "An empty America with its real terrain and resources. Found cities, grow, and compare with the real country.",
+    players: "Single player",
+    minutes: "20–30 min",
+    icon: "🏕️",
+    load: () => import("./founders/index.js"),
+  },
+];
+
+export const gameById = (id) => GAMES.find((g) => g.id === id) || null;

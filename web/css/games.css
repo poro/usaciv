@@ -1,0 +1,36 @@
+/* Game modes: the Play menu and the shared dock chrome. Each game may add its own CSS file next to its index.js
+   and load it with a <link> it removes on exit (see games/shared/css.js). */
+.games-menu { display: grid; place-items: center; position: fixed; inset: 0; z-index: 60; background: rgba(5, 10, 16, .55); }
+.games-card { display: block; position: relative; width: min(560px, calc(100vw - 24px)); max-height: calc(100vh - 80px); overflow: auto; padding: 18px 18px 14px; }
+.games-card h2 { margin: 0 0 4px; font-family: var(--serif); color: var(--gold-bright); font-size: 22px; }
+.games-card .close { position: absolute; top: 10px; right: 10px; }
+.games-sub { margin: 0 0 12px; font-size: 13px; }
+.games-list { display: grid; gap: 8px; }
+.games-item { display: flex; gap: 12px; align-items: flex-start; text-align: left; padding: 10px 12px; cursor: pointer;
+  background: rgba(0, 0, 0, .25); border: 1px solid rgba(201, 164, 92, .35); border-radius: 6px; }
+.games-item:hover, .games-item:focus-visible { border-color: var(--gold); background: rgba(201, 164, 92, .08); }
+.games-item.on { border-color: var(--gold-bright); box-shadow: inset 0 0 0 1px var(--gold); }
+.games-ic { font-size: 22px; line-height: 1; width: 28px; text-align: center; flex: none; }
+.games-txt { display: grid; gap: 2px; font-size: 13px; }
+.games-txt b { font-family: var(--serif); font-size: 16px; color: var(--ink); }
+.games-txt small { font-size: 11.5px; }
+
+.games-dock { display: flex; flex-direction: column; }
+.games-dock-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); flex: none; }
+.games-dock-head h2 { margin: 0; flex: 1; font-family: var(--serif); font-size: 18px; color: var(--gold-bright); }
+.games-dock-head .games-ic { font-size: 18px; width: 22px; }
+.games-menu-btn { font-size: 12px; padding: 2px 8px; }
+.games-dock-body { flex: 1; overflow: auto; padding: 10px 12px; font-size: 13px; }
+
+/* Common building blocks games may use */
+.g-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px;
+  background: linear-gradient(180deg, #3a2f18, #241c0e); border: 1px solid var(--gold); border-radius: 4px; color: var(--gold-bright); }
+.g-btn:hover { filter: brightness(1.15); }
+.g-btn:disabled { opacity: .45; cursor: default; filter: none; }
+.g-btn.primary { background: linear-gradient(180deg, #8a6a2a, #5a4317); color: #fff6dc; }
+.g-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.g-stat { display: grid; gap: 1px; }
+.g-stat b { font-size: 18px; color: var(--ink); font-family: var(--serif); }
+.g-stat span { font-size: 11px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: .04em; }
+.g-section { margin: 12px 0 6px; font-family: var(--serif); color: var(--gold); font-size: 14px; border-bottom: 1px solid rgba(201,164,92,.25); padding-bottom: 3px; }
+.g-note { font-size: 11.5px; color: var(--ink-dim); }

@@ -159,8 +159,16 @@ def cmd_list():
         print(f"  {name:20} needs {', '.join(mod.REQUIRES) or '-'}")
 
 
+class _NoCacheHandler(http.server.SimpleHTTPRequestHandler):
+    """Dev server: ask the browser to revalidate every file, so edited ES modules are never served stale."""
+
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
+
+
 def cmd_serve(port=8765):
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(WEB))
+    handler = functools.partial(_NoCacheHandler, directory=str(WEB))
     with http.server.ThreadingHTTPServer(("127.0.0.1", port), handler) as srv:
         print(f"serving web/ at http://127.0.0.1:{port}")
         srv.serve_forever()
