@@ -47,7 +47,7 @@ export function makeView(ctx, game) {
   let geo = null; // {ok, hard, dmg, dbl: Path2D, segs: [{key, x1, y1, x2, y2}], stations: [[x, y, live, home, hub level]]}
   function geometry() {
     const { env, state, ev } = game;
-    const key = `${env.scenario.id}:${env.home?.id}:${state.nv}:${state.year}:${state.seed}`;
+    const key = `${env.scenario.id}:${env.home?.id}:${state.nv}:${state.year}:${state.seed}:${game.vs ? `vs${game.vs.me}` : ""}`;
     if (key === geoKey && geo) return geo;
     geoKey = key;
     const ok = new Path2D(), hard = new Path2D(), dmg = new Path2D(), dbl = new Path2D();
@@ -91,7 +91,7 @@ export function makeView(ctx, game) {
   const links = {
     id: "links", z: 56.5, minRpx: 0, snapshot: true,
     visible: () => !!game.state && game.ui.screen !== "picker",
-    sig: () => (game.state ? `${game.env.scenario.id}:${game.state.seed}:${game.state.nv}:${game.state.year}` : "none"),
+    sig: () => (game.state ? `${game.env.scenario.id}:${game.state.seed}:${game.state.nv}:${game.state.year}:${game.vs ? `vs${game.vs.me}` : ""}` : "none"),
     draw(c, vp, w, o) {
       const G = geometry();
       const s = vp.s, Rpx = o.Rpx;
@@ -106,7 +106,7 @@ export function makeView(ctx, game) {
       c.strokeStyle = "#8fd3ff";
       c.lineWidth = (lw + 1.4) / s;
       c.stroke(G.hard);
-      c.strokeStyle = "#f08a2c";
+      c.strokeStyle = game.vs ? S.VS_COLORS[game.vs.me] : "#f08a2c";
       c.lineWidth = lw / s;
       c.stroke(G.ok);
       c.stroke(G.hard);
@@ -178,11 +178,13 @@ export function makeView(ctx, game) {
   let demandKey = "", demandSegs = [];
   function demand() {
     const { env, state, ev, ui } = game;
-    const key = `${env.scenario.id}:${state.nv}:${state.year}:${ui.showDemand}`;
+    const key = `${env.scenario.id}:${state.nv}:${state.year}:${ui.showDemand}:${game.vsRev || 0}`;
     if (key === demandKey) return demandSegs;
     demandKey = key;
+    const claims = game.vs?.vs?.claims;
     demandSegs = env.contracts.map((c) => ({
       id: c.id, served: ev.served.has(c.id), faf: c.kind === "faf",
+      rival: claims && claims[c.id] != null && claims[c.id] !== game.vs.me ? claims[c.id] : null,
       x1: g.cx(c.a.cell), y1: g.cy(c.a.cell), x2: g.cx(c.b.cell), y2: g.cy(c.b.cell),
       w: Math.log(1 + c.value / 1e9),
     }));
@@ -191,7 +193,7 @@ export function makeView(ctx, game) {
   const demandLayer = {
     id: "demand", z: 84, minRpx: 0, snapshot: false,
     visible: () => !!game.state && game.ui.screen === "game" && game.ui.showDemand,
-    sig: () => (game.state ? `${game.env.scenario.id}:${game.state.nv}:${game.state.year}` : "none"),
+    sig: () => (game.state ? `${game.env.scenario.id}:${game.state.nv}:${game.state.year}:${game.vsRev || 0}` : "none"),
     draw(c, vp, w, o) {
       const s = vp.s;
       c.lineCap = "round";
@@ -203,12 +205,18 @@ export function makeView(ctx, game) {
         if (d.served) {
           c.setLineDash([]);
           c.strokeStyle = "rgba(120,230,150,.55)";
+        } else if (d.rival != null) {
+          // versus: held by a rival company (thin, in its colour)
+          c.setLineDash([2 / s, 4 / s]);
+          c.strokeStyle = S.VS_COLORS[d.rival];
+          c.globalAlpha = 0.55;
         } else {
           c.setLineDash([6 / s, 5 / s]);
           c.strokeStyle = d.faf ? "rgba(255,214,120,.75)" : "rgba(220,200,160,.5)";
         }
         c.lineWidth = lw / s;
         c.stroke();
+        c.globalAlpha = 1;
       }
       c.setLineDash([]);
     },
@@ -226,6 +234,49 @@ export function makeView(ctx, game) {
       return best ? { kind: "contract", id: best } : null;
     },
     tooltip: (it) => game.contractTip(it.id),
+  };
+
+  // --- versus: rival companies' track (thinner, in their colours, under yours) ---
+  let rivalKey = "", rivalPaths = null;
+  function rivalGeometry() {
+    const v = game.vs;
+    const key = `${game.vsRev || 0}:${v?.me}`;
+    if (key === rivalKey && rivalPaths) return rivalPaths;
+    rivalKey = key;
+    rivalPaths = [];
+    for (const [p, pl] of (v?.vs?.players || []).entries()) {
+      if (p === v.me) continue;
+      const ok = new Path2D(), dmg = new Path2D();
+      for (const l of Object.values(pl.state.links)) {
+        const path = l.d ? dmg : ok;
+        path.moveTo(g.cx(l.a), g.cy(l.a));
+        path.lineTo(g.cx(l.b), g.cy(l.b));
+      }
+      rivalPaths.push({ p, ok, dmg });
+    }
+    return rivalPaths;
+  }
+  const rivalLayer = {
+    id: "rivals", z: 56.4, minRpx: 0, snapshot: true,
+    visible: () => !!game.vs?.vs && game.ui.screen !== "picker",
+    sig: () => `${game.vsRev || 0}:${game.vs?.me}`,
+    draw(c, vp, w, o) {
+      const s = vp.s;
+      const lw = clamp(o.Rpx * 0.13, 2.6, 7);
+      c.lineCap = "round";
+      c.lineJoin = "round";
+      for (const r of rivalGeometry()) {
+        c.strokeStyle = "rgba(14,10,6,.8)";
+        c.lineWidth = (lw + 2) / s;
+        c.stroke(r.ok); c.stroke(r.dmg);
+        c.strokeStyle = S.VS_COLORS[r.p];
+        c.lineWidth = lw / s;
+        c.stroke(r.ok);
+        c.setLineDash([(lw * 1.4) / s, (lw * 1.2) / s]);
+        c.stroke(r.dmg);
+        c.setLineDash([]);
+      }
+    },
   };
 
   const regionLayer = {
@@ -426,6 +477,7 @@ export function makeView(ctx, game) {
   });
 
   ctx.addLayer(regionLayer);
+  ctx.addLayer(rivalLayer);
   ctx.addLayer(links);
   ctx.addLayer(demandLayer);
   ctx.addOverlay(trainLayer);
@@ -436,7 +488,7 @@ export function makeView(ctx, game) {
     redraw: () => { syncTrains(); app.requestDraw(); },
     /** Static layers changed (network, year, toggles): their sig() covers it, but make sure a frame runs. */
     refresh: () => { syncTrains(); app.requestDraw(); },
-    reset() { geoKey = ""; demandKey = ""; regionKey = ""; routesEv = null; },
+    reset() { geoKey = ""; demandKey = ""; regionKey = ""; rivalKey = ""; routesEv = null; },
     /** Re-check the train loop (after the Trains toggle changes). */
     syncTrains,
     /** Can trains animate at all here (false with prefers-reduced-motion)? */

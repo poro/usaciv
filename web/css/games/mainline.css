@@ -179,3 +179,23 @@
   .ml-nick input { width: 120px; min-height: 34px; }
   .ml-submit .g-btn { min-height: 40px; }
 }
+
+/* --- versus (vspanel.js) --- */
+.ml-vs-pick { display: grid; gap: 8px; margin-top: 6px; }
+.ml-vs-opts label, .ml-vs-nick { font-size: 12px; color: var(--ink-dim); display: inline-flex; gap: 6px; align-items: center; }
+.ml-vs-nick input { flex: 1; min-width: 0; }
+.ml-vs-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 0; background: var(--c); box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
+.ml-vs-ready { display: contents; }
+.ml-vs-table td:nth-child(1) { width: 18px; color: var(--ink-dim); }
+.ml-vs-table tr.me td { background: rgba(201,164,92,.12); }
+.ml-vs-table td:nth-child(n+3), .ml-vs-table th:nth-child(n+3) { text-align: right; }
+.ml-vs-news ul { list-style: none; margin: 4px 0 0; padding: 0; font-size: 12px; display: grid; gap: 3px; }
+.ml-vs-news li.ml-good, .ml-vs-news li.ml-bad { font-weight: 600; }
+.ml-contracts li.rival { opacity: .55; }
+.ml-contracts li.rival .ml-pay { text-decoration: line-through; }
+.ml-vs-lobby { display: grid; gap: 10px; }
+.ml-vs-code { font-family: ui-monospace, monospace; letter-spacing: .12em; color: var(--gold-bright); }
+.ml-vs-link { flex: 1; min-width: 0; font-size: 12px; }
+.ml-vs-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.ml-vs-spark polyline { fill: none; stroke-width: 1.6; vector-effect: non-scaling-stroke; opacity: .8; }
+.ml-vs-spark polyline.me { stroke-width: 2.6; opacity: 1; }

@@ -12,6 +12,8 @@
 //   undo: [{cash, changes: [[key, previous link | null]], hubs?, express?}]   (this turn only),
 //   events: [...]   (last turn's disaster cards), last: {...} (last turn's report), hist: [...] (one row per turn),
 //   totals: {revenue, potential, maint, built, repairs, hardening, upgrades, express, hits, damaged}, rng (uint32)
+//   versus only (versus.js; absent in single player, so solo saves and hashes are unchanged):
+//   end (the last year played), rivals: {contractId: 1} (contracts rival companies hold: never served by this network)
 // }
 //
 // endTurn order: disasters roll → freight revenue and upkeep on intact links → growth → next year.
@@ -222,7 +224,7 @@ export function check(env, state, action) {
       if (!c) return "No such contract";
       if (state.express?.[action.id]) return "Express already runs there";
       // only this contract's route matters here (contracts route independently): skip routing the rest
-      const served = serveContracts(env, networkGraph(env, state.links, { intactOnly: true }), growthOf(env, state), state.hubs, { only: action.id });
+      const served = serveContracts(env, networkGraph(env, state.links, { intactOnly: true }), growthOf(env, state), state.hubs, { only: action.id, skip: state.rivals });
       const st = corridorStatus(env, state.links, served, action.id);
       if (!st.ok) return st.why;
       const cost = expressCost(c);
@@ -380,7 +382,7 @@ export function growthOf(env, state) {
  */
 export function evaluate(env, state) {
   const graph = networkGraph(env, state.links, { intactOnly: true });
-  const served = serveContracts(env, graph, growthOf(env, state), state.hubs);
+  const served = serveContracts(env, graph, growthOf(env, state), state.hubs, { skip: state.rivals });
   let revenue = 0;
   const loads = new Map();
   for (const s of served.values()) {
@@ -398,7 +400,7 @@ export function evaluate(env, state) {
   let potentialServed = served;
   if (anyDamage) {
     const full = networkGraph(env, state.links, { intactOnly: false });
-    potentialServed = serveContracts(env, full, growthOf(env, state), state.hubs);
+    potentialServed = serveContracts(env, full, growthOf(env, state), state.hubs, { skip: state.rivals });
     potential = 0;
     for (const s of potentialServed.values()) potential += s.pay;
   }
@@ -430,7 +432,7 @@ function endTurn(env, state) {
   const year = state.year + 1;
   return {
     ...state,
-    year, over: year > END_YEAR, cash, cities, base,
+    year, over: year > (state.end ?? END_YEAR), cash, cities, base,
     links: roll.links, nv: roll.links === state.links ? state.nv : state.nv + 1,
     undo: [], events: roll.events, last: row, hist: [...state.hist, row],
     totals: {

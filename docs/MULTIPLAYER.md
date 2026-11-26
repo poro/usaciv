@@ -28,6 +28,7 @@ worker/data.js         cached loads of /data/*.json through env.ASSETS (module s
 worker/wm.js           Which Metro?: daily submit/board, race room create
 worker/race.js         export class RaceRoom (Durable Object)
 worker/ml.js           Mainline: submit/board (uses web/js/games/mainline/sim/verify.js)
+worker/vs.js           Mainline versus: room create/info and export class VersusRoom (Durable Object)
 worker/rules.js        pure rules (names, step checks + replay, room codes, places); tested by tests/js/worker.test.mjs
 worker/blocklist.js    the short name blocklist
 migrations/0001_init.sql
@@ -116,6 +117,102 @@ per IP per hour. Over the limit → 429 with `Retry-After`. A daily resubmission
   whether this run replaced it.
 - `ml.js` imports `verify.js` lazily, and loads exactly its `REQUIRED_DATA` files. If `verify.js` is missing from
   a build, both Mainline endpoints answer 503 "Mainline boards are not ready".
+
+## Mainline versus (real time)
+
+2–4 rail companies on one scenario map compete for the same freight contracts. Seats can be people or AI companies.
+The rules engine is `web/js/games/mainline/sim/versus.js`: pure and deterministic, shared by the room and the
+browsers (its header has the full rules). In short:
+
+- Everyone starts at the scenario's home metro with the same money and seed. Each company builds its own track.
+- A contract pays only its holder. The first company to serve it takes it; in a tie the shorter network route wins,
+  then the lower seat. A holder keeps a contract while it serves it; if its route is cut or gone and a rival serves
+  it, the rival takes it.
+- Turns are simultaneous: each company acts on its own state during the year. When every company is ready (or the
+  deadline passes) the room resolves the year for all.
+- The winner is the highest GDP uplift when the last year ends. Games are 10 years (2026–2035) or 25 (to 2050).
+
+**Lockstep:**
+- The room's Durable Object (`VersusRoom`) holds the authoritative entry log and checks every action with the
+  same `vsCheck` the browser uses.
+- It broadcasts accepted entries. Each browser replays them with `applyEntry` from
+  `newVersus(env, {seed, years, players})`, where `players = room.players.map(({name, bot}) => ({name, bot}))` in seat
+  order. Nobody's state is ever sent: only actions.
+
+Entries: `{p, a}` = seat `p` applied action `a` (a Mainline action, never `endTurn`); `{r: 1}` = the year resolved.
+
+**The browser** (`web/js/games/mainline/index.js`, "online versus rooms"):
+- It applies its own actions at once and keeps them as pending until the room echoes them back.
+- The game it shows is the confirmed log plus the pending actions.
+- A `reject`, or an `entries` message whose index does not match, drops the pending actions; the client then asks
+  for a `sync` or replays.
+- While its company is ready it sends no actions. The Ready button toggles `ready`.
+
+| Method and path | Auth | Body → response |
+|---|---|---|
+| `POST /api/ml/vs` | ✓ | `{scenario, home?, years, bots}` → `{code}` (201). `home` (a 5-digit CBSA id) only for `sandbox`, required there; `years` is 10 or 25; `bots` 0–3. Counts as a write |
+| `GET /api/ml/vs/:code` | | → `{code, status, scenario, home, years, players: n, seats: max human seats}` (404 if unknown) |
+| `GET /api/ml/vs/:code/ws?token=…` | token | WebSocket upgrade |
+
+`room = {code, status: "lobby"|"live"|"done", scenario, home, years, bots, seed, host, year, deadline, players: [{id,
+name, bot, online, ready}]}`
+
+- `seed` is `null` in the lobby.
+- `deadline` is a ms timestamp, or `null`.
+- `players` are listed in seat order once the game starts. In the lobby it is the people in join order; the bots get
+  seats at the start, after the people, named `BOT_NAMES` (`id: null`).
+
+**Seats:**
+- At most `VS_MAX` (4) companies. People can take `4 − bots` seats.
+- The host may start with any number of people as long as there are at least 2 companies in all, so one person plus
+  one bot is fine.
+- Joining is lobby-only. A newcomer after the start, or one over the limit, gets `{t: "error"}` and close code 4001.
+- Seated players can reconnect at any time.
+
+**Client → server:**
+- `{t: "start"}`: host only, in the lobby. The server picks a random seed.
+- `{t: "act", a}`: the server checks `shapeError` (sim/verify.js), then `vsCheck`.
+  - Accepted: the entry is appended and broadcast.
+  - Refused: `{t: "reject", error, i}` goes to the sender only (`i` = the log length).
+- `{t: "ready", on: true|false}`: marks the sender's company ready (or not) for the current year.
+- `{t: "sync"}`: asks for the full log again.
+
+**Server → client:**
+- `{t: "room", room}` on every change.
+- `{t: "log", es}`: the full log, on connect (once the game has started) and on `sync`. The client replays it from
+  scratch.
+- `{t: "entries", i, es}`: new entries, where `i` is the index of the first one. A client whose log length is not `i`
+  sends `sync`.
+- `{t: "reject", error, i}` and `{t: "error", error}`.
+
+**Resolving a year:**
+- It happens when every online person is ready (offline people count as ready), or at the deadline.
+- The deadline is 90 s after the first person readies that year (a DO alarm).
+- Then each bot seat in order appends its `botActions`, followed by `{r: 1}`, all in one `entries` message.
+- The ready flags and the deadline reset. When `vs.over`, the room is `"done"`.
+- If every person is offline, nothing resolves until someone comes back.
+- Rooms are forgotten 2 hours after their last activity.
+
+**Limits:**
+- At most 20,000 entries a room.
+- At most 30 `act` messages a second per socket; extra ones are refused.
+
+**Details settled in the implementation (`worker/vs.js`):**
+- **Rooms and seats:**
+  - For a fixed-home scenario, `home` may be omitted or equal to the scenario's own home, and is stored as `null`.
+  - A Sandbox home must be a region metro.
+  - In the lobby, a non-host who leaves gives the seat back; the host keeps theirs.
+  - Names follow renames only until the start, because they are part of the replay init.
+  - Bots always show `online: true, ready: true`.
+- **Ready and the deadline:**
+  - Un-readying does not move or clear the deadline.
+  - If the deadline passes with every person offline, the year resolves as soon as someone reconnects.
+  - `{t: "ready"}` without `on` counts as `on: true`.
+  - The server accepts acts from a ready company (holding back is a client rule).
+- **Messages:**
+  - At the start everyone gets `{t: "room"}`, then `{t: "log", es: []}`.
+  - The entry cap keeps one slot for each resolve still to come, so a game can always finish. Over it, acts are
+    refused and bot actions are cut short.
 
 ## Local development
 

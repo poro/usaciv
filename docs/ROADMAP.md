@@ -112,6 +112,15 @@ Metro? has a daily leaderboard and live races by room link; Mainline has a best-
 replays every submitted run with the same `sim/` code, so scores can't be typed in. Next: login (email link, Google,
 Apple) attached to the same player rows, then Mainline versus and Founders hotseat/online.
 
+**Mainline versus shipped 2026-11-26** (sim/versus.js; protocol in [MULTIPLAYER.md](MULTIPLAYER.md)):
+- **Companies and contracts:** 2–4 rail companies on one scenario map. A contract pays only the company holding it:
+  the first to serve it takes it, the shorter route wins a same-year tie, and a rival takes it if your route is cut.
+- **Turns:** simultaneous. Games last 10 or 25 years.
+- **Offline:** "Play vs AI" runs entirely in the browser against 1–3 greedy AI companies, which stay out of races they
+  would lose.
+- **Online rooms** (by link, AI seats optional) are lockstep: a `VersusRoom` Durable Object checks every action with
+  the same rules and broadcasts the entry log, and each browser replays it.
+
 The static site stays static. Multiplayer is added as a small backend next to it.
 
 - **Hosting:** Cloudflare Workers + Durable Objects (one object per game room) + D1 for accounts and leaderboards.

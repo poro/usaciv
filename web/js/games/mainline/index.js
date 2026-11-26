@@ -7,6 +7,12 @@
 // runlog.js, after every action). Online boards (docs/MULTIPLAYER.md) appear only when net.available().
 // First-run tutorial: ctx.storage "tutorial" = the coach step (0..COACH_STEPS; COACH_STEPS = done or skipped).
 // Prefs: ctx.storage "prefs" = {showDemand, trains (default on), sound (default off)}. Trains and sound are view-only.
+// Versus (sim/versus.js, vspanel.js; the protocol is in docs/MULTIPLAYER.md): game.vs is set while one runs.
+//   vs AI:  #play=mainline~ai.<scenario>.<seed>.<bots>.<years>[.<home>]; saved in ctx.storage "vssave" = {init, scenario,
+//           home, log (entries)} and replayed on resume. The AI companies play when you end the year.
+//   online: #play=mainline~vs-<CODE>; the room (a Durable Object) holds the entry log. Your own actions apply at once
+//           (game.vs.pending) and are confirmed when the room echoes them; everyone else's arrive as entries.
+//   game.state is always your company's state, so the map, the build tools and the panel work unchanged.
 import { loadCss } from "../shared/css.js";
 import { esc } from "../../format.js";
 import * as S from "./sim/index.js";
@@ -18,6 +24,7 @@ import { net } from "../shared/net.js";
 import { parseParam, formatParam } from "./params.js";
 import { shareImage } from "./share.js";
 import { makeSound } from "./sound.js";
+import { vsPickerHtml, vsLobbyHtml, vsEndHtml, vsReadyHtml, vsShareText } from "./vspanel.js";
 
 const envCache = new Map();
 
@@ -66,6 +73,7 @@ export async function start(ctx) {
   const setPref = (k, v) => { prefs[k] = v; ctx.storage.set("prefs", prefs); };
   // debugging handle (like app.mapArt): the live game model, removed on exit
   app.mainline = game;
+  game.act = (a) => act(a); // debugging: apply an action as the dock would
   ctx.onCleanup(() => { if (app.mainline === game) delete app.mainline; });
 
   // --- flow ---
@@ -103,6 +111,7 @@ export async function start(ctx) {
     app.fitBounds(e.x0 - pad, e.y0 - pad, e.x1 + pad, e.y1 + pad, { padTop: 30, padBottom: 30 });
   }
   function save() {
+    if (game.vs) { saveVs(); return; } // a versus game never touches the solo save
     if (game.state) ctx.storage.set("save", packSave(game.state, game.log));
   }
   function showPicker() {
@@ -118,14 +127,17 @@ export async function start(ctx) {
       save: sv, saveEnv, cities: metros,
       defaults: { scenario: last.scenario || "texas", home: last.home || "19100", seed: newSeed() },
       online: game.online.avail,
+      vs: vsPicker(),
     });
     view.redraw();
   }
 
   function refresh() {
+    if (game.vs && game.ui.screen === "lobby") { body.innerHTML = vsLobbyHtml(model()); view.refresh(); return; }
     if (!game.state) return;
     game.ev = S.evaluate(game.env, game.state);
-    if (game.ui.screen === "end") body.innerHTML = endHtml(model(), ctx.storage.get(`best:${game.env.scenario.id}`, null), boardModel());
+    if (game.vs && game.ui.screen === "end") body.innerHTML = vsEndHtml(model());
+    else if (game.ui.screen === "end") body.innerHTML = endHtml(model(), ctx.storage.get(`best:${game.env.scenario.id}`, null), boardModel());
     else {
       const scroll = body.scrollTop;
       body.innerHTML = gameHtml(model());
@@ -133,7 +145,10 @@ export async function start(ctx) {
     }
     view.refresh();
   }
-  const model = () => ({ env: game.env, state: game.state, ev: game.ev, sum: S.summary(game.env, game.state), ui: game.ui, sel: game.sel, touch });
+  const model = () => ({
+    env: game.env, state: game.state, ev: game.ev, sum: game.state ? S.summary(game.env, game.state) : null, ui: game.ui, sel: game.sel, touch,
+    vs: game.vs ? { ...game.vs, now: Date.now() } : null, cityName,
+  });
   function refreshBuild() {
     const el = body.querySelector("#ml-build");
     if (el) {
@@ -145,6 +160,7 @@ export async function start(ctx) {
   }
 
   function act(action, { quiet = false } = {}) {
+    if (game.vs) return vsAction(action, { quiet });
     if (!game.state) return false;
     const before = game.state;
     const servedBefore = game.ev?.served.size ?? 0;
@@ -192,6 +208,291 @@ export async function start(ctx) {
       const best = ctx.storage.get(key, null);
       if (best == null || sum.score > best) ctx.storage.set(key, sum.score);
     }
+  }
+
+  // --- versus (sim/versus.js) ---
+  const clone = (a) => JSON.parse(JSON.stringify(a));
+  const aiParam = (i) => `ai.${i.scenario}.${i.seed}.${i.bots}.${i.years}${i.home && i.scenario === "sandbox" ? `.${i.home}` : ""}`;
+  function parseAi(p) {
+    const m = /^ai\.([a-z]+)\.(\d+)\.([1-3])\.(\d+)(?:\.(\d{5}))?$/.exec(p || "");
+    if (!m || !S.scenarioById(m[1]) || !S.VS_YEARS.includes(+m[4])) return null;
+    return { scenario: m[1], seed: +m[2], bots: +m[3], years: +m[4], home: m[1] === "sandbox" ? m[5] || "19100" : null };
+  }
+  function loadVsSave() {
+    const sv = ctx.storage.get("vssave", null);
+    return sv && sv.init && Array.isArray(sv.log) && S.scenarioById(sv.scenario) ? sv : null;
+  }
+  function vsPicker() {
+    const sv = loadVsSave();
+    const pick = vsPickerHtml({ online: game.online.avail, player: net.player(), defaults: ctx.storage.get("vsprefs", {}) || {} });
+    if (!sv || sv.over) return pick;
+    const sc = S.scenarioById(sv.scenario);
+    return `<button class="g-btn ml-wide" data-act="vsResume">Resume versus: ${esc(sc.name)} vs ${sv.init.players.length - 1} AI, ${sv.year}</button>${pick}`;
+  }
+  function vsOpts() {
+    const years = Number(body.querySelector('[data-field="vsYears"]')?.value) || 10;
+    const bots = Number(body.querySelector('[data-field="vsBots"]')?.value);
+    const scenario = body.querySelector('input[name="ml-scn"]:checked')?.value || "texas";
+    const home = scenario === "sandbox" ? body.querySelector('[data-field="home"]')?.value || "19100" : null;
+    ctx.storage.set("vsprefs", { years, bots: Number.isFinite(bots) ? bots : 1 });
+    return { scenario, home, years: S.VS_YEARS.includes(years) ? years : 10, bots: Number.isFinite(bots) ? bots : 1 };
+  }
+  /** Enter a versus game whose vs object exists (fresh, resumed or replayed from the room). */
+  function enterVs(v) {
+    game.vs = v;
+    game.env = v.env;
+    game.log = null; // no board submission for versus
+    game.sel = { start: null, end: null, hover: null, plan: null };
+    game.ui.highlight = null;
+    game.ui.link = null;
+    game.ui.tab = "open";
+    game.ui.coach = null;
+    game.ui.help = false;
+    view.reset();
+    syncVs();
+    frame();
+  }
+  /** game.state ← my company; screen from the game's progress; redraw. */
+  function syncVs() {
+    const v = game.vs;
+    game.vsRev = (game.vsRev || 0) + 1;
+    if (!v.vs) { game.state = null; game.ui.screen = "lobby"; refresh(); return; }
+    game.state = v.vs.players[v.me].state;
+    if (game.ui.link && !game.state.links[game.ui.link]) game.ui.link = null;
+    game.ui.screen = v.vs.over ? "end" : "game";
+    refresh();
+  }
+  function saveVs() {
+    const v = game.vs;
+    if (v?.mode !== "ai" || !v.vs) return;
+    ctx.storage.set("vssave", { init: v.init, scenario: v.vs.scenario, home: v.vs.home, log: v.log, year: v.vs.year, over: v.vs.over });
+  }
+  function beginAi(o, saved = null) {
+    const env = getEnv(o.scenario, o.home);
+    let init, vs, log;
+    if (saved) {
+      init = saved.init;
+      const r = S.vsReplay(env, init, saved.log);
+      if (r.error) ctx.toast(`The saved versus game stopped replaying at move ${r.at + 1}: ${r.error}`);
+      vs = r.vs;
+      log = saved.log.slice(0, r.at);
+    } else {
+      const bots = Math.max(1, Math.min(S.VS_MAX - 1, o.bots || 1));
+      init = { seed: o.seed, years: o.years, players: [{ name: net.player()?.name || "Your company" }, ...Array.from({ length: bots }, (_, k) => ({ name: S.BOT_NAMES[k], bot: true }))] };
+      vs = S.newVersus(env, init);
+      log = [];
+    }
+    const bots = init.players.length - 1;
+    enterVs({ mode: "ai", env, vs, me: 0, init, log, param: aiParam({ scenario: o.scenario, home: env.home?.id, seed: init.seed, bots, years: init.years }) });
+    ctx.setParam(game.vs.param);
+    saveVs();
+  }
+  /** My action in a versus game. */
+  function vsAction(action, { quiet = false } = {}) {
+    const v = game.vs;
+    if (!v.vs || v.vs.over) return false;
+    if (action.type === "endTurn") { vsEndYear(); return true; }
+    if (v.mode === "online" && v.ready) { if (!quiet) ctx.toast("You're ready: press the Ready button again to keep playing this year"); return false; }
+    const r = S.vsAct(game.env, v.vs, v.me, action);
+    if (r.error) { if (!quiet) ctx.toast(r.error); return false; }
+    v.vs = r.vs;
+    if (v.mode === "ai") { v.log.push({ p: v.me, a: clone(action) }); saveVs(); }
+    else { v.pending.push(clone(action)); vsSend({ t: "act", a: action }); }
+    if (action.type === "build") sound.play("build");
+    syncVs();
+    return true;
+  }
+  function vsEndYear() {
+    const v = game.vs;
+    if (v.mode === "online") {
+      vsSend({ t: "ready", on: !v.ready });
+      v.ready = !v.ready; // the room's next update confirms it
+      refresh();
+      return;
+    }
+    const before = v.vs;
+    let vs = v.vs;
+    for (let p = 0; p < vs.players.length; p++) {
+      if (!vs.players[p].bot) continue;
+      for (const a of S.botActions(game.env, vs, p)) {
+        const r = S.vsAct(game.env, vs, p, a);
+        if (r.error) break; // cannot happen (the bot checks every action); stop this bot rather than corrupt the log
+        vs = r.vs;
+        v.log.push({ p, a });
+      }
+    }
+    vs = S.vsResolve(game.env, vs);
+    v.log.push({ r: 1 });
+    v.vs = vs;
+    saveVs();
+    vsAfterYear(before);
+  }
+  /** Toast the year that just ended, from my company's side. */
+  function vsAfterYear(before) {
+    const v = game.vs;
+    game.sel = { start: null, end: null, hover: game.sel.hover, plan: null };
+    const r = v.vs.players[v.me].state.last;
+    const won = v.vs.news.filter((n) => n.to === v.me).length, lost = v.vs.news.filter((n) => n.from === v.me).length;
+    const deals = won || lost ? ` · ${won ? `+${won} contract${won === 1 ? "" : "s"}` : ""}${won && lost ? ", " : ""}${lost ? `−${lost} to rivals` : ""}` : "";
+    if (r) ctx.toast(`${before.year}: +${r.revenue.toFixed(1)} cr freight, −${r.maint.toFixed(1)} upkeep${r.hits ? ` · ${r.hits} disaster${r.hits === 1 ? "" : "s"}` : ""}${deals}`);
+    sound.play(r?.damaged ? "disaster" : "turn");
+    syncVs();
+  }
+
+  // --- online versus rooms ---
+  let vsTimer = 0;
+  function vsSend(msg) {
+    const ws = game.vs?.ws;
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
+  }
+  function vsTick() {
+    clearInterval(vsTimer);
+    vsTimer = 0;
+    if (!game.vs?.deadline || game.ui.screen !== "game") return;
+    vsTimer = setInterval(() => {
+      const el = body.querySelector(".ml-vs-ready");
+      if (!game.vs?.deadline || !el) { clearInterval(vsTimer); vsTimer = 0; return; }
+      el.innerHTML = vsReadyHtml(model());
+    }, 1000);
+  }
+  ctx.onCleanup(() => { clearInterval(vsTimer); vsLeave({ quietly: true }); });
+  async function vsCreate() {
+    const o = vsOpts();
+    if (!(await vsNick())) return;
+    const r = await net.post("/api/ml/vs", { scenario: o.scenario, ...(o.home ? { home: o.home } : {}), years: o.years, bots: Math.min(o.bots, S.VS_MAX - 1) });
+    if (!r.ok) { ctx.toast(`Could not make a room: ${r.error}`); return; }
+    vsJoin(r.data.code);
+  }
+  /** Make sure there is an online player (the picker's or lobby's nickname field). */
+  async function vsNick() {
+    if (net.player()) return true;
+    const name = (body.querySelector('[data-field="nick"]')?.value || game.online.nick || "").trim();
+    if (!name) { ctx.toast("Pick a nickname first (2–20 letters, digits or spaces)"); body.querySelector('[data-field="nick"]')?.focus(); return false; }
+    try { await net.ensurePlayer(name); return true; } catch (err) { ctx.toast(`Could not create your player: ${err.message}`); return false; }
+  }
+  function vsJoin(code) {
+    vsLeave({ quietly: true });
+    game.vs = { mode: "online", code, param: `vs-${code}`, room: null, conf: null, vs: null, pending: [], log: [], me: -1, ready: false, waiting: [], deadline: null, error: null, player: net.player(), ws: null, tries: 0, left: false, env: null, init: null };
+    game.state = null;
+    game.ui.screen = "lobby";
+    ctx.setParam(game.vs.param);
+    refresh();
+    vsConnect();
+  }
+  async function vsConnect() {
+    const v = game.vs;
+    if (!v || v.left) return;
+    if (!(await net.available())) { v.error = "This copy of the site has no online play."; refresh(); return; }
+    if (!net.player()) { v.error = null; v.needNick = true; body.innerHTML = vsNickHtml(); return; }
+    v.player = net.player();
+    const ws = net.socket(`/api/ml/vs/${encodeURIComponent(v.code)}/ws`);
+    v.ws = ws;
+    ws.onopen = () => { v.tries = 0; };
+    ws.onmessage = (e) => { if (game.vs === v) { try { vsOnMessage(v, JSON.parse(e.data)); } catch (err) { console.error("mainline versus: bad message", err); } } };
+    ws.onclose = (e) => {
+      if (game.vs !== v || v.left || v.ws !== ws) return;
+      if (e.code === 4001) { v.error = v.room?.status === "live" ? "This game has already started, and you are not in it." : "This room is full."; v.left = true; }
+      else if (v.room?.status === "done") return;
+      else if (++v.tries <= 6) { v.error = "Connection lost; reconnecting…"; setTimeout(vsConnect, Math.min(8000, 800 * 2 ** v.tries)); }
+      else v.error = "Lost the connection to the room. Reload to try again.";
+      if (game.ui.screen === "lobby") refresh();
+      else ctx.toast(v.error);
+    };
+  }
+  const vsNickHtml = () => `<div class="ml-vs-lobby"><div class="ml-verdict">Join versus room <b class="ml-vs-code">${esc(game.vs.code)}</b></div>
+    <label class="ml-vs-nick">Your nickname <input data-field="nick" maxlength="20" autocomplete="nickname" placeholder="2–20 letters"></label>
+    <div class="g-row"><button class="g-btn primary" data-act="vsJoinNick">Join</button><button class="g-btn" data-act="vsLeave">Back</button></div></div>`;
+  function vsInitFromRoom(v) {
+    const r = v.room;
+    v.env = getEnv(r.scenario, r.home);
+    v.init = { seed: r.seed, years: r.years, players: r.players.map((p) => ({ name: p.name, bot: !!p.bot })) };
+    v.me = r.players.findIndex((p) => p.id === v.player?.id);
+  }
+  /** Displayed game = the room's confirmed game + my actions it has not echoed yet. */
+  function vsView(v) {
+    let d = v.conf;
+    const keep = [];
+    for (const a of v.pending) {
+      const r = S.vsAct(v.env, d, v.me, a);
+      if (!r.error) { d = r.vs; keep.push(a); }
+    }
+    v.pending = keep;
+    v.vs = d;
+  }
+  function vsOnMessage(v, m) {
+    if (m.t === "room") {
+      const prev = v.room;
+      v.room = m.room;
+      v.error = null;
+      const r = m.room;
+      if (r.status !== "lobby" && !v.env) vsInitFromRoom(v);
+      const meRow = r.players[v.me];
+      v.ready = !!meRow?.ready;
+      v.waiting = r.players.filter((p, k) => !p.bot && p.online && !p.ready && k !== v.me).map((p) => p.name);
+      v.deadline = r.deadline || null;
+      if (r.status === "lobby") { game.ui.screen = "lobby"; refresh(); return; }
+      if (!v.conf) { if (v.stash) { const st = v.stash; v.stash = null; vsOnMessage(v, st); } return; } // else the log follows
+      if (prev?.status === "lobby") enterVs(v);
+      else refresh();
+      vsTick();
+      return;
+    }
+    if (m.t === "log") {
+      if (!v.room || v.room.status === "lobby") { v.stash = m; return; } // the room update that starts the game follows
+      if (!v.env) vsInitFromRoom(v);
+      if (v.me < 0) { v.error = "You are not seated in this game."; refresh(); return; }
+      const r = S.vsReplay(v.env, v.init, m.es);
+      if (r.error) { v.error = `The room's log did not replay (move ${r.at + 1}: ${r.error})`; console.error(v.error); }
+      const first = !v.conf;
+      v.conf = r.vs;
+      v.log = m.es.slice(0, r.at);
+      v.pending = [];
+      vsView(v);
+      if (first) enterVs(v); else syncVs();
+      vsTick();
+      return;
+    }
+    if (m.t === "entries") {
+      if (!v.conf || m.i !== v.log.length) { vsSend({ t: "sync" }); return; }
+      const before = v.conf;
+      let resolved = false;
+      for (const e of m.es) {
+        const r = S.applyEntry(v.env, v.conf, e);
+        if (r.error) { console.error("mainline versus: entry refused locally", e, r.error); vsSend({ t: "sync" }); return; }
+        v.conf = r.vs;
+        v.log.push(e);
+        if (e.p === v.me && v.pending.length) v.pending.shift();
+        if (e.r === 1) resolved = true;
+      }
+      vsView(v);
+      if (resolved) { v.ready = false; vsAfterYear(before); } else syncVs();
+      vsTick();
+      return;
+    }
+    if (m.t === "reject") {
+      ctx.toast(`The room refused that: ${m.error}`);
+      v.pending = [];
+      vsView(v);
+      syncVs();
+      return;
+    }
+    if (m.t === "error") {
+      v.error = m.error;
+      if (game.ui.screen === "lobby") refresh(); else ctx.toast(m.error);
+    }
+  }
+  function vsLeave({ quietly = false } = {}) {
+    const v = game.vs;
+    if (!v) return;
+    v.left = true;
+    try { v.ws?.close(1000, "left"); } catch { /* already closed */ }
+    clearInterval(vsTimer);
+    vsTimer = 0;
+    game.vs = null;
+    game.state = null;
+    game.vsRev = (game.vsRev || 0) + 1;
+    view.reset();
+    if (!quietly) showPicker();
   }
 
   // --- building ---
@@ -322,6 +623,24 @@ export async function start(ctx) {
         break;
       }
       case "boards": showBoards(); break;
+      case "vsAi": { const o = vsOpts(); beginAi({ ...o, seed: newSeed() }); break; }
+      case "vsResume": { const sv = loadVsSave(); if (sv) beginAi({ scenario: sv.scenario, home: sv.home }, sv); break; }
+      case "vsAgain": { const i = game.vs?.init; if (i) beginAi({ scenario: game.env.scenario.id, home: game.env.home?.id, seed: newSeed(), bots: i.players.length - 1, years: i.years }); break; }
+      case "vsCreate": vsCreate(); break;
+      case "vsNewRoom": {
+        const r = game.vs?.room;
+        if (!r) break;
+        net.post("/api/ml/vs", { scenario: r.scenario, ...(r.home ? { home: r.home } : {}), years: r.years, bots: r.bots }).then((res) => {
+          if (res.ok) vsJoin(res.data.code); else ctx.toast(`Could not make a room: ${res.error}`);
+        });
+        break;
+      }
+      case "vsJoinNick": vsNick().then((ok) => { if (ok && game.vs) { game.vs.needNick = false; vsConnect(); } }); break;
+      case "vsStart": vsSend({ t: "start" }); break;
+      case "unready": vsEndYear(); break;
+      case "vsLeave": vsLeave(); break;
+      case "vsCopy": navigator.clipboard?.writeText(t.dataset.link).then(() => ctx.toast("Link copied"), () => ctx.toast("Could not copy")); break;
+      case "vsShare": navigator.clipboard?.writeText(`${vsShareText(model())}\n${location.origin}${location.pathname}#play=mainline`).then(() => ctx.toast("Result copied"), () => ctx.toast("Could not copy")); break;
       case "boardsBack": showPicker(); break;
       case "start": {
         const scenario = body.querySelector('input[name="ml-scn"]:checked')?.value || "texas";
@@ -472,7 +791,14 @@ export async function start(ctx) {
   const want = parseParam(ctx.param);
   const svAll = loadSave();
   const sv = svAll?.state;
-  if (want) {
+  const wantAi = parseAi(ctx.param);
+  const wantRoom = /^vs-([A-Za-z0-9]{6})$/.exec(ctx.param || "")?.[1]?.toUpperCase();
+  if (wantRoom) vsJoin(wantRoom);
+  else if (wantAi) {
+    const vsv = loadVsSave();
+    const same = vsv && aiParam({ scenario: vsv.scenario, home: vsv.home, seed: vsv.init.seed, bots: vsv.init.players.length - 1, years: vsv.init.years }) === aiParam(wantAi);
+    beginAi(wantAi, same ? vsv : null);
+  } else if (want) {
     const same = sv && sv.scenario === want.scenario && sv.seed === want.seed && (want.scenario !== "sandbox" || !want.home || sv.home === want.home);
     begin(want, same ? svAll : null);
   } else if (sv && !sv.over) {
@@ -487,11 +813,13 @@ export async function start(ctx) {
     else if (game.ui.screen === "picker") {
       const link = body.querySelector(".ml-boards-link");
       if (link) link.hidden = false;
+      const slot = body.querySelector(".ml-vs-slot");
+      if (slot) slot.innerHTML = vsPicker();
     }
   });
 
   return {
-    param: () => (game.state && game.ui.screen !== "picker" ? formatParam({ scenario: game.env.scenario.id, seed: game.state.seed, home: game.env.home?.id }) : null),
+    param: () => (game.vs ? game.vs.param : game.state && game.ui.screen !== "picker" ? formatParam({ scenario: game.env.scenario.id, seed: game.state.seed, home: game.env.home?.id }) : null),
     onEscape() {
       if (game.ui.help) { toggleHelp(false); return true; }
       if (game.sel.start != null || game.ui.link || game.ui.highlight) {

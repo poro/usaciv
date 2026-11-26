@@ -1,7 +1,7 @@
 // Cloudflare Worker for usaciv: the packaged static site plus a small multiplayer API (docs/MULTIPLAYER.md).
 // Static files come straight from dist/usaciv/ (the public site without the dev pages, plus usaciv-source.zip);
 // only /api/* runs worker/index.js first. D1 (DB) holds players and scores; the RaceRoom Durable Object runs live
-// Which Metro? races.
+// Which Metro? races and VersusRoom runs live Mainline versus games.
 // Deploys run automatically on every push to main (.github/workflows/deploy.yml). By hand:
 //   uv run python -m pipeline package
 //   npx wrangler@4 d1 migrations apply usaciv --remote
@@ -28,8 +28,14 @@
     }
   ],
   "durable_objects": {
-    "bindings": [{ "name": "RACE", "class_name": "RaceRoom" }]
+    "bindings": [
+      { "name": "RACE", "class_name": "RaceRoom" },
+      { "name": "VS", "class_name": "VersusRoom" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RaceRoom"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RaceRoom"] },
+    { "tag": "v2", "new_sqlite_classes": ["VersusRoom"] }
+  ],
   "observability": { "enabled": true }
 }

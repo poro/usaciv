@@ -4,8 +4,10 @@ import { json, error, readJson, requirePlayer, ipHash, rateLimit, limitWrite, sa
 import { checkName } from "./rules.js";
 import { submitDaily, dailyBoard, createRace, raceStatus, raceSocket } from "./wm.js";
 import { submitRun, mlBoard } from "./ml.js";
+import { createVs, vsStatus, vsSocket } from "./vs.js";
 
 export { RaceRoom } from "./race.js";
+export { VersusRoom } from "./vs.js";
 
 async function createPlayer(request, env) {
   const ip = await ipHash(env, request);
@@ -40,6 +42,9 @@ const ROUTES = [
   ["GET", /^\/api\/wm\/race\/([A-Za-z0-9]{6})\/ws$/, (req, env, code) => raceSocket(req, env, code.toUpperCase())],
   ["POST", /^\/api\/ml\/run$/, submitRun],
   ["GET", /^\/api\/ml\/board\/([a-z]{1,20})$/, mlBoard],
+  ["POST", /^\/api\/ml\/vs$/, createVs],
+  ["GET", /^\/api\/ml\/vs\/([A-Za-z0-9]{6})$/, (req, env, code) => vsStatus(req, env, code.toUpperCase())],
+  ["GET", /^\/api\/ml\/vs\/([A-Za-z0-9]{6})\/ws$/, (req, env, code) => vsSocket(req, env, code.toUpperCase())],
 ];
 
 async function api(request, env) {

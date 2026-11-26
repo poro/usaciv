@@ -60,9 +60,6 @@ export class RaceRoom extends DurableObject {
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
-    this.ctx.acceptWebSocket(server, [id]);
-    server.serializeAttachment({ id });
-
     const r = this.room;
     let p = r.players.find((x) => x.id === id);
     let refusal = null;
@@ -72,10 +69,14 @@ export class RaceRoom extends DurableObject {
       else r.players.push((p = newPlayer({ id, name }, Date.now())));
     }
     if (refusal) {
+      // refuse on a plain (non-hibernating) socket: a hibernated one sent the error but never delivered the close
+      server.accept();
       send(server, { t: "error", error: refusal });
       server.close(4001, refusal);
       return new Response(null, { status: 101, webSocket: client });
     }
+    this.ctx.acceptWebSocket(server, [id]);
+    server.serializeAttachment({ id });
     p.name = name; // follows renames
     await this.touchAndBroadcast();
     return new Response(null, { status: 101, webSocket: client });

@@ -3,6 +3,7 @@
 import { esc, money, pct } from "../../format.js";
 import * as S from "./sim/index.js";
 import { usd } from "./view.js";
+import { vsStandingsHtml, vsNewsHtml, vsReadyHtml } from "./vspanel.js";
 
 const cr = (x) => `${(Math.round(x * 10) / 10).toFixed(1)} cr`;
 const signed = (x, d = 1) => `${x >= 0 ? "+" : "−"}${Math.abs(x * 100).toFixed(d)}%`;
@@ -54,7 +55,7 @@ function coachHtml(m) {
 
 const HZ_ICON = { hurricane: "🌀", flood: "🌊", fire: "🔥", severe_storm: "⛈️", winter: "❄️", other: "⚠️" };
 
-export function pickerHtml({ save, saveEnv, cities, defaults, online = false }) {
+export function pickerHtml({ save, saveEnv, cities, defaults, online = false, vs = "" }) {
   const resume = save && saveEnv && !save.over
     ? `<button class="g-btn primary ml-wide" data-act="resume">Resume ${esc(saveEnv.scenario.name)}${save.home && saveEnv.scenario.id === "sandbox" ? ` (${esc(saveEnv.home?.name || "")})` : ""}, ${save.year}</button>`
     : "";
@@ -74,6 +75,7 @@ export function pickerHtml({ save, saveEnv, cities, defaults, online = false }) 
       <button class="g-btn" data-act="reseed" type="button" title="A new random seed">🎲</button></div>
     <button class="g-btn primary ml-wide" data-act="start">Start</button>
     <button class="g-btn ml-link-btn ml-boards-link" data-act="boards" type="button"${online ? "" : " hidden"}>🏆 Leaderboards</button>
+    <div class="ml-vs-slot">${vs}</div>
     <details class="ml-help"><summary>How to play</summary>${HOW_TO}</details>
   </div>`;
 }
@@ -91,18 +93,18 @@ export function gameHtml(m) {
   ${ui.help ? `<div class="ml-helpbox"><div class="g-row"><b>How to play</b><button class="icon-btn ml-x" data-act="help" aria-label="Close">✕</button></div>${HOW_TO}<div class="g-row"><button class="g-btn primary" data-act="help">Got it</button><button class="g-btn" data-act="coachReplay">Replay the tutorial</button></div></div>` : ""}
   ${coachHtml(m)}
   <div class="ml-top">
-    <div class="ml-year"><b>${state.year}</b><span>turn ${turn} of 25</span></div>
+    <div class="ml-year"><b>${state.year}</b><span>turn ${turn} of ${(state.end ?? 2050) - S.START_YEAR + 1}</span></div>
     <div class="g-stat" title="${esc(crTitle(state.cash))}${state.cash < 0 ? esc(` · in debt: ${Math.round(S.DEBT_RATE * 100)}% interest a year, nothing but repairs until it is paid off`) : ""}"><b class="${state.cash < 0 ? "ml-bad" : ""}">${cr(state.cash)}</b><span>${state.cash < 0 ? "debt" : "cash"}</span></div>
     <div class="g-stat" title="${esc(`Freight revenue ${cr(ev.revenue)} minus upkeep ${cr(ev.maint)} a year, at today's network`)}"><b class="${net >= 0 ? "ml-good" : "ml-bad"}">${net >= 0 ? "+" : "−"}${Math.abs(net).toFixed(1)}</b><span>per year</span></div>
   </div>
   <div class="g-row ml-actions">
-    <button class="g-btn primary${ui.coach === 2 ? " ml-pulse" : ""}" data-act="end" title="End the year (E)">End ${state.year} <kbd>E</kbd></button>
+    ${m.vs ? `<span class="ml-vs-ready">${vsReadyHtml(m)}</span>` : `<button class="g-btn primary${ui.coach === 2 ? " ml-pulse" : ""}" data-act="end" title="End the year (E)">End ${state.year} <kbd>E</kbd></button>`}
     <button class="g-btn" data-act="undo" ${state.undo.length ? "" : "disabled"} title="Undo the last build, repair or hardening this turn (Z)">Undo <kbd>Z</kbd></button>
   </div>
-  <div class="ml-goal" title="${esc(`Your region's metros: ${money(sum.you)} GDP; baseline America (same metros, real trend, no network): ${money(sum.base)}. Goal: ${signed(sum.goal)} by 2050.`)}">
+  ${m.vs ? `${vsStandingsHtml(m)}${vsNewsHtml(m)}` : `  <div class="ml-goal" title="${esc(`Your region's metros: ${money(sum.you)} GDP; baseline America (same metros, real trend, no network): ${money(sum.base)}. Goal: ${signed(sum.goal)} by 2050.`)}">
     <div class="ml-goal-txt"><span>GDP vs baseline America</span><b class="${sum.uplift >= sum.goal ? "ml-good" : ""}">${signed(sum.uplift, 2)}</b><span class="muted">goal ${signed(sum.goal)}</span></div>
     <div class="ml-bar"><i style="width:${(goalPct * 100).toFixed(1)}%"></i><em style="left:${(goalMark * 100).toFixed(1)}%"></em></div>
-  </div>
+  </div>`}
   ${env.grant && state.year === S.START_YEAR ? `<div class="g-note ml-grant" title="${esc(`Contracts with both ends within ${env.scenario.grant.km} km of ${env.home?.name} pay ${env.market} cr a year in all; the grant tops up homes below ${env.scenario.grant.ref}.`)}">Frontier grant: <b>+${env.grant} cr</b> at the start, because ${esc(env.home?.name || "your home")} has little freight within ${env.scenario.grant.km} km. A game model for balance, after the 1862 Pacific Railway Act's federal bonds.</div>` : ""}
   <div id="ml-build" class="ml-build">${buildHtml(m)}</div>
   ${ui.link && state.links[ui.link] ? linkHtml(m) : ""}
@@ -117,7 +119,7 @@ export function gameHtml(m) {
   </div>
   <div class="ml-foot g-note">
     <span>${esc(env.scenario.name)}${env.scenario.id === "sandbox" ? ` · ${esc(env.home?.name || "")}` : ""} · seed ${state.seed}</span>
-    <span class="g-row"><button class="g-btn" data-act="help" title="How to play (H)">How to play</button><button class="g-btn" data-act="new">New game</button></span>
+    <span class="g-row"><button class="g-btn" data-act="help" title="How to play (H)">How to play</button>${m.vs ? `<button class="g-btn" data-act="vsLeave" title="${m.vs.mode === "online" ? "Leave the room (your company keeps its track; you can rejoin by the link)" : "Back to the scenarios (this game is saved)"}">Leave</button>` : `<button class="g-btn" data-act="new">New game</button>`}</span>
   </div>`;
 }
 
@@ -241,18 +243,23 @@ function contractsHtml(m) {
   const onNet = (end) => end.cells.some((x) => net.has(x));
   const full = (c) => S.payFor(c.value, 1, c.km);
   // open: best pay first, and the ones you are already halfway to on top of their pay band
+  // versus: a contract a rival holds can't pay you (it sinks to the bottom, marked with the holder)
+  const holder = (c) => { const h = m.vs?.vs?.claims[c.id]; return h != null && h !== m.vs.me ? h : null; };
   const open = env.contracts.filter((c) => !ev.served.has(c.id))
-    .map((c) => ({ c, pay: full(c), ends: (onNet(c.a) ? 1 : 0) + (onNet(c.b) ? 1 : 0) }))
-    .sort((x, y) => y.pay - x.pay || y.ends - x.ends);
+    .map((c) => ({ c, pay: full(c), ends: (onNet(c.a) ? 1 : 0) + (onNet(c.b) ? 1 : 0), rival: holder(c) }))
+    .sort((x, y) => (x.rival != null) - (y.rival != null) || y.pay - x.pay || y.ends - x.ends);
   const served = env.contracts.filter((c) => ev.served.has(c.id)).map((c) => ({ c, pay: ev.served.get(c.id).pay })).sort((x, y) => y.pay - x.pay);
   const tab = ui.tab;
   const list = tab === "served" ? served : open;
   const top = Math.max(1, ...list.map((r) => r.pay));
-  const rows = list.map(({ c, pay, ends }) => {
+  const rows = list.map(({ c, pay, ends, rival = null }) => {
     const s = ev.served.get(c.id);
     const boost = s && s.base > 0 ? s.pay / s.base : 1;
-    const mark = !s && ends ? `<i class="ml-half" title="One end is already on your network"></i>` : "";
-    return `<li data-contract="${esc(c.id)}" class="${s ? "served" : ""}${ui.highlight === c.id ? " on" : ""}" title="${esc(contractText(env, c, s))}" style="--w:${((pay / top) * 100).toFixed(0)}%">
+    const rname = rival != null ? m.vs.vs.players[rival]?.name || "a rival" : "";
+    const mark = rival != null ? `<i class="ml-vs-dot" style="--c:${S.VS_COLORS[rival]}" title="${esc(`${rname} holds it`)}"></i>`
+      : !s && ends ? `<i class="ml-half" title="One end is already on your network"></i>` : "";
+    const tip = contractText(env, c, s) + (rival != null ? `\nHeld by ${rname}: it pays them, not you, while their track serves it. If their route is cut and yours serves it, it becomes yours.` : "");
+    return `<li data-contract="${esc(c.id)}" class="${s ? "served" : ""}${rival != null ? " rival" : ""}${ui.highlight === c.id ? " on" : ""}" title="${esc(tip)}" style="--w:${((pay / top) * 100).toFixed(0)}%">
       <span class="ml-kind ${c.kind}">${c.kind === "faf" ? "FAF" : "model"}</span>
       <span class="ml-cname">${mark}${esc(c.a.name)} ↔ ${esc(c.b.name)}</span>
       <span class="ml-val">${money(c.value)} · ${c.km} km</span>

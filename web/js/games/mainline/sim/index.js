@@ -15,3 +15,7 @@ export {
   corridors, corridorStatus, expressCost, expressOps, EXPRESS_GROWTH, EXPRESS_CAP, EXPRESS_OPS,
 } from "./express.js";
 export { stateHash } from "./hash.js";
+export {
+  newVersus, vsCheck, vsAct, settle, resolve as vsResolve, botActions, applyEntry, replay as vsReplay, standings, vsHash,
+  VS_MAX, VS_YEARS, VS_COLORS, BOT_NAMES,
+} from "./versus.js";

@@ -8,7 +8,8 @@
 //      best payback over the years left (double track, terminals, hardening per hazard, express services with the
 //      double track their route still needs; see upgradeOptions);
 //   4. end the turn.
-// opts.log (an array) records every action it applied, for replay tests.
+// opts.log (an array) records every action it applied, for replay tests. opts.endTurn = false stops before step 4
+// (versus: the room ends the year for every company at once). Contracts a rival holds (state.rivals) are skipped.
 import { apply, check, evaluate, plan, networkCells, connectedCities, hardenOptions, doubleCost, hubCost, DOUBLE_MAINT, MAINT_RATE } from "./state.js";
 import { payFor, DOUBLE_BONUS } from "./contracts.js";
 import { accessShares, HUB_GROWTH } from "./growth.js";
@@ -20,7 +21,7 @@ import { corridors } from "./express.js";
 const CANDIDATES = 8; // contracts routed per pick (out of the 32 best by estimate)
 const EST_PER_HEX = 6; // cr, for the pre-ranking estimate only
 
-export function greedyTurn(env, state, { reserve = 4, maxBuilds = 6, upgrades = true, maxUpgrades = 400, log = null } = {}) {
+export function greedyTurn(env, state, { reserve = 4, maxBuilds = 6, upgrades = true, maxUpgrades = 400, log = null, endTurn = true } = {}) {
   let s = state;
   const act = (a) => {
     const n = apply(env, s, a);
@@ -43,7 +44,7 @@ export function greedyTurn(env, state, { reserve = 4, maxBuilds = 6, upgrades = 
     };
     const cands = [];
     for (const c of env.contracts) {
-      if (ev.served.has(c.id)) continue;
+      if (ev.served.has(c.id) || s.rivals?.[c.id]) continue;
       const pay = payFor(c.value, 1, c.km);
       const na = near(c.a), nb = near(c.b), ab = hm.dist(c.a.cell, c.b.cell);
       for (const [x, y, nx, ny] of [[c.a, c.b, na, nb], [c.b, c.a, nb, na]]) {
@@ -95,7 +96,7 @@ export function greedyTurn(env, state, { reserve = 4, maxBuilds = 6, upgrades = 
       n++;
     }
   }
-  act({ type: "endTurn" });
+  if (endTurn) act({ type: "endTurn" });
   return s;
 }
 
@@ -106,7 +107,7 @@ export function greedyTurn(env, state, { reserve = 4, maxBuilds = 6, upgrades = 
  * (the score's exchange rate).
  */
 export function upgradeOptions(env, s, { idle = false } = {}) {
-  const years = END_YEAR - s.year + 1;
+  const years = (s.end ?? END_YEAR) - s.year + 1;
   const bar = years <= 1 ? 0.01 : idle ? 0.05 : years > 6 ? 1.2 : years > 2 ? 0.4 : 0.1;
   const ev = evaluate(env, s);
   const out = [];
