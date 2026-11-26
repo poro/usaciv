@@ -1,0 +1,12 @@
+// Cloudflare Workers static-assets deploy of the packaged site (no Worker code).
+// Deploy:  uv run python -m pipeline package && npx wrangler deploy
+// Serves dist/usaciv/ (the public site without the dev pages, plus usaciv-source.zip) at
+// https://usaciv.mark-ollila.workers.dev/
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "usaciv",
+  "compatibility_date": "2026-11-26",
+  "assets": {
+    "directory": "./dist/usaciv"
+  }
+}

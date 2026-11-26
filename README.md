@@ -1,7 +1,12 @@
 # usaciv: the United States as a strategy game, built from real data
 
-**Live: [karpathy.ai/usaciv](https://karpathy.ai/usaciv)** · Source code:
-[usaciv-source.zip](https://karpathy.ai/usaciv/usaciv-source.zip) (also linked from the in-app help, `?`)
+**This fork:** live at **[usaciv.mark-ollila.workers.dev](https://usaciv.mark-ollila.workers.dev/)**. It adds a
+**Play** menu with single-player game modes on the real map (Which Metro?, Mainline, Founders); see
+[docs/ROADMAP.md](docs/ROADMAP.md). The data refreshes monthly via a GitHub Action
+([.github/workflows/refresh-data.yml](.github/workflows/refresh-data.yml)).
+
+**Original** by Andrej Karpathy (MIT): [karpathy.ai/usaciv](https://karpathy.ai/usaciv) · Source code:
+[usaciv-source.zip](https://karpathy.ai/usaciv/usaciv-source.zip) (this fork's own source zip is linked from the in-app help, `?`)
 
 ![The lower 48 drawn as a 4X strategy map: painted hex terrain, rivers, state names and bronze city banners](docs/images/hero.jpg)
 
