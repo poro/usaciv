@@ -14,6 +14,9 @@
 //   addLayer(layer)            app.registerStaticLayer, removed on exit (id is prefixed with the game id; its
 //                              tooltips still show while app.setCitiesHidden(true) hides the real places)
 //   addOverlay(overlay)        app.registerOverlay, removed on exit
+//   onKey(fn)                  fn(event, key) for keydown while the game is open, before the map's own shortcuts
+//                              (L lenses, R resources, arrows…); return true to consume the key (the map then ignores
+//                              it). Skipped while typing in a field, with Ctrl/Cmd/Alt held, and for Escape (the host's)
 // }
 // session (what start returns, all optional) = { stop(), onEscape() → false to leave the game, param() → string }
 import { GAMES, gameById } from "./registry.js";
@@ -99,6 +102,20 @@ export async function install(app) {
         // A game's own layers keep their tooltips while app.setCitiesHidden(true) hides everyone else's.
         const l = { tooltipWhenHidden: true, ...layer, id: `${game.id}:${layer.id || "layer"}` };
         return own(app.registerStaticLayer(l));
+      },
+      onKey(fn) {
+        const typing = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+        const h = (e) => {
+          if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.key === "Escape" || typing(e.target)) return;
+          if (!menu.hidden || document.querySelector(".modal:not([hidden]):not(.games-menu)")) return;
+          const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+          let used = false;
+          try { used = fn(e, k) === true; } catch (err) { console.error(`game "${game.id}" key handler failed`, err); }
+          if (used) e.preventDefault();
+        };
+        // Capture phase on window: runs before main.js's own (bubble-phase) shortcuts, which skip prevented keys.
+        window.addEventListener("keydown", h, true);
+        return own(() => window.removeEventListener("keydown", h, true));
       },
       addOverlay(o) {
         const ov = { ...o, id: `${game.id}:${o.id || "overlay"}` };
