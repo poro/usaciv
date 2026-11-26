@@ -9,10 +9,14 @@
 //   {type: "link", a, b}                  road between two towns (or upgrade a road to rail once rail opens)
 //   {type: "focus", town, focus}          balanced | food | materials | trade
 //   {type: "pin", town, cell}             always work this hex (toggle)
+//   {type: "project", town, project}      build a town project (granary, school, market, harbor, depot, college)
+//   {type: "grow", town}                  homesteaders: materials → +1 person now (once a turn per town)
+//   {type: "festival", town}              materials → +8 culture now (once a turn per town)
 //   {type: "end"}                         end the turn (turn.js)
 import { IMPROVEMENTS, improvementFits } from "./yields.js";
 import {
-  RULES, FOCI, clone, partyCost, chooseStart, owners, townById, townAt, partyById, landPath, foundBlocker, townName, rngOf,
+  RULES, FOCI, PROJECTS, clone, partyCost, chooseStart, owners, townById, townAt, partyById, landPath, foundBlocker, townName, rngOf,
+  improvementCost, projectCost, hasProject, growCost, townOutput,
 } from "./state.js";
 import { endTurn, walk } from "./turn.js";
 
@@ -51,6 +55,9 @@ export function apply(env, state, action) {
       else tt.pins.push(action.cell);
       return { ok: true, state: s };
     }
+    case "project": return buildProject(env, state, action);
+    case "grow": return grow(env, state, action);
+    case "festival": return festival(env, state, action);
     case "end": return { ok: true, state: endTurn(env, state) };
     default: return fail(state, `Unknown action ${action.type}`);
   }
@@ -81,7 +88,7 @@ function found(env, state, { party }) {
   const first = s.towns.length === 0;
   const town = {
     id: s.nextId++, name: townName(env, s, p.cell, rng), cell: p.cell, pop: first ? 2 : 1, food: 0, culture: 0,
-    radius: 1, focus: "balanced", pins: [], founded: s.turn,
+    radius: 1, focus: "balanced", pins: [], founded: s.turn, projects: [],
   };
   s.rng = rng.state;
   s.towns.push(town);
@@ -119,7 +126,8 @@ export function improveBlocker(env, state, cell, kind) {
   if (townAt(state, cell)) return "Not on a town's own hex";
   if (state.improvements[cell]) return `Already has a ${IMPROVEMENTS[state.improvements[cell]].name.toLowerCase()}`;
   if (!improvementFits(env.T, cell, kind)) return imp.rule;
-  if (state.materials < imp.cost) return `Needs ${imp.cost} materials`;
+  const cost = improvementCost(state, kind);
+  if (state.materials < cost) return `Needs ${cost} materials`;
   return null;
 }
 
@@ -127,8 +135,8 @@ function improve(env, state, { cell, kind }) {
   const why = improveBlocker(env, state, cell, kind);
   if (why) return fail(state, why);
   const s = clone(state);
+  s.materials -= improvementCost(state, kind);
   s.improvements[cell] = kind;
-  s.materials -= IMPROVEMENTS[kind].cost;
   s.stats.built++;
   return { ok: true, state: s };
 }
@@ -167,4 +175,82 @@ function link(env, state, { a, b }) {
   const na = townById(s, a).name, nb = townById(s, b).name;
   s.log.push({ turn: s.turn, kind: "build", text: `${plan.upgrade ? "Rail" : "A road"} now links ${na} and ${nb}.` });
   return { ok: true, state: s };
+}
+
+// --- town projects and conversions ---------------------------------------------------------------------------------
+
+/** Why town `town` cannot build project `id` (terrain, size, era, prerequisites; `cost` too unless noCost). */
+export function projectBlocker(env, state, town, id, { noCost = false } = {}) {
+  const p = PROJECTS[id];
+  const t = typeof town === "object" ? town : townById(state, town);
+  if (!p || !t) return "Unknown town or project";
+  if (hasProject(t, id)) return "Built";
+  if (p.fromTurn && state.turn < p.fromTurn) return `From turn ${p.fromTurn}`;
+  if (p.needs && !hasProject(t, p.needs)) return `Needs a ${PROJECTS[p.needs].name.toLowerCase()}`;
+  if (p.water) {
+    const T = env.T, c = t.cell;
+    if (!(T.coast[c] || T.lake[c] || (T.river[c] && T.river[c] <= 4))) return "Only in a town on the coast, a lake or a large river";
+  }
+  if (t.pop < p.minPop) return `Needs ${p.minPop} people`;
+  if (!noCost) {
+    const cost = projectCost(state, id);
+    if (state.materials < cost) return `Needs ${cost} materials`;
+  }
+  return null;
+}
+
+function buildProject(env, state, { town, project }) {
+  const why = projectBlocker(env, state, town, project);
+  if (why) return fail(state, why);
+  const s = clone(state);
+  const t = townById(s, town);
+  s.materials -= projectCost(state, project);
+  t.projects = [...(t.projects || []), project];
+  s.stats.built++;
+  s.log.push({ turn: s.turn, kind: "build", text: `${t.name} builds a ${PROJECTS[project].name.toLowerCase()}.` });
+  return { ok: true, state: s, msg: `${PROJECTS[project].name} built in ${t.name}` };
+}
+
+/** Why homesteaders cannot come to this town now (null = they can). */
+export function growBlocker(env, state, town, { noCost = false } = {}) {
+  const t = typeof town === "object" ? town : townById(state, town);
+  if (!t) return "No such town";
+  if (t.grown === state.turn) return "Homesteaders already came this turn";
+  const o = townOutput(env, state, t);
+  if (o.worked.length >= o.tiles.length) return "No free hex to work: wait for the border to grow";
+  const next = townOutput(env, state, { ...t, pop: t.pop + 1 });
+  if (next.surplus < 0) return "Not enough food for one more person";
+  if (!noCost && state.materials < growCost(t)) return `Needs ${growCost(t)} materials`;
+  return null;
+}
+
+function grow(env, state, { town }) {
+  const why = growBlocker(env, state, town);
+  if (why) return fail(state, why);
+  const s = clone(state);
+  const t = townById(s, town);
+  s.materials -= growCost(t);
+  t.pop++;
+  t.grown = s.turn;
+  s.stats.built++;
+  return { ok: true, state: s, msg: `Homesteaders settle in ${t.name}: population ${t.pop}` };
+}
+
+export function festivalBlocker(state, town) {
+  const t = typeof town === "object" ? town : townById(state, town);
+  if (!t) return "No such town";
+  if (t.fest === state.turn) return "One festival a turn";
+  if (state.materials < RULES.festivalCost) return `Needs ${RULES.festivalCost} materials`;
+  return null;
+}
+
+function festival(env, state, { town }) {
+  const why = festivalBlocker(state, town);
+  if (why) return fail(state, why);
+  const s = clone(state);
+  const t = townById(s, town);
+  s.materials -= RULES.festivalCost;
+  t.culture += RULES.festivalCulture;
+  t.fest = s.turn;
+  return { ok: true, state: s, msg: `${t.name} holds a festival: +${RULES.festivalCulture} culture` };
 }

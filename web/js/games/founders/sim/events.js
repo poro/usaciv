@@ -8,7 +8,7 @@
 //
 // Events never name a real disaster; they quote the real rate for the place ("this county had 9 flood
 // declarations 2000–2026").
-import { RULES, townOutput, owners, growthNeed } from "./state.js";
+import { RULES, townOutput, owners, townGrowthNeed } from "./state.js";
 import { IMPROVEMENTS } from "./yields.js";
 
 export function buildHazards(disasters, world) {
@@ -184,7 +184,7 @@ export function rollEvents(env, s, rng) {
       break;
     }
     case "harvest": {
-      const add = Math.ceil(growthNeed(town.pop) / 2);
+      const add = Math.ceil(townGrowthNeed(town) / 2);
       town.food += add;
       text = `A bumper harvest at ${town.name}: +${add} food in store.`;
       break;

@@ -6,7 +6,9 @@
 //   * Real cities are hidden while playing: the "cover" layer paints plain terrain over city tiles, and
 //     app.setCitiesHidden(true) switches off the city banners and every non-game tooltip (restored on exit and at
 //     the end, when the real cities are revealed). Map-layer toggles that would show real places (roads, rail, ports…) are switched off and
-//     restored on exit, and the lens dock is hidden by founders.css.
+//     restored on exit, and the lens dock, the national totals (#yields) and city search are hidden by founders.css.
+//   * Keys go through ctx.onKey (before the map's own shortcuts); R and L are swallowed while the country is hidden,
+//     so resource icons and lenses (which show real places) cannot come back.
 import { loadCss } from "../shared/css.js";
 import * as S from "./sim/index.js";
 import { prepareCover, prepareLand, coverLayer, landLayer, yieldsLayer, townsLayer, makeOverlay, COLORS } from "./render.js";
@@ -14,6 +16,7 @@ import { esc, int, popShort, compact } from "../../format.js";
 
 const SAVE_KEY = "save";
 const SAVE_V = 1;
+const HOWTO_KEY = "howto-seen";
 
 export async function start(ctx) {
   const { app } = ctx;
@@ -29,6 +32,7 @@ export async function start(ctx) {
   const model = {
     env, grid: env.map.grid, state: null, ver: 0, land: null, revealed: false, showYields: true,
     selTown: null, selParty: null, selCell: null, hoverCell: null, history: null, confirmNew: false,
+    showHow: !ctx.storage.get(HOWTO_KEY),
     cover: prepareCover(app.w, ctx.cities),
   };
 
@@ -36,8 +40,9 @@ export async function start(ctx) {
   app.setCitiesHidden(true);
   ctx.onCleanup(() => { app.setCitiesHidden(false); app.invalidate?.(); });
   // Map-layer toggles (roads, rail, ports…) and resource icons (power plants are built by people) would give the
-  // real country away. Extensions may register toggles after the game starts, so this runs again on refresh and on
-  // data arrivals; whatever it switched off is switched back on at exit.
+  // real country away. Extensions install before the game host, so their toggles exist when the game starts; this runs
+  // again on every refresh and when the extension loader reports in ("extensions"), so a late one is caught too.
+  // Whatever it switched off is switched back on at exit.
   const toggledOff = new Set();
   let hidResources = false;
   function enforceHidden() {
@@ -51,11 +56,10 @@ export async function start(ctx) {
     for (const id of toggledOff) app.ui.setMapToggle?.(id, true);
     if (hidResources) app.setShowResources?.(true);
   });
-  ctx.on("data", () => setTimeout(enforceHidden, 0));
-  for (const ms of [0, 300, 1000, 2500, 5000]) {
-    const t = setTimeout(enforceHidden, ms);
-    ctx.onCleanup(() => clearTimeout(t));
-  }
+  ctx.on("extensions", () => enforceHidden());
+  enforceHidden();
+  document.body.classList.remove("fd-revealed");
+  ctx.onCleanup(() => document.body.classList.remove("fd-revealed"));
 
   ctx.addLayer(coverLayer(model));
   ctx.addLayer(landLayer(model));
@@ -92,7 +96,7 @@ export async function start(ctx) {
   function newGame(seedStr) {
     model.selTown = model.selParty = model.selCell = null;
     model.history = null;
-    if (model.revealed) { model.revealed = false; app.setCitiesHidden(true); }
+    if (model.revealed) reveal(false);
     setState(S.newGame(env, seedStr));
     ctx.setParam(seedStr);
     app.home?.();
@@ -121,11 +125,15 @@ export async function start(ctx) {
     model.selTown = model.selParty = model.selCell = null;
     refresh();
     frameTowns();
+    // Again once the host has framed the docked map (a resumed game reaches here before that).
+    const t = setTimeout(frameTowns, 1000);
+    ctx.onCleanup(() => clearTimeout(t));
   }
 
   function reveal(on) {
     model.revealed = on;
     app.setCitiesHidden(!on);
+    document.body.classList.toggle("fd-revealed", on);
     app.invalidate?.();
   }
 
@@ -231,21 +239,26 @@ export async function start(ctx) {
     refresh();
   }
 
-  const typing = (t) => t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
-  function onKey(e) {
-    if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return;
-    if (document.querySelector(".modal:not([hidden])")) return;
-    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  // Keys (ctx.onKey runs before the map's own shortcuts; true = handled, so the map ignores it).
+  ctx.onKey((e, k) => {
+    const onButton = e.target?.tagName === "BUTTON";
     if (k === "Enter" || k === "e") {
-      if (k === "Enter" && e.target?.tagName === "BUTTON") return; // the button handles its own Enter
-      e.preventDefault();
+      if (k === "Enter" && onButton) return false; // the button handles its own Enter
       endTurn();
-    } else if (k === "f") { e.preventDefault(); found(); }
-    else if (k === " " || k === "n") { e.preventDefault(); nextParty(); }
-    else if (k === "y") { model.showYields = !model.showYields; refresh(); }
-  }
-  window.addEventListener("keydown", onKey);
-  ctx.onCleanup(() => window.removeEventListener("keydown", onKey));
+      return true;
+    }
+    if (k === "f") { found(); return true; }
+    if (k === " " || k === "n") {
+      if (k === " " && onButton) return false;
+      nextParty();
+      return true;
+    }
+    if (k === "y") { model.showYields = !model.showYields; refresh(); return true; }
+    if (k === "h") { model.showHow = !model.showHow; refresh(); return true; }
+    // While the country is hidden: no resource icons (R), no lenses (L) and no city search (/): they show real places.
+    if (!model.revealed && (k === "r" || k === "l" || k === "/")) return true;
+    return false;
+  });
 
   // --- panel -----------------------------------------------------------------------------------------------------
   body.addEventListener("click", (e) => {
@@ -264,6 +277,11 @@ export async function start(ctx) {
         break;
       }
       case "improve": act({ type: "improve", cell: +d.cell, kind: d.kind }); break;
+      case "project": act({ type: "project", town: +d.town, project: d.p }); break;
+      case "grow": act({ type: "grow", town: +d.town }); break;
+      case "festival": act({ type: "festival", town: +d.town }); break;
+      case "how": model.showHow = !model.showHow; if (!model.showHow) ctx.storage.set(HOWTO_KEY, true); break;
+      case "share": copyResult(); return;
       case "pin": act({ type: "pin", town: +d.town, cell: +d.cell }); break;
       case "focus": act({ type: "focus", town: +d.town, focus: d.v }); break;
       case "link": act({ type: "link", a: +d.a, b: +d.b }); break;
@@ -319,13 +337,14 @@ export async function start(ctx) {
       <div class="fd-top">
         <div class="fd-year"><b>${year}</b><span>Turn ${s.turn} of ${s.maxTurns}</span></div>
         <div class="fd-stats">
-          <div class="g-stat" title="Materials in store (income per turn: town materials plus a quarter of trade)"><b class="fd-mat">${int(s.materials)}</b><span>Materials +${n.income}</span></div>
+          <div class="g-stat" title="Materials in store. Per turn: +${n.gross} (town materials plus a quarter of trade) − ${n.upkeep} upkeep (1 per 2 people, 1 per rail line)"><b class="fd-mat">${int(s.materials)}</b><span>Materials ${n.income >= 0 ? "+" : ""}${n.income}</span></div>
           <div class="g-stat" title="Population across your towns"><b>${n.pop}</b><span>People</span></div>
           <div class="g-stat" title="Trade per turn (culture, wealth and score)"><b class="fd-trade">${n.trade}</b><span>Trade</span></div>
           <div class="g-stat" title="Prosperity score"><b>${int(score)}</b><span>Score</span></div>
         </div>
       </div>
-      <div class="fd-hint" role="status">${esc(hint)}</div>
+      ${model.showHow ? howToPlay() : ""}
+      <div class="fd-hint" role="status"><span class="fd-hint-k">Next</span> ${esc(hint)}</div>
       <div class="g-row fd-actions">
         <button class="g-btn primary fd-end" data-act="end" ${s.phase !== "play" ? "disabled" : ""} title="End the turn (Enter or E)">End turn <kbd>⏎</kbd></button>
         <button class="g-btn" data-act="nextparty" ${s.parties.some((p) => p.moves > 0) ? "" : "disabled"} title="Next founding party (Space or N)">Next party</button>
@@ -338,6 +357,7 @@ export async function start(ctx) {
       ${howItWorks()}
       <div class="fd-foot g-row">
         <span class="g-note">Seed <code>${esc(s.seed)}</code></span>
+        <button class="g-btn" data-act="how" title="How to play (H)">How to play</button>
         <button class="g-btn" data-act="replay" title="Restart with the same seed">Restart</button>
         <button class="g-btn" data-act="new">New game</button>
       </div>`;
@@ -389,8 +409,8 @@ export async function start(ctx) {
   function townPanel(t) {
     const s = model.state;
     const o = S.townOutput(env, s, t);
-    const need = S.growthNeed(t.pop);
-    const nextR = t.radius === 1 ? S.RULES.cultureR2 : t.radius === 2 ? S.RULES.cultureR3 : null;
+    const need = S.townGrowthNeed(t);
+    const nextR = [null, S.RULES.cultureR2, S.RULES.cultureR3, S.RULES.cultureR4][t.radius] ?? null;
     const cost = S.partyCost(s);
     const canParty = t.pop >= 2 && s.materials >= cost;
     const grow = o.surplus > 0 ? `+${o.surplus}/turn, grows in ${Math.max(1, Math.ceil((need - t.food) / o.surplus))}` : o.surplus < 0 ? `<span class="fd-warn">${o.surplus}/turn: starving</span>` : "stagnant";
@@ -409,13 +429,42 @@ export async function start(ctx) {
         <div class="g-stat"><b class="fd-trade">${o.trade}</b><span>Trade</span></div>
       </div>
       <p>Food store <b>${t.food}/${need}</b> · ${grow}</p>
-      <p>Culture <b>${t.culture}</b> · border radius ${t.radius}${nextR ? ` (grows at ${nextR})` : " (full)"} · works ${o.worked.length} of ${o.tiles.length} hexes</p>
+      <p>Culture <b>${t.culture}</b>${o.culture ? ` (+${1 + Math.floor(o.trade / 2) + o.culture}/turn)` : ""} · border radius ${t.radius}${nextR ? ` (grows at ${nextR})` : " (full)"} · works ${o.worked.length} of ${o.tiles.length} hexes · upkeep ${Math.floor(S.townUpkeep(s, t))}</p>
       <div class="fd-row"><span class="g-note">Focus</span> ${foci}</div>
       <div class="g-row"><button class="g-btn primary" data-act="party" data-town="${t.id}" ${canParty ? "" : "disabled"}
         title="Costs ${cost} materials and 1 person" aria-label="Send settlers: ${cost} materials and 1 person">Send settlers · ${cost}</button>
         ${t.pop < 2 ? `<span class="g-note">needs 2 people</span>` : ""}</div>
+      ${spendPanel(t)}
+      ${projectsPanel(t)}
       ${links ? `<h4 class="fd-h4">Links (+${S.RULES.roadTrade} trade each end; rail +${S.RULES.railTrade} from turn ${S.RULES.railTurn})</h4><ul class="fd-links">${links}</ul>` : ""}
       <p class="g-note">Click a hex inside the border to build on it, or to always work it. White dots mark worked hexes.</p>`;
+  }
+
+  /** Homesteaders and festivals: turn spare materials into people or culture, once a turn each. */
+  function spendPanel(t) {
+    const s = model.state;
+    const gc = S.growCost(t);
+    const gWhy = S.growBlocker(env, s, t);
+    const fWhy = S.festivalBlocker(s, t);
+    return `<div class="g-row fd-spend">
+      <button class="g-btn" data-act="grow" data-town="${t.id}" ${gWhy ? "disabled" : ""} title="${esc(gWhy || `+1 person now for ${gc} materials (once a turn)`)}">🧳 Homesteaders · ${gc} <small>+1 person</small></button>
+      <button class="g-btn" data-act="festival" data-town="${t.id}" ${fWhy ? "disabled" : ""} title="${esc(fWhy || `+${S.RULES.festivalCulture} culture now (once a turn)`)}">🎉 Festival · ${S.RULES.festivalCost} <small>+${S.RULES.festivalCulture} culture</small></button>
+    </div>`;
+  }
+
+  function projectsPanel(t) {
+    const s = model.state;
+    const rows = Object.values(S.PROJECTS).map((P) => {
+      if (S.hasProject(t, P.id)) return `<li class="fd-proj done"><span>${P.icon} ${esc(P.name)}</span><span class="muted">✓ built</span></li>`;
+      const why = S.projectBlocker(env, s, t, P.id, { noCost: true });
+      if (why && /^Only in a town/.test(why)) return "";
+      const cost = S.projectCost(s, P.id);
+      const short = !why && s.materials < cost;
+      return `<li class="fd-proj"><button class="g-btn" data-act="project" data-town="${t.id}" data-p="${P.id}" ${why || short ? "disabled" : ""}
+        title="${esc(P.text)}${why ? ` (${esc(why)})` : ""}" aria-label="${esc(`${P.name}, ${cost} materials: ${P.text}`)}">${P.icon} ${esc(P.name)} · ${cost}</button>
+        <small class="muted">${esc(why || P.text)}</small></li>`;
+    }).join("");
+    return `<h4 class="fd-h4">Projects <span class="muted">(one of each per town; each copy elsewhere costs 25% more)</span></h4><ul class="fd-projs">${rows}</ul>`;
   }
 
   function hexPanel(c, town) {
@@ -429,9 +478,10 @@ export async function start(ctx) {
       } else if (!S.townAt(s, c)) {
         const opts = Object.values(S.IMPROVEMENTS).filter((I) => S.improvementFits(env.T, c, I.id)).map((I) => {
           const gain = [I.food ? `+${I.food} food` : "", I.materials ? `+${I.materials} materials` : "", I.trade ? `+${I.trade} trade` : ""].filter(Boolean).join(" ");
-          return `<button class="g-btn" data-act="improve" data-cell="${c}" data-kind="${I.id}" ${s.materials < I.cost ? "disabled" : ""} title="${esc(I.rule)}" aria-label="${esc(`${I.name}, ${I.cost} materials, ${gain}`)}">${I.icon} ${I.name} · ${I.cost} <small>${gain}</small></button>`;
+          const cost = S.improvementCost(s, I.id);
+          return `<button class="g-btn" data-act="improve" data-cell="${c}" data-kind="${I.id}" ${s.materials < cost ? "disabled" : ""} title="${esc(I.rule)}" aria-label="${esc(`${I.name}, ${cost} materials, ${gain}`)}">${I.icon} ${I.name} · ${cost} <small>${gain}</small></button>`;
         }).join("");
-        builds = opts ? `<div class="fd-builds">${opts}</div>` : `<p class="g-note">Nothing to build here.</p>`;
+        builds = opts ? `<div class="fd-builds">${opts}</div><p class="g-note">Each improvement of a kind you already own costs 12% more.</p>` : `<p class="g-note">Nothing to build here.</p>`;
       }
       const pinned = owner.pins?.includes(c);
       const pin = S.townAt(s, c) ? "" : `<button class="g-btn" data-act="pin" data-town="${owner.id}" data-cell="${c}">${pinned ? "Stop always working" : "Always work this hex"}</button>`;
@@ -449,7 +499,7 @@ export async function start(ctx) {
     if (r.grew.length) bits.push(`${r.grew.map((g) => esc(g.name)).join(", ")} grew`);
     if (r.borders.length) bits.push(`${r.borders.map((g) => esc(g.name)).join(", ")} border grew`);
     if (r.shrank.length) bits.push(`<span class="fd-warn">${r.shrank.map((g) => esc(g.name)).join(", ")} starved</span>`);
-    return `<h3 class="g-section">Last turn</h3><p>+${r.income} materials, ${r.trade} trade${bits.length ? ` · ${bits.join(" · ")}` : ""}</p>${ev}`;
+    return `<h3 class="g-section">Last turn</h3><p>${r.income >= 0 ? "+" : ""}${r.income} materials${r.upkeep ? ` (after ${r.upkeep} upkeep)` : ""}, ${r.trade} trade${bits.length ? ` · ${bits.join(" · ")}` : ""}</p>${ev}`;
   }
 
   function townList() {
@@ -483,10 +533,95 @@ export async function start(ctx) {
         <li><span class="fd-trade">Trade</span> = coast 2, river 1–2, lake 1, plus roads (+${R_.roadTrade}) and rail (+${R_.railTrade}) to your other towns.</li>
         <li>Developed land is ignored (the country is empty). Wetland costs 2 moves, mountains 2, peaks 3.</li>
       </ul>
-      <p>Each person works one hex and eats ${R_.foodPerPop} food. Surplus food grows the town (${R_.growthBase} + ${R_.growthPerPop} × people). Culture (1 a turn + half the trade) widens the border at ${R_.cultureR2} and ${R_.cultureR3}. Materials (plus a quarter of trade) build settlers, improvements and links. Towns must be ${R_.minTownDist}+ hexes apart.</p>
+      <p>Each person works one hex and eats ${R_.foodPerPop} food. Surplus food grows the town (${R_.growthBase} + ${R_.growthPerPop} × people). Culture (1 a turn + half the trade + schools and colleges) widens the border at ${R_.cultureR2}, ${R_.cultureR3} and ${R_.cultureR4}. Towns must be ${R_.minTownDist}+ hexes apart.</p>
+      <p><span class="fd-mat">Materials</span> (town output plus a quarter of trade, minus upkeep of 1 per ${R_.upkeepPerPop} people and 1 per rail line) buy settlers, improvements, links and town projects. Everything gets dearer the more you own: settlers +8 per town, each improvement of a kind +12%, each copy of a project +25%. Spare materials can bring homesteaders (+1 person for ${R_.growBase} + ${R_.growPerPop} × people) or pay for a festival (+${R_.festivalCulture} culture for ${R_.festivalCost}), once a turn per town.</p>
+      <p>Score: 10 a town, 4 a person, 1 per 5 trade ever earned, 2 an improvement, 3 a road (6 rail), 5 a project, 1 per 10 culture.</p>
       <p>Events are seeded; floods, storms, fires and winters strike where FEMA recorded them most (county declarations since 2000), droughts where NOAA counted billion-dollar droughts.</p>
-      <p>Keys: <kbd>Enter</kbd>/<kbd>E</kbd> end turn · <kbd>F</kbd> found · <kbd>Space</kbd>/<kbd>N</kbd> next party · <kbd>Y</kbd> yields · <kbd>Esc</kbd> deselect.</p>
+      <p>Keys: <kbd>Enter</kbd>/<kbd>E</kbd> end turn · <kbd>F</kbd> found · <kbd>Space</kbd>/<kbd>N</kbd> next party · <kbd>Y</kbd> yields · <kbd>H</kbd> how to play · <kbd>Esc</kbd> deselect.</p>
     </details>`;
+  }
+
+  function howToPlay() {
+    return `<div class="fd-howto" role="note">
+      <b>How to play</b>
+      <ol>
+        <li><b>Settle.</b> Pick a start, then found towns (<kbd>F</kbd>) on good land: food grows people, rivers and coasts bring trade.</li>
+        <li><b>Grow.</b> Each person works one hex. Select a town to send settlers, build on its hexes, or buy projects.</li>
+        <li><b>Spend.</b> Materials pay for everything, and prices rise the more you own. Never sit on a pile: spare materials buy homesteaders or festivals.</li>
+        <li><b>Finish.</b> ${S.RULES.maxTurns} turns (1790–${S.yearOf(S.RULES.maxTurns) + S.RULES.yearsPerTurn}). Then the real cities come back and you see how close to history you built.</li>
+      </ol>
+      <p class="g-note">The teal line below always says a good next step. <kbd>Enter</kbd> ends the turn.</p>
+      <button class="g-btn primary" data-act="how">Got it</button>
+    </div>`;
+  }
+
+  /** The headline for the end screen: how close to history, and how big. */
+  function verdict(h, score) {
+    const ratio = h.towns ? h.nearCount / h.towns : 0;
+    const rank = score >= 2800 ? "a continental power" : score >= 1500 ? "a thriving republic" : score >= 500 ? "a growing territory" : "a frontier outpost";
+    const head = ratio >= 0.5 ? "You think like history"
+      : ratio >= 0.25 ? "Close to history"
+      : h.nearCount > 0 ? "Your own America, with a nod to history"
+      : "A country the map has never seen";
+    const sub = ratio >= 0.5 ? `Half or more of your towns stand where America built its great cities. You built ${rank}.`
+      : ratio >= 0.25 ? `A good share of your towns sit on the sites of real great cities. You built ${rank}.`
+      : h.nearCount > 0 ? `Most of your towns are on land the real country left quieter. You built ${rank}.`
+      : `None of your towns is near a top-${S.TOP_METROS} metro: an alternative America. You built ${rank}.`;
+    return { head, sub, rank };
+  }
+
+  /** One or two real facts about the land you chose. */
+  function facts(h) {
+    const out = [];
+    const best = h.near.slice().sort((a, b) => (b.population || 0) - (a.population || 0))[0];
+    if (best?.population) {
+      out.push(`${esc(best.name)} stands ${best.dist === 0 ? "on the very hex of" : `${best.dist} hex${best.dist > 1 ? "es" : ""} from`} today's <b>${esc(best.metro)}</b>, the ${ordinal(best.rank)} largest metro: ${popShort(best.population)} people live there now.`);
+    }
+    if (h.landShare > 0 && h.popInside > 0) {
+      const k = h.popShare / h.landShare;
+      out.push(k >= 1.3
+        ? `Your land is <b>${k.toFixed(1)}×</b> as crowded today as the average American hex: you found the places people still want to live.`
+        : k <= 0.75
+          ? `Your land holds only <b>${Math.round(k * 100)}%</b> of the people the average American hex holds today: the real country passed it by.`
+          : `Your land is about as crowded today as the average American hex (${k.toFixed(2)}×).`);
+    }
+    if (h.gdpShare > 0 && h.popShare > 0 && out.length < 2) {
+      out.push(`The real economy inside your borders is ${(h.gdpShare * 100).toFixed(1)}% of US GDP, from ${(h.popShare * 100).toFixed(1)}% of its people.`);
+    }
+    return out.slice(0, 2);
+  }
+  const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th"}`;
+
+  function shareText() {
+    const s = model.state, h = model.history;
+    const sc = S.prosperity(env, s).score;
+    const v = verdict(h, sc);
+    const n = S.nationOutput(env, s);
+    return [
+      `Founders · ${v.head}`,
+      `🏛️ ${s.towns.length} towns · ${n.pop} people · score ${int(sc)} (${v.rank})`,
+      `📍 ${h.nearCount}/${h.towns} towns on real top-${S.TOP_METROS} metro sites`,
+      `👥 ${popShort(h.popInside)} real Americans live inside my borders today (${(h.popShare * 100).toFixed(1)}%)`,
+      `Seed ${s.seed}: ${location.origin}${location.pathname}#play=founders~${encodeURIComponent(s.seed)}`,
+    ].join("\n");
+  }
+
+  async function copyResult() {
+    const text = shareText();
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; } catch { /* fall back below */ }
+    if (!ok) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.cssText = "position:fixed;left:-9999px;top:0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { ok = document.execCommand("copy"); } catch { ok = false; }
+      ta.remove();
+    }
+    ctx.toast(ok ? "Result copied: paste it anywhere" : "Could not copy: select the text below");
+    if (!ok) { const pre = body.querySelector(".fd-share-text"); if (pre) pre.hidden = false; }
   }
 
   function endScreen() {
@@ -495,9 +630,20 @@ export async function start(ctx) {
     const sc = S.prosperity(env, s);
     const pctS = (x) => `${(x * 100).toFixed(x < 0.01 ? 2 : 1)}%`;
     const near = h.near.map((x) => `<li>${esc(x.name)} → ${x.dist === 0 ? "on" : `${x.dist} hex${x.dist > 1 ? "es" : ""} from`} <b>${esc(x.metro)}</b> <span class="muted">(#${x.rank})</span></li>`).join("");
-    return `<div class="fd-end">
-      <h3 class="g-section">You vs. history</h3>
-      <p>${S.yearOf(s.maxTurns) + S.RULES.yearsPerTurn}: after ${s.maxTurns} turns you lead <b>${s.towns.length} towns</b> and <b>${S.nationOutput(env, s).pop} people</b>. Prosperity score <b>${int(sc.score)}</b>.</p>
+    const v = verdict(h, sc.score);
+    const fx = facts(h).map((f) => `<li>${f}</li>`).join("");
+    return `<div class="fd-endscreen">
+      <p class="fd-kicker">You vs. history · ${S.yearOf(s.maxTurns) + S.RULES.yearsPerTurn}</p>
+      <h3 class="fd-verdict">${esc(v.head)}</h3>
+      <p class="fd-verdict-sub">${esc(v.sub)}</p>
+      <div class="fd-end-stats">
+        <div class="g-stat"><b>${s.towns.length}</b><span>Towns</span></div>
+        <div class="g-stat"><b>${S.nationOutput(env, s).pop}</b><span>People</span></div>
+        <div class="g-stat"><b>${int(sc.score)}</b><span>Score</span></div>
+      </div>
+      ${fx ? `<ul class="fd-facts">${fx}</ul>` : ""}
+      <div class="g-row"><button class="g-btn primary" data-act="share">Copy result</button></div>
+      <pre class="fd-share-text" hidden>${esc(shareText())}</pre>
       <div class="fd-res"><span class="fd-big">${h.nearCount}<small>/${h.towns}</small></span>
         <p>of your towns sit within ${S.NEAR_HEXES} hexes of one of the ${S.TOP_METROS} largest real metros.</p></div>
       ${near ? `<ul class="fd-near">${near}</ul>` : `<p class="g-note">None: you built a country the map has not seen.</p>`}

@@ -1,5 +1,8 @@
 /* Founders (web/js/games/founders). Loaded by the game and removed when it exits. */
 body[data-game="founders"] #lens-dock, body[data-game="founders"] #map-layers-pop { display: none !important; }
+/* The top bar's real national totals and city search would give the country away; back at the reveal. */
+body[data-game="founders"]:not(.fd-revealed) #yields,
+body[data-game="founders"]:not(.fd-revealed) #topbar .search { display: none !important; }
 
 .fd { --fd-food: #8fd65a; --fd-mat: #e09a4a; --fd-trade: #f0c94a; --fd-teal: #3fd0c9; }
 .fd p { margin: 6px 0; line-height: 1.4; }
@@ -18,6 +21,10 @@ body[data-game="founders"] #lens-dock, body[data-game="founders"] #map-layers-po
 .fd-stats { display: grid; grid-template-columns: repeat(4, auto); gap: 4px 12px; text-align: right; }
 .fd-stats .g-stat b { font-size: 16px; }
 .fd-stats .g-stat span { font-size: 10px; }
+.fd-hint-k { display: inline-block; margin-right: 4px; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--fd-teal); }
+.fd-howto { margin: 10px 0 6px; padding: 8px 12px 10px; border: 1px solid rgba(201, 164, 92, .45); border-radius: 6px; background: rgba(201, 164, 92, .08); font-size: 12.5px; }
+.fd-howto > b { font-family: var(--serif); font-size: 15px; color: var(--gold-bright); }
+.fd-howto ol { margin: 6px 0; padding-left: 20px; display: grid; gap: 4px; line-height: 1.4; }
 .fd-hint { margin: 10px 0 8px; padding: 7px 10px; border-left: 3px solid var(--fd-teal); background: rgba(63, 208, 201, .1); border-radius: 0 4px 4px 0; font-size: 12.5px; }
 .fd-actions { margin-bottom: 4px; }
 .fd-end { font-size: 14px; padding: 8px 18px; }
@@ -43,6 +50,13 @@ body[data-game="founders"] #lens-dock, body[data-game="founders"] #map-layers-po
 .fd-chip { padding: 2px 8px; font-size: 12px; cursor: pointer; border-radius: 10px; color: var(--ink); background: rgba(0,0,0,.25); border: 1px solid rgba(201,164,92,.4); text-transform: capitalize; }
 .fd-chip.on { border-color: var(--fd-teal); background: rgba(63,208,201,.2); color: #dffffb; }
 .fd-h4 { margin: 10px 0 4px; font-size: 12px; color: var(--ink-dim); font-weight: 600; }
+.fd-spend { margin: 6px 0; display: grid; gap: 4px; }
+.fd-spend .g-btn { justify-content: flex-start; white-space: nowrap; }
+.fd-projs { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: 12px; }
+.fd-proj { display: grid; grid-template-columns: auto 1fr; gap: 0 8px; align-items: center; }
+.fd-proj .g-btn { white-space: nowrap; }
+.fd-proj small { font-size: 11px; line-height: 1.25; }
+.fd-proj.done { grid-template-columns: 1fr auto; padding: 2px 4px; color: var(--ink-dim); }
 .fd-links { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: 12px; }
 
 .fd-event { margin: 6px 0; padding: 6px 10px; border-radius: 6px; background: rgba(90, 160, 80, .12); border: 1px solid rgba(120, 200, 100, .35); }
@@ -62,6 +76,13 @@ body[data-game="founders"] #lens-dock, body[data-game="founders"] #map-layers-po
 .fd-foot { margin-top: 12px; padding-top: 8px; border-top: 1px solid rgba(201, 164, 92, .25); }
 .fd-foot .g-note { flex: 1; }
 
+.fd-kicker { margin: 4px 0 0; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-dim); }
+.fd-verdict { margin: 2px 0 4px; font-family: var(--serif); font-size: 22px; font-weight: normal; line-height: 1.15; color: var(--gold-bright); }
+.fd-verdict-sub { font-size: 13px; }
+.fd-end-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0; text-align: center; }
+.fd-end-stats .g-stat b { font-size: 20px; }
+.fd-facts { margin: 8px 0; padding: 8px 10px 8px 26px; border-left: 3px solid var(--fd-teal); background: rgba(63, 208, 201, .08); border-radius: 0 4px 4px 0; display: grid; gap: 6px; font-size: 12.5px; line-height: 1.4; }
+.fd-share-text { white-space: pre-wrap; font-size: 11px; padding: 6px 8px; background: rgba(0, 0, 0, .3); border-radius: 4px; user-select: all; }
 .fd-res { display: flex; gap: 12px; align-items: center; margin: 10px 0; }
 .fd-big { flex: none; min-width: 74px; font-family: var(--serif); font-size: 28px; color: var(--fd-teal); text-align: center; }
 .fd-big small { font-size: 15px; color: var(--ink-dim); }
@@ -73,4 +94,9 @@ body[data-game="founders"] #lens-dock, body[data-game="founders"] #map-layers-po
   .fd-year b { font-size: 22px; }
   .fd-town-stats { grid-template-columns: repeat(2, 1fr); }
   .fd-how, .fd-log { display: none; }
+  .fd-howto { font-size: 12px; padding: 6px 10px 8px; }
+  .fd-howto ol { gap: 2px; margin: 4px 0; }
+  .fd-howto .g-note { display: none; }
+  .fd-verdict { font-size: 19px; }
+  .fd-proj small { display: none; }
 }

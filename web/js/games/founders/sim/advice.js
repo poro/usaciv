@@ -1,7 +1,9 @@
 // Founders: "what to do next" hints and a simple bot (used by the tests, and handy for auto-play). Pure.
-import { RULES, partyCost, owners, townOutput, foundBlocker, siteScore, townById } from "./state.js";
+import {
+  RULES, PROJECTS, partyCost, owners, townOutput, foundBlocker, siteScore, townById, improvementCost, projectCost, growCost, nationOutput,
+} from "./state.js";
 import { IMPROVEMENTS, hexYield } from "./yields.js";
-import { apply, improveBlocker, linkPlan } from "./actions.js";
+import { apply, improveBlocker, linkPlan, projectBlocker, growBlocker, festivalBlocker } from "./actions.js";
 
 /** Best place to found a town within `radius` of `cell`: {cell, score} or null. */
 export function bestSiteNear(env, state, cell, radius = 5) {
@@ -31,11 +33,33 @@ export function improvementIdeas(env, state) {
         const hungry = o.surplus < 2;
         const gain = (b.food - a.food) * (hungry ? 2 : 1.2) + (b.materials - a.materials) + (b.trade - a.trade) * 0.9 + (worked.has(c) ? 1 : 0)
           + (a.food + a.materials + a.trade) * 0.15;
-        ideas.push({ town: t.id, name: t.name, cell: c, kind, gain, cost: IMPROVEMENTS[kind].cost });
+        ideas.push({ town: t.id, name: t.name, cell: c, kind, gain, cost: improvementCost(state, kind) });
       }
     }
   }
   return ideas.sort((x, y) => y.gain / y.cost - x.gain / x.cost || x.cell - y.cell);
+}
+
+/**
+ * Town projects worth building: [{town, name, project, gain, cost}] sorted by gain per material. gain is in the same
+ * rough units as improvementIdeas (food ×1.2, materials ×1, trade ×0.9, culture ×0.5 a turn).
+ */
+export function projectIdeas(env, state) {
+  const ideas = [];
+  for (const t of state.towns) {
+    const o = townOutput(env, state, t);
+    for (const id of Object.keys(PROJECTS)) {
+      if (projectBlocker(env, state, t, id, { noCost: true })) continue;
+      const after = townOutput(env, state, { ...t, projects: [...(t.projects || []), id] });
+      const p = PROJECTS[id];
+      let gain = (after.food - o.food) * (o.surplus < 2 ? 1.8 : 1.2) + (after.materials - o.materials) + (after.trade - o.trade) * 0.9
+        + ((p.culture || 0) + Math.floor((after.trade - o.trade) / 2)) * 0.5;
+      if (id === "granary") gain += 1;
+      if (gain <= 0) continue;
+      ideas.push({ town: t.id, name: t.name, project: id, gain, cost: projectCost(state, id) });
+    }
+  }
+  return ideas.sort((x, y) => y.gain / y.cost - x.gain / x.cost || x.town - y.town);
 }
 
 /** Unlinked town pairs close enough for a road, nearest first: [{a, b, plan}]. */
@@ -72,13 +96,24 @@ export function nextHint(env, state) {
     if (t) return `You can afford settlers: select ${t.name} and press "Send settlers" to found another town.`;
   }
   const imp = improvementIdeas(env, state).find((x) => x.cost <= state.materials);
-  if (imp) return `Build a ${IMPROVEMENTS[imp.kind].name.toLowerCase()} near ${imp.name} (select the town, then a hex).`;
+  const proj = projectIdeas(env, state).find((x) => x.cost <= state.materials);
+  if (proj && (!imp || proj.gain / proj.cost > imp.gain / imp.cost)) {
+    return `Build a ${PROJECTS[proj.project].name.toLowerCase()} in ${proj.name} (${proj.cost}): select the town, then Projects.`;
+  }
+  if (imp) return `Build a ${IMPROVEMENTS[imp.kind].name.toLowerCase()} near ${imp.name} (${imp.cost}): select the town, then a hex.`;
   const link = linkIdeas(env, state).find((x) => x.plan.cost <= state.materials);
   if (link) return `${link.plan.kind === "rail" ? "Upgrade to rail" : "Build a road"} between ${link.names[0]} and ${link.names[1]} for more trade.`;
+  const income = Math.max(1, nationOutput(env, state).income);
+  if (state.materials >= Math.max(60, 3 * income)) {
+    const g = state.towns.filter((t) => !growBlocker(env, state, t)).sort((a, b) => growCost(a) - growCost(b))[0];
+    if (g) return `Materials are piling up: bring homesteaders to ${g.name} (+1 person, ${growCost(g)}), or hold a festival.`;
+    const f = state.towns.find((t) => !festivalBlocker(state, t));
+    if (f) return `Materials are piling up: hold a festival in ${f.name} (+${RULES.festivalCulture} culture, ${RULES.festivalCost}).`;
+  }
   return `End the turn (Enter). ${left} turn${left === 1 ? "" : "s"} left after this one.`;
 }
 
-/** One bot turn: found, settle, build, link, then end the turn. Returns the new state. */
+/** One bot turn: found, settle, build, link, spend what is left on people and culture, then end the turn. */
 export function botTurn(env, state) {
   let s = state;
   const act = (a) => {
@@ -97,18 +132,32 @@ export function botTurn(env, state) {
     if (pp && pp.target == null && !foundBlocker(env, s, pp.cell)) act({ type: "found", party: pp.id });
   }
   // Settlers while there is time and room.
-  if (s.turn < s.maxTurns - 10 && s.towns.length + s.parties.length < 10) {
+  const wantTowns = s.turn < s.maxTurns - 12 && s.towns.length + s.parties.length < 12;
+  if (wantTowns) {
     const t = s.towns.filter((x) => x.pop >= 3).sort((a, b) => b.pop - a.pop || a.id - b.id)[0];
     if (t && s.materials >= partyCost(s)) act({ type: "party", town: t.id });
   }
-  // Improvements and links with what is left (keep a reserve for settlers early on).
-  const reserve = s.turn < 35 ? partyCost(s) : 0;
-  for (let k = 0; k < 4; k++) {
-    const imp = improvementIdeas(env, s).find((x) => x.cost <= s.materials - reserve);
-    if (!imp || !act({ type: "improve", cell: imp.cell, kind: imp.kind })) break;
+  // Improvements, projects and links with what is left (keep a reserve for settlers while still expanding).
+  const reserve = wantTowns && s.turn < 35 ? partyCost(s) : 0;
+  const free = () => s.materials - reserve;
+  for (let k = 0; k < 8; k++) {
+    const imp = improvementIdeas(env, s).find((x) => x.cost <= free());
+    const proj = projectIdeas(env, s).find((x) => x.cost <= free());
+    if (proj && (!imp || proj.gain / proj.cost > imp.gain / imp.cost)) { if (!act({ type: "project", town: proj.town, project: proj.project })) break; }
+    else if (imp) { if (!act({ type: "improve", cell: imp.cell, kind: imp.kind })) break; }
+    else break;
   }
-  const link = linkIdeas(env, s).find((x) => x.plan.cost <= s.materials - reserve);
+  const link = linkIdeas(env, s).find((x) => x.plan.cost <= free());
   if (link) act({ type: "link", a: link.a, b: link.b });
+  // Whatever is still idle: homesteaders (cheapest first), then festivals, keeping a small buffer.
+  if (s.turn >= 8) {
+    const towns = [...s.towns].sort((a, b) => growCost(a) - growCost(b) || a.id - b.id);
+    for (const t of towns) if (growCost(t) <= free() - 20) act({ type: "grow", town: t.id });
+    for (const t of [...s.towns].sort((a, b) => a.culture - b.culture || a.id - b.id)) {
+      if (free() - RULES.festivalCost < 40) break;
+      act({ type: "festival", town: t.id });
+    }
+  }
   act({ type: "end" });
   return s;
 }

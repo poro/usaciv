@@ -3,7 +3,8 @@
 // Order: every town produces (from the state as the player left it) → food grows or shrinks towns, culture grows
 // borders → materials (plus a third of trade) go to the national store, trade to wealth → parties walk on toward
 // their targets with fresh moves → at most one random event → next turn (the game ends after maxTurns).
-import { RULES, clone, townOutput, growthNeed, rngOf, landPath } from "./state.js";
+// Upkeep (1 material per 2 people in each town, 1 per rail line) comes out of the income before it is stored.
+import { RULES, clone, townOutput, townGrowthNeed, rngOf, landPath, nationOutput } from "./state.js";
 import { moveCost } from "./yields.js";
 import { rollEvents } from "./events.js";
 
@@ -30,6 +31,7 @@ export function endTurn(env, state) {
 
   // 1. Production, from the state as it stands (outputs first, then apply, so town order does not matter).
   const outs = s.towns.map((t) => townOutput(env, s, t));
+  const nat = nationOutput(env, s);
   let materials = 0, trade = 0;
   s.towns.forEach((t, k) => {
     const o = outs[k];
@@ -37,7 +39,7 @@ export function endTurn(env, state) {
     trade += o.trade;
     report.food += o.food;
     t.food += o.surplus;
-    const need = growthNeed(t.pop);
+    const need = townGrowthNeed(t);
     const room = o.worked.length < o.tiles.length || t.radius < RULES.maxRadius;
     if (t.food >= need) {
       if (room) {
@@ -53,17 +55,18 @@ export function endTurn(env, state) {
       t.food = 0;
     }
     // Culture: one a turn (time) plus half the town's trade. Borders grow at the thresholds.
-    t.culture += 1 + Math.floor(o.trade / 2);
-    const r = t.culture >= RULES.cultureR3 ? 3 : t.culture >= RULES.cultureR2 ? 2 : 1;
+    t.culture += 1 + Math.floor(o.trade / 2) + (o.culture || 0);
+    const r = t.culture >= RULES.cultureR4 ? 4 : t.culture >= RULES.cultureR3 ? 3 : t.culture >= RULES.cultureR2 ? 2 : 1;
     if (r > t.radius) {
       t.radius = r;
       report.borders.push({ town: t.id, name: t.name, radius: r });
     }
   });
-  const income = materials + Math.floor(trade / RULES.tradeToMaterials);
-  s.materials += income;
+  const income = materials + Math.floor(trade / RULES.tradeToMaterials) - nat.upkeep;
+  s.materials = Math.max(0, s.materials + income);
   s.wealth += trade;
   report.income = income;
+  report.upkeep = nat.upkeep;
   report.trade = trade;
 
   // 2. Parties: fresh moves, then on toward their targets.

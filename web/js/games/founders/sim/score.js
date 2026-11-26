@@ -22,6 +22,8 @@ export function prosperity(env, state) {
     wealth: Math.floor(state.wealth / 5),
     links: state.links.reduce((a, l) => a + (l.kind === "rail" ? 6 : 3), 0),
     improvements: Object.keys(state.improvements).length * 2,
+    projects: state.towns.reduce((a, t) => a + (t.projects?.length || 0), 0) * 5,
+    culture: Math.floor(n.culture / 10),
   };
   const score = Object.values(parts).reduce((a, b) => a + b, 0);
   return { score, parts };
@@ -71,7 +73,7 @@ export function compareHistory(env, state, H) {
       const d = map.dist(t.cell, m.cell);
       if (d <= NEAR_HEXES && (!best || d < best.dist)) best = { metro: m, dist: d };
     }
-    if (best) near.push({ town: t.id, name: t.name, metro: best.metro.name, rank: best.metro.rank, dist: best.dist });
+    if (best) near.push({ town: t.id, name: t.name, metro: best.metro.name, rank: best.metro.rank, population: best.metro.population, dist: best.dist });
   }
   // 2. Real people and GDP inside your borders; your share of the land's output.
   let pop = 0, gdp = 0, held = 0, out = 0, outAll = 0;

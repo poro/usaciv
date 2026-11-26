@@ -3,7 +3,8 @@
 // state = {
 //   v, seed, turn (1..maxTurns), maxTurns, phase: "setup" | "play" | "over",
 //   materials, wealth (all trade ever earned), rng (mulberry32 state),
-//   towns: [{id, name, cell, pop, food, culture, radius, focus, pins: [cell], founded}],
+//   towns: [{id, name, cell, pop, food, culture, radius, focus, pins: [cell], founded,
+//            projects: [projectId], grown (turn of the last homesteaders), fest (turn of the last festival)}],
 //   parties: [{id, cell, moves, target}],
 //   improvements: {cell: type},
 //   links: [{id, a, b, kind: "road" | "rail", path: [cell]}],
@@ -12,7 +13,7 @@
 import { makeHexMap } from "../../shared/hexmap.js";
 import { makeRng } from "../../shared/rng.js";
 import { buildTerrain } from "./terrain.js";
-import { baseYields, hexYield, moveCost } from "./yields.js";
+import { baseYields, hexYield, moveCost, IMPROVEMENTS } from "./yields.js";
 
 export const RULES = {
   maxTurns: 60,
@@ -27,7 +28,8 @@ export const RULES = {
   growthPerPop: 4,
   cultureR2: 12,
   cultureR3: 60,
-  maxRadius: 3,
+  cultureR4: 150,
+  maxRadius: 4,
   roadPerHex: 3,
   railPerHex: 5,
   railTurn: 25, // rail opens in 1890
@@ -38,12 +40,73 @@ export const RULES = {
   tradeToMaterials: 4, // every 4 trade also yields 1 material (markets)
   eventChance: 0.3,
   eventFromTurn: 4,
+  // Materials sinks (v0.2): costs that rise with how many you own, upkeep, town projects, materials → people/culture.
+  improveStep: 0.12, // each improvement of a kind you already own makes the next one 12% dearer
+  projectStep: 0.25, // each copy of a project you already own makes the next one 25% dearer
+  upkeepPerPop: 2, // every town costs 1 material a turn per 2 people
+  railUpkeep: 1, // and every rail line 1 a turn
+  growBase: 15, // homesteaders: +1 person for 15 + 6 × people, once a turn per town
+  growPerPop: 6,
+  festivalCost: 25, // festival: +8 culture, once a turn per town
+  festivalCulture: 8,
 };
+
+/**
+ * Town projects: one of each per town, bought with materials. Effects are applied in townOutput (food, trade,
+ * materials), endTurn (culture) and townGrowthNeed (granary).
+ */
+export const PROJECTS = {
+  granary: { id: "granary", name: "Granary", icon: "🧺", cost: 40, minPop: 2, food: 2,
+    text: "+2 food, and growing needs 25% less food" },
+  school: { id: "school", name: "School", icon: "🏫", cost: 50, minPop: 3, culture: 3,
+    text: "+3 culture a turn: wider borders, and culture scores" },
+  market: { id: "market", name: "Market", icon: "🏪", cost: 60, minPop: 4, tradePct: 50,
+    text: "+50% trade in this town" },
+  harbor: { id: "harbor", name: "Harbor works", icon: "🚢", cost: 80, minPop: 3, food: 2, trade: 3, water: true,
+    text: "+2 food, +3 trade (a town on the coast, a lake or a large river)" },
+  depot: { id: "depot", name: "Rail depot", icon: "🚉", cost: 90, minPop: 4, fromTurn: 25, perRail: { trade: 2, materials: 1 },
+    text: "Each rail line from this town gives +2 trade and +1 materials more" },
+  college: { id: "college", name: "College", icon: "🎓", cost: 140, minPop: 8, culture: 6, trade: 2, needs: "school", fromTurn: 20,
+    text: "+6 culture and +2 trade a turn (needs a school)" },
+};
+
+const round5 = (x) => Math.round(x / 5) * 5;
+const countImprovements = (state, kind) => {
+  let n = 0;
+  for (const k in state.improvements) if (state.improvements[k] === kind) n++;
+  return n;
+};
+/** What the next improvement of `kind` costs: the base cost, +12% for each one of that kind you already own. */
+export function improvementCost(state, kind) {
+  const imp = IMPROVEMENTS[kind];
+  return imp ? Math.round(imp.cost * (1 + RULES.improveStep * countImprovements(state, kind))) : Infinity;
+}
+/** What the next copy of project `id` costs: the base cost, +25% for each town that already has it. */
+export function projectCost(state, id) {
+  const p = PROJECTS[id];
+  if (!p) return Infinity;
+  const n = state.towns.filter((t) => t.projects?.includes(id)).length;
+  return round5(p.cost * (1 + RULES.projectStep * n));
+}
+export const hasProject = (town, id) => !!town.projects?.includes(id);
+/** Food a town needs in store to grow (a granary cuts it by a quarter). */
+export const townGrowthNeed = (town) => {
+  const n = growthNeed(town.pop);
+  return hasProject(town, "granary") ? Math.ceil(n * 0.75) : n;
+};
+/** Homesteaders: materials for +1 person in this town now. */
+export const growCost = (town) => RULES.growBase + RULES.growPerPop * town.pop;
+/** Upkeep a town costs a turn: 1 per 2 people, plus half of each rail line it ends (a line costs 1 in all). */
+export function townUpkeep(state, town) {
+  let rails = 0;
+  for (const l of state.links) if (l.kind === "rail" && (l.a === town.id || l.b === town.id)) rails++;
+  return Math.floor(town.pop / RULES.upkeepPerPop) + (rails * RULES.railUpkeep) / 2;
+}
 
 export const FOCI = ["balanced", "food", "materials", "trade"];
 
-/** Settlers get dearer as the country grows: 25, then +6 for every town or party beyond the first. */
-export const partyCost = (state) => RULES.partyCost + 6 * Math.max(0, state.towns.length + state.parties.length - 1);
+/** Settlers get dearer as the country grows: 25, then +8 for every town or party beyond the first. */
+export const partyCost = (state) => RULES.partyCost + 8 * Math.max(0, state.towns.length + state.parties.length - 1);
 
 export const yearOf = (turn) => RULES.startYear + (turn - 1) * RULES.yearsPerTurn;
 
@@ -202,24 +265,40 @@ export function townOutput(env, state, town) {
   }
   let food = center.food, materials = center.materials, trade = center.trade;
   for (const c of worked) { const v = y(c); food += v.food; materials += v.materials; trade += v.trade; }
-  let links = 0;
+  let links = 0, rails = 0;
   for (const l of state.links) {
     if (l.a !== town.id && l.b !== town.id) continue;
     links++;
-    if (l.kind === "rail") { trade += RULES.railTrade; materials += RULES.railMaterials; } else trade += RULES.roadTrade;
+    if (l.kind === "rail") { rails++; trade += RULES.railTrade; materials += RULES.railMaterials; } else trade += RULES.roadTrade;
   }
-  return { food, materials, trade, eat, surplus: food - eat, worked, tiles, links };
+  // Projects.
+  let culture = 0;
+  for (const id of town.projects || []) {
+    const p = PROJECTS[id];
+    if (!p) continue;
+    food += p.food || 0;
+    trade += p.trade || 0;
+    culture += p.culture || 0;
+    if (p.perRail) { trade += p.perRail.trade * rails; materials += p.perRail.materials * rails; }
+  }
+  if (hasProject(town, "market")) trade += Math.floor((trade * PROJECTS.market.tradePct) / 100);
+  return { food, materials, trade, culture, eat, surplus: food - eat, worked, tiles, links };
 }
 
-/** Totals over all towns, plus the materials income (with the market share of trade). */
+/**
+ * Totals over all towns. income = the net materials a turn: town materials + a quarter of trade − upkeep
+ * (gross = before upkeep).
+ */
 export function nationOutput(env, state) {
-  let food = 0, materials = 0, trade = 0, pop = 0;
+  let food = 0, materials = 0, trade = 0, pop = 0, culture = 0, upkeep = 0;
   for (const t of state.towns) {
     const o = townOutput(env, state, t);
-    food += o.food; materials += o.materials; trade += o.trade; pop += t.pop;
+    food += o.food; materials += o.materials; trade += o.trade; pop += t.pop; culture += t.culture;
+    upkeep += townUpkeep(state, t);
   }
-  const income = materials + Math.floor(trade / RULES.tradeToMaterials);
-  return { food, materials, trade, pop, income };
+  upkeep = Math.floor(upkeep);
+  const gross = materials + Math.floor(trade / RULES.tradeToMaterials);
+  return { food, materials, trade, pop, culture, gross, upkeep, income: gross - upkeep };
 }
 
 export const growthNeed = (pop) => RULES.growthBase + RULES.growthPerPop * pop;
