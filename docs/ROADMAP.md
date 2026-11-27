@@ -137,7 +137,7 @@ labels the answer and each wrong guess on the map.
 
 - Tutorials, sound, phone layout for every mode, share images of end screens (reuse `render/snapshot.js`).
 - Mainline: ✅ power and fibre networks (2026-11-27, GAME_PLAN M6: a Rail / Power / Fibre switch, keys 1–3, a
-  *Power & fibre* tab; real plants and research metros; coal and gas pay less each decade; single player). ✅ 3-step first-run tutorial (lay track, serve a contract, end the turn;
+  *Power & fibre* tab; real plants and research metros; coal and gas pay less each decade; in versus too, each company earning from its own lines). ✅ 3-step first-run tutorial (lay track, serve a contract, end the turn;
   dismissable, replay from How to play). ✅ Train animation (overlay only, only while playing; Trains toggle), ✅
   optional sound (off by default), ✅ portrait phone pass (End turn pinned to the bottom sheet).
 - Founders: more improvements and a simple AI neighbour (events ✅).

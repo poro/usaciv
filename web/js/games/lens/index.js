@@ -123,7 +123,7 @@ export async function start(ctx) {
         const cls = !shown ? "" : id === r.answer ? " right" : id === g.picks[g.showing] ? " wrong" : " dim";
         return `<button class="g-btn ld-opt${cls}" data-act="pick" data-id="${esc(id)}" ${shown ? "disabled" : ""}>${esc(byId.get(id)?.emoji || "")} ${esc(nameOf(id))}</button>`;
       }).join("")}</div>
-      ${shown ? `<p class="ld-verdict ${g.picks[g.showing] === r.answer ? "ok" : "bad"}">${g.picks[g.showing] === r.answer ? "Right!" : `It was ${esc(nameOf(r.answer))}.`}</p>
+      ${shown ? `<p class="ld-verdict ${g.picks[g.showing] === r.answer ? "ok" : "bad"}" role="status">${g.picks[g.showing] === r.answer ? "Right!" : `It was ${esc(nameOf(r.answer))}.`}</p>
         <p class="g-note">${esc(lens?.name || "")}: ${esc(lens?.unit || "")}. ${esc((lens?.description || "").split(". ")[0])}.</p>
         <button class="g-btn primary ld-next" data-act="next">${g.picks.length < g.rounds.length ? "Next lens" : "See your score"} <kbd>⏎</kbd></button>` : ""}${how()}`;
     if (shown) body.querySelector(".ld-next")?.focus({ preventScroll: true });

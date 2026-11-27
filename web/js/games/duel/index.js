@@ -147,7 +147,7 @@ export async function start(ctx) {
       <div class="dl-vs">vs</div>
       <div class="dl-card b${shown ? (right ? " right" : " wrong") : ""}"><div class="dl-city">${cityLabel(b)}</div>
         <div class="dl-val">${shown ? esc(s.fmt(s.value(b))) : "?"}</div><div class="dl-stat">${esc(s.label)}</div></div>
-      ${shown ? `<p class="dl-verdict ${right ? "ok" : "bad"}">${right ? "Right!" : `No: ${esc(b.name)} is ${d.higher ? "higher" : "lower"}.`}</p>`
+      ${shown ? `<p class="dl-verdict ${right ? "ok" : "bad"}" role="status">${right ? "Right!" : `No: ${esc(b.name)} is ${d.higher ? "higher" : "lower"}.`}</p>`
         : `<div class="dl-btns"><button class="g-btn primary" data-act="hi">▲ Higher <kbd>↑</kbd></button><button class="g-btn primary" data-act="lo">▼ Lower <kbd>↓</kbd></button></div>`}
       <p class="g-note">Source: ${esc(s.src)} (cities.json).</p>`;
   }

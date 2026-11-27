@@ -516,7 +516,7 @@ export async function start(ctx) {
   // --- building ---
   function setPlan(to) {
     const { sel } = game;
-    const net = game.vs ? "rail" : game.ui.net;
+    const net = game.ui.net;
     if (!(sel.start != null && to != null && to >= 0 && to !== sel.start)) { sel.plan = null; return; }
     if (net === "rail") { sel.plan = S.plan(game.env, game.state, sel.start, to); return; }
     // power or fibre (sim/utility.js): same shape as a rail plan, so the preview and label work unchanged
@@ -525,7 +525,7 @@ export async function start(ctx) {
   }
   /** Switch what the next click builds: rail, power or fibre. */
   function setNet(net) {
-    if (game.vs || !["rail", ...S.NETS].includes(net)) return;
+    if (!["rail", ...S.NETS].includes(net)) return;
     game.ui.net = net;
     game.ui.link = null;
     game.sel = { start: null, end: null, hover: game.sel.hover, plan: null };
@@ -835,7 +835,7 @@ export async function start(ctx) {
       return true;
     }
     if (k === "h" || k === "?") { toggleHelp(); return true; }
-    if (!game.vs && (k === "1" || k === "2" || k === "3")) { setNet(["rail", "power", "fibre"][+k - 1]); return true; }
+    if (k === "1" || k === "2" || k === "3") { setNet(["rail", "power", "fibre"][+k - 1]); return true; }
     return false;
   });
 

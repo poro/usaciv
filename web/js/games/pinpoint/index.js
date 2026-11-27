@@ -280,7 +280,7 @@ export async function start(ctx) {
     if (revealing()) {
       const r = g.results[g.i];
       body.innerHTML = `${head}${clueHtml(p, g.i)}
-        <div class="pp-result"><b>${verdict(r)}</b> ${r.km.toLocaleString("en-US")} km away · <b>+${r.points}</b></div>
+        <div class="pp-result" role="status"><b>${verdict(r)}</b> ${r.km.toLocaleString("en-US")} km away · <b>+${r.points}</b></div>
         <button class="g-btn primary pp-next" data-act="next">${g.i + 1 < g.rounds.length ? "Next place" : "See your score"} <kbd>⏎</kbd></button>
         ${how()}`;
       body.querySelector(".pp-next")?.focus({ preventScroll: true });

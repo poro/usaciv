@@ -29,7 +29,7 @@ export const HOW_TO = `<ol class="ml-how">
   <li><b>Wire power and fibre.</b> Switch the builder to <i>Power</i> (<kbd>2</kbd>) or <i>Fibre</i> (<kbd>3</kbd>).
   A power line from a real plant (EIA capacity) to the metro it supplies pays every year; coal and gas pay less each
   decade. Fibre between research metros pays a little and speeds both metros' growth. Lines are cheaper than track and
-  disasters don't cut them. Their pay is a game model (the <i>Power &amp; fibre</i> tab). Single player only for now.</li>
+  disasters don't cut them. Their pay is a game model (the <i>Power &amp; fibre</i> tab). In versus every company earns from its own lines.</li>
 </ol>`;
 
 /** The first-run coach: three short steps (index.js moves them on as you play). */
@@ -132,7 +132,7 @@ export function gameHtml(m) {
 
 const NET_LABEL = { rail: "Rail", power: "Power", fibre: "Fibre" };
 function netSwitch(m) {
-  if (m.vs || !m.env.utility) return "";
+  if (!m.env.utility) return "";
   const cur = m.ui.net || "rail";
   return `<div class="ml-nets" role="radiogroup" aria-label="What to build">${["rail", "power", "fibre"].map((n, k) =>
     `<button role="radio" class="ml-net ml-net-${n}" data-act="net" data-net="${n}" aria-checked="${cur === n}" title="${NET_LABEL[n]} (${k + 1})">${NET_LABEL[n]}</button>`).join("")}</div>`;
@@ -141,7 +141,7 @@ function netSwitch(m) {
 export function buildHtml(m) {
   const { env, sel, touch } = m;
   const pl = sel.plan;
-  const mode = m.vs ? "rail" : m.ui.net || "rail";
+  const mode = m.ui.net || "rail";
   const sw = netSwitch(m);
   if (sel.start == null) {
     if (mode === "power") return `${sw}<span class="ml-hint">Click a <b>power plant</b> (yellow diamond) or a line of yours, then the metro it supplies. Each wired plant pays every year; the <i>Power &amp; fibre</i> tab lists them.</span>`;
@@ -288,7 +288,7 @@ function contractsHtml(m) {
   const nHubs = Object.values(state.hubs || {}).reduce((a, b) => a + b, 0);
   const nExp = Object.keys(state.express || {}).length;
   const nUtil = (ev.utility?.power.size || 0) + (ev.utility?.talent.size || 0);
-  const utilTab = !m.vs && env.utility ? `<button role="tab" data-act="tab" data-tab="utility" aria-selected="${tab === "utility"}">Power &amp; fibre${nUtil ? ` (${nUtil})` : ""}</button>` : "";
+  const utilTab = env.utility ? `<button role="tab" data-act="tab" data-tab="utility" aria-selected="${tab === "utility"}">Power &amp; fibre${nUtil ? ` (${nUtil})` : ""}</button>` : "";
   return `<div class="ml-tabs" role="tablist">
       <button role="tab" data-act="tab" data-tab="open" aria-selected="${tab === "open"}">Open (${open.length})</button>
       <button role="tab" data-act="tab" data-tab="served" aria-selected="${tab === "served"}">Served (${served.length})</button>

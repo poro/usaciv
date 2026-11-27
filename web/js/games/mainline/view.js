@@ -198,7 +198,7 @@ export function makeView(ctx, game) {
   }
   const utilityLayer = {
     id: "utility", z: 56.6, minRpx: 0, snapshot: true,
-    visible: () => !!game.state && game.ui.screen !== "picker" && !game.vs && !!game.env.utility,
+    visible: () => !!game.state && game.ui.screen !== "picker" && !!game.env.utility,
     sig: () => (game.state ? `${game.env.scenario.id}:${game.state.seed}:${game.state.nv}:${game.state.year}:${game.ui.net}` : "none"),
     draw(c, vp, w, o) {
       const G = utilGeometry();

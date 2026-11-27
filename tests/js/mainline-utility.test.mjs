@@ -108,5 +108,10 @@ test("runs with lines verify on the server; versus refuses lines; shapes", () =>
   assert.equal(shapeError({ type: "line", net: "gas", path: [1, 2] }, 1e6), "Bad network");
   assert.equal(shapeError({ type: "line", path: [1, 2] }, 1e6), 'Missing "net"');
   const vs = S.newVersus(e, { seed: 1, years: 10, players: [{ name: "A" }, { name: "B", bot: true }] });
-  assert.match(S.vsCheck(e, vs, 0, { type: "line", net: "power", path: [c.cell, c.cell + 1] }), /single-player/);
+  // versus: every company may wire its own lines (not exclusive like freight contracts)
+  const vp = S.planLine(e, vs.players[0].state, "power", c.cell, centre(e, c.city)).path;
+  assert.equal(S.vsCheck(e, vs, 0, { type: "line", net: "power", path: vp }), null);
+  const r = S.vsAct(e, vs, 0, { type: "line", net: "power", path: vp });
+  assert.equal(r.error, null);
+  assert.ok(r.vs.players[0].state.lines && !r.vs.players[1].state.lines);
 });
