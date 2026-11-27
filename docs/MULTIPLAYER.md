@@ -354,8 +354,9 @@ and survive cleared browser data.
 - `players.token_hash` stays the token of the device that made the player. Every later sign-in adds a `sessions` row
   with its own token. Signing out deletes that row (or, for the first device, replaces its hash with an unusable
   `revoked:` value). A player keeps at most 20 sessions; the least recently used go first.
-- **Merge on sign-in:** if the device signing in holds an *anonymous* player (no passkey, no identity), its scores
-  move into the account and the anonymous player is deleted. Daily scores (Which Metro? and Founders): the
+- **Merge on sign-in:** if the device signing in holds an *anonymous* player (no passkey, no identity, and not signed
+  in on any other device), its scores move into the account and the anonymous player is deleted. Dailies that are
+  still open (today's and yesterday's UTC keys) do not move, so throwaway players can't be used to retry a daily. Daily scores (Which Metro? and Founders): the
   account's entry for a date wins.
   Mainline: the better run per scenario wins. A player that has a passkey or identity is never merged.
 - A "secured" player has at least one passkey or identity. The panel warns an unsecured player that signing out or
@@ -391,7 +392,13 @@ while non-zero. Attestation is "none": a passkey is trusted because a signed-in 
 `(✓)` on a sign-in call means: send this device's current token if it has one, so its anonymous scores merge.
 `merged` is `{daily, runs}` (rows that were on the anonymous player) or `null`.
 
-**Limits:** 30 sign-in attempts (passkey options/verify, handoffs, Google starts) per IP per 10 minutes; 10 code
+**Google flow binding:** `google/start` sets a random `__Host-usaciv-oauth` cookie (HttpOnly, Secure, SameSite=Lax)
+and stores its hash in the state; the callback refuses a state without the matching cookie (`#auth-error=browser`),
+and `/api/auth/handoff` refuses a handoff redeemed without it (403). `returnTo` must be a plain path
+(`/[A-Za-z0-9_\-./]*`, no `//`, no backslash). These came out of a security review on 2026-11-27.
+
+**Limits:** 60 sign-ins (passkey verify, handoffs, Google starts) per IP per 10 minutes (passkey options are not
+counted); 10 code
 redemptions per IP per 10 minutes (an 8-character code has 40 bits, so guessing is hopeless at that rate).
 
 **Browser** (`net.js`): `addPasskey()`, `signInWithPasskey()`, `linkCode()`, `redeemCode(code)`,

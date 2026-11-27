@@ -103,7 +103,7 @@ test("Worker: submit a daily, first game counts, board ranks, merge on sign-in c
   // Bob links to Ann's account from his device: his daily moves only if Ann has none (she has one: hers wins).
   const code = (await call("POST", "/api/auth/link", {}, ann.token)).data.code;
   const m = (await call("POST", "/api/auth/link/redeem", { code }, bob.token)).data;
-  assert.deepEqual(m.merged, { daily: 1, runs: 0 });
+  assert.deepEqual(m.merged, { daily: 0, runs: 0 }, "today's daily is still open: it does not move (no retries on throwaway players)");
   const after = (await call("GET", `/api/fd/daily/${key}`)).data;
   assert.equal(after.total, 1);
   assert.equal(after.top[0].score, score);

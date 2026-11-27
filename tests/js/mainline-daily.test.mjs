@@ -84,6 +84,6 @@ test("Worker: first daily run counts, board, stats, merge", async () => {
   await call("POST", "/api/ml/daily", { key, log }, guest.token);
   const code = (await call("POST", "/api/auth/link", {}, bob.token)).data.code;
   const m = (await call("POST", "/api/auth/link/redeem", { code }, guest.token)).data;
-  assert.deepEqual(m.merged, { daily: 0, runs: 1 });
-  assert.equal((await call("GET", `/api/ml/daily/${key}`)).data.top.map((x) => x.name).sort().join(), "Ann,Bob");
+  assert.deepEqual(m.merged, { daily: 0, runs: 0 }, "today's daily run stays behind (the day is still open)");
+  assert.equal((await call("GET", `/api/ml/daily/${key}`)).data.top.map((x) => x.name).join(), "Ann");
 });

@@ -4,7 +4,8 @@
 // A duel shows metro A with its value for one statistic and metro B with that value hidden: does B have more or
 // less? Answer right and B becomes the next A (with a new statistic); the first wrong answer ends the run. The two
 // values always differ by at least MIN_GAP (relative), and the gap narrows as the streak grows (BANDS), so early
-// duels are easy and later ones are close. Data: cities.json (Census ACS, BEA GDP, Census population estimates).
+// duels are easy and later ones are close. Data: cities.json (Census ACS incl. the job mix, BEA GDP, Census population
+// estimates).
 import { makeRng } from "../../shared/rng.js";
 
 export const DAILY_DUELS = 30;
@@ -22,6 +23,10 @@ export const STATS = [
   { id: "home_value", label: "median home value", more: "a higher median home value", value: (c) => c.home_value, fmt: money, src: "Census ACS" },
   { id: "unemployment", label: "unemployment rate", more: "a higher unemployment rate", value: (c) => c.unemployment, fmt: pct1, src: "Census ACS" },
   { id: "gdp_per", label: "GDP per person", more: "a higher GDP per person", value: (c) => (c.gdp && c.population ? c.gdp / c.population : null), fmt: money, src: "BEA" },
+  ...[["manufacturing", "manufacturing"], ["health", "health care"], ["finance", "finance and insurance"], ["professional", "professional and technical services"]].map(([k, name]) => ({
+    id: `jobs_${k}`, label: `share of jobs in ${name}`, more: `a bigger share of its jobs in ${name}`,
+    value: (c) => (c.jobs && c.employed ? (c.jobs[k] || 0) / c.employed : null), fmt: pct1, src: "Census ACS",
+  })),
   { id: "growth", label: "population growth 2021–2025", more: "faster population growth since 2021", value: (c) => c.growth, fmt: (x) => `${x >= 0 ? "+" : "−"}${(Math.abs(x) * 100).toFixed(1)}%`, src: "Census estimates", signed: true },
 ];
 export const statById = (id) => STATS.find((s) => s.id === id) || null;

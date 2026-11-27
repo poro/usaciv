@@ -121,7 +121,7 @@ export function initAccount({ toast } = {}) {
         <div class="g-row">${codeBlock()}${a.devices > 1 ? `<button class="g-btn" data-act="signout-others" ${state.busy ? "disabled" : ""}>Sign out other devices</button>` : ""}</div>
         <details class="acct-more"${state.enter ? " open" : ""}><summary>Use a different player</summary>
           ${signInBlock("Sign in to another player")}
-          <p class="g-note">${a.secured ? "" : "This device's scores move into the player you sign in to, and this nickname is retired."}</p>
+          <p class="g-note">${a.secured ? "" : "This device's scores move into the player you sign in to (except dailies still open today), and this nickname is retired."}</p>
         </details>
         <h3>Leave</h3>
         <div class="g-row"><button class="g-btn" data-act="signout" ${state.busy ? "disabled" : ""}>Sign out of this device</button>

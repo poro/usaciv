@@ -17,7 +17,7 @@ export const AUTH = {
   handoffMs: 2 * 60_000,
   maxPasskeys: 10,
   maxSessions: 20,
-  ipSignIn: [30, 600_000], // sign-in attempts (passkey, code, handoff) per IP per 10 minutes
+  ipSignIn: [60, 600_000], // sign-ins (passkey verify, handoff, Google start) per IP per 10 minutes: a class behind one NAT fits
   ipLinkRedeem: [10, 600_000],
 };
 
@@ -53,7 +53,8 @@ export async function newSession(env, player, label) {
 /** True when the player has a way back in other than device tokens (a passkey or an identity). */
 export async function isSecured(env, player) {
   const r = await env.DB.prepare(
-    "SELECT (SELECT COUNT(*) FROM passkeys WHERE player = ?1) + (SELECT COUNT(*) FROM identities WHERE player = ?1) AS n",
+    // a player signed in on more than one device (sessions) counts too: merging it would sign the other devices out
+    "SELECT (SELECT COUNT(*) FROM passkeys WHERE player = ?1) + (SELECT COUNT(*) FROM identities WHERE player = ?1) + (SELECT COUNT(*) FROM sessions WHERE player = ?1) AS n",
   ).bind(player).first();
   return (r?.n || 0) > 0;
 }
@@ -66,37 +67,41 @@ export async function mergeInto(env, from, to) {
   if (!from || from === to) return null;
   if (!(await env.DB.prepare("SELECT id FROM players WHERE id = ?").bind(from).first())) return null;
   if (await isSecured(env, from)) return null;
+  // Dailies that are still open (today and yesterday, UTC) are not carried over: otherwise throwaway players could
+  // each try today's puzzle and the best one be signed into the account. Older days merge.
+  const y = new Date(); y.setUTCDate(y.getUTCDate() - 1);
+  const cutoff = y.toISOString().slice(0, 10);
   const counts = await env.DB.prepare(
-    `SELECT (SELECT COUNT(*) FROM wm_daily WHERE player = ?1) + (SELECT COUNT(*) FROM fd_daily WHERE player = ?1)
-         + (SELECT COUNT(*) FROM pp_daily WHERE player = ?1) + (SELECT COUNT(*) FROM duel_daily WHERE player = ?1)
-         + (SELECT COUNT(*) FROM trip_daily WHERE player = ?1) AS daily,
-       (SELECT COUNT(*) FROM ml_runs WHERE player = ?1) + (SELECT COUNT(*) FROM ml_daily WHERE player = ?1) AS runs`,
-  ).bind(from).first();
+    `SELECT (SELECT COUNT(*) FROM wm_daily WHERE player = ?1 AND key < ?2) + (SELECT COUNT(*) FROM fd_daily WHERE player = ?1 AND key < ?2)
+         + (SELECT COUNT(*) FROM pp_daily WHERE player = ?1 AND key < ?2) + (SELECT COUNT(*) FROM duel_daily WHERE player = ?1 AND key < ?2)
+         + (SELECT COUNT(*) FROM trip_daily WHERE player = ?1 AND key < ?2) AS daily,
+       (SELECT COUNT(*) FROM ml_runs WHERE player = ?1) + (SELECT COUNT(*) FROM ml_daily WHERE player = ?1 AND key < ?2) AS runs`,
+  ).bind(from, cutoff).first();
   await env.DB.batch([
     env.DB.prepare(
       `INSERT OR IGNORE INTO wm_daily (player, key, score, rounds_json, created)
-       SELECT ?2, key, score, rounds_json, created FROM wm_daily WHERE player = ?1`,
-    ).bind(from, to),
+       SELECT ?2, key, score, rounds_json, created FROM wm_daily WHERE player = ?1 AND key < ?3`,
+    ).bind(from, to, cutoff),
     env.DB.prepare(
       `INSERT OR IGNORE INTO fd_daily (player, key, score, towns, log_json, created)
-       SELECT ?2, key, score, towns, log_json, created FROM fd_daily WHERE player = ?1`,
-    ).bind(from, to),
+       SELECT ?2, key, score, towns, log_json, created FROM fd_daily WHERE player = ?1 AND key < ?3`,
+    ).bind(from, to, cutoff),
     env.DB.prepare(
       `INSERT OR IGNORE INTO trip_daily (player, key, score, km, order_json, created)
-       SELECT ?2, key, score, km, order_json, created FROM trip_daily WHERE player = ?1`,
-    ).bind(from, to),
+       SELECT ?2, key, score, km, order_json, created FROM trip_daily WHERE player = ?1 AND key < ?3`,
+    ).bind(from, to, cutoff),
     env.DB.prepare(
       `INSERT OR IGNORE INTO duel_daily (player, key, streak, answers_json, created)
-       SELECT ?2, key, streak, answers_json, created FROM duel_daily WHERE player = ?1`,
-    ).bind(from, to),
+       SELECT ?2, key, streak, answers_json, created FROM duel_daily WHERE player = ?1 AND key < ?3`,
+    ).bind(from, to, cutoff),
     env.DB.prepare(
       `INSERT OR IGNORE INTO pp_daily (player, key, score, guesses_json, created)
-       SELECT ?2, key, score, guesses_json, created FROM pp_daily WHERE player = ?1`,
-    ).bind(from, to),
+       SELECT ?2, key, score, guesses_json, created FROM pp_daily WHERE player = ?1 AND key < ?3`,
+    ).bind(from, to, cutoff),
     env.DB.prepare(
       `INSERT OR IGNORE INTO ml_daily (player, key, scenario, uplift, hash, log_json, created)
-       SELECT ?2, key, scenario, uplift, hash, log_json, created FROM ml_daily WHERE player = ?1`,
-    ).bind(from, to),
+       SELECT ?2, key, scenario, uplift, hash, log_json, created FROM ml_daily WHERE player = ?1 AND key < ?3`,
+    ).bind(from, to, cutoff),
     env.DB.prepare(
       `INSERT INTO ml_runs (player, scenario, seed, home, uplift, hash, year, log_json, created)
        SELECT ?2, scenario, seed, home, uplift, hash, year, log_json, created FROM ml_runs WHERE player = ?1 AND true
@@ -251,8 +256,7 @@ export async function passkeyRegister(request, env) {
   return json({ passkey: { id: v.credId, name, created: now() } }, 201);
 }
 
-export async function passkeyLoginOptions(request, env) {
-  await rateLimit(env, `si:${await ipHash(env, request)}`, ...AUTH.ipSignIn);
+export async function passkeyLoginOptions(request, env) { // harmless (a challenge), so not rate limited
   const id = randomToken(), challenge = randomToken();
   await putToken(env, `ch:${id}`, null, { challenge, kind: "login" }, AUTH.challengeMs);
   return json({ challengeId: id, publicKey: { challenge, rpId: site(request).rpId, timeout: AUTH.challengeMs, userVerification: "preferred", allowCredentials: [] } });
@@ -329,7 +333,14 @@ export async function linkRedeem(request, env) {
 
 // --- Google (OpenID Connect, authorization code + PKCE); off until GOOGLE_CLIENT_ID/SECRET are set -------------
 const GOOGLE = { auth: "https://accounts.google.com/o/oauth2/v2/auth", token: "https://oauth2.googleapis.com/token", iss: ["https://accounts.google.com", "accounts.google.com"] };
-const safeReturn = (s) => (typeof s === "string" && /^\/(?!\/)[^\s]{0,300}$/.test(s) ? s : "/");
+// Only a plain same-site path (the client sends location.pathname): no "//", no backslash (browsers read "/\x" as
+// "//x", another site), no scheme.
+export const safeReturn = (s) => (typeof s === "string" && /^\/[A-Za-z0-9_\-./]{0,200}$/.test(s) && !s.includes("//") ? s : "/");
+// The OAuth flow is bound to the browser that started it: a random value in a __Host- cookie (HttpOnly, SameSite=Lax),
+// its hash in the state row and the handoff. A Google link or a #auth= link sent by someone else carries no cookie.
+const BIND_COOKIE = "__Host-usaciv-oauth";
+const cookieOf = (request) => /(?:^|;\s*)__Host-usaciv-oauth=([A-Za-z0-9_-]{20,100})/.exec(request.headers.get("Cookie") || "")?.[1] ?? null;
+const bindHash = async (request) => { const c = cookieOf(request); return c ? sha256Hex(c) : null; };
 
 /** POST {returnTo?} (optionally signed in: then the Google account is added to this player) → {url}. */
 export async function googleStart(request, env) {
@@ -339,13 +350,14 @@ export async function googleStart(request, env) {
   const current = await tokenOwner(env, bearer(request));
   const state = randomToken(), verifier = randomToken() + randomToken(), nonce = randomToken();
   const challenge = b64urlEncode(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))));
-  await putToken(env, `oauth:${state}`, current?.id ?? null, { verifier, nonce, returnTo: safeReturn(body?.returnTo), provider: "google" }, AUTH.oauthMs);
+  const bind = randomToken();
+  await putToken(env, `oauth:${state}`, current?.id ?? null, { verifier, nonce, returnTo: safeReturn(body?.returnTo), provider: "google", bind: await sha256Hex(bind) }, AUTH.oauthMs);
   const u = new URL(GOOGLE.auth);
   u.search = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID, redirect_uri: `${site(request).origin}/api/auth/google/callback`, response_type: "code",
     scope: "openid email profile", state, nonce, code_challenge: challenge, code_challenge_method: "S256", prompt: "select_account",
   }).toString();
-  return json({ url: u.toString() });
+  return json({ url: u.toString() }, 200, { "Set-Cookie": `${BIND_COOKIE}=${bind}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=900` });
 }
 
 /** Decode a JWT payload without checking its signature: allowed only for an ID token received straight from the
@@ -362,6 +374,8 @@ export async function googleCallback(request, env) {
   const back = (returnTo, frag) => new Response(null, { status: 302, headers: { Location: `${returnTo}#${frag}`, "Cache-Control": "no-store" } });
   const st = u.searchParams.get("state") ? await takeToken(env, `oauth:${u.searchParams.get("state")}`) : null;
   if (!st) return back("/", "auth-error=expired");
+  const bound = await bindHash(request);
+  if (!bound || bound !== st.data.bind) return back(st.data.returnTo, "auth-error=browser"); // not the browser that started it
   if (!u.searchParams.get("code")) return back(st.data.returnTo, "auth-error=cancelled");
   const res = await fetch(GOOGLE.token, {
     method: "POST",
@@ -378,7 +392,7 @@ export async function googleCallback(request, env) {
   if (!ok) return back(st.data.returnTo, "auth-error=google");
   const player = await playerForIdentity(env, "google", claims, st.player);
   const hand = randomToken();
-  await putToken(env, `hand:${await sha256Hex(hand)}`, player, { label: "google", from: st.player }, AUTH.handoffMs);
+  await putToken(env, `hand:${await sha256Hex(hand)}`, player, { label: "google", from: st.player, bind: bound }, AUTH.handoffMs);
   return back(st.data.returnTo, `auth=${hand}`);
 }
 
@@ -405,7 +419,10 @@ export async function handoff(request, env) {
   const code = (await readJson(request))?.code;
   const t = typeof code === "string" && code.length < 100 ? await takeToken(env, `hand:${await sha256Hex(code)}`) : null;
   if (!t?.player) throw new HttpError(404, "Sign-in link expired, try again");
-  return signedIn(env, request, t.player, t.data?.label || "google");
+  if (!t.data?.bind || t.data.bind !== (await bindHash(request))) throw new HttpError(403, "This sign-in was started in another browser");
+  const res = await signedIn(env, request, t.player, t.data?.label || "google");
+  res.headers.append("Set-Cookie", `${BIND_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0`);
+  return res;
 }
 
 /** Remove a provider identity from this player (its devices stay signed in). */

@@ -78,8 +78,9 @@ async function makeAuthenticator({ rpId = RP, origin = ORIGIN } = {}) {
 function harness() {
   const env = { DB: makeD1(), IP_SALT: "test" };
   let ip = 1;
-  const call = async (method, path, { body, token, origin = ORIGIN, ipAddr } = {}) => {
+  const call = async (method, path, { body, token, origin = ORIGIN, ipAddr, cookie } = {}) => {
     const headers = { "CF-Connecting-IP": ipAddr || `10.0.0.${ip}` };
+    if (cookie) headers.Cookie = cookie;
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (token) headers.Authorization = `Bearer ${token}`;
     if (origin) headers.Origin = origin;
@@ -134,13 +135,15 @@ test("passkey: register on device 1, sign in on device 2, scores merge", async (
 
   // Ann has a Mainline best and a daily on device 1.
   const now = Date.now();
-  await h.env.DB.prepare("INSERT INTO wm_daily VALUES (?, '2026-11-26', 20, '[]', ?)").bind(ann.id, now).run();
+  await h.env.DB.prepare("INSERT INTO wm_daily VALUES (?, '2020-01-02', 20, '[]', ?)").bind(ann.id, now).run();
   await h.env.DB.prepare("INSERT INTO ml_runs VALUES (?, 'texas', 's1', NULL, 1.5, 'h', 2050, NULL, ?)").bind(ann.id, now).run();
 
   // Device 2 played anonymously as "Guest": a daily on another day, a clashing daily, and a better Texas run.
   const guest = await h.newPlayer("Guest");
-  await h.env.DB.prepare("INSERT INTO wm_daily VALUES (?, '2026-11-25', 18, '[]', ?)").bind(guest.id, now).run();
-  await h.env.DB.prepare("INSERT INTO wm_daily VALUES (?, '2026-11-26', 25, '[]', ?)").bind(guest.id, now).run();
+  await h.env.DB.prepare("INSERT INTO wm_daily VALUES (?, '2020-01-01', 18, '[]', ?)").bind(guest.id, now).run();
+  await h.env.DB.prepare("INSERT INTO wm_daily VALUES (?, '2020-01-02', 25, '[]', ?)").bind(guest.id, now).run();
+  // today's daily is still open: it does not merge (no retrying the daily on throwaway players)
+  await h.env.DB.prepare("INSERT INTO wm_daily VALUES (?, ?, 25, '[]', ?)").bind(guest.id, new Date().toISOString().slice(0, 10), now).run();
   await h.env.DB.prepare("INSERT INTO ml_runs VALUES (?, 'texas', 's2', NULL, 2.5, 'h2', 2050, NULL, ?)").bind(guest.id, now).run();
   await h.env.DB.prepare("INSERT INTO ml_runs VALUES (?, 'rust', 's3', NULL, 0.5, 'h3', 2050, NULL, ?)").bind(guest.id, now).run();
 
@@ -161,7 +164,7 @@ test("passkey: register on device 1, sign in on device 2, scores merge", async (
   assert.equal((await h.call("GET", "/api/player", { token: guest.token })).status, 401);
   assert.equal((await h.call("GET", "/api/account", { token: d2 })).data.thisDevice, "session");
   const daily = (await h.env.DB.prepare("SELECT key, score FROM wm_daily WHERE player = ? ORDER BY key").bind(ann.id).all()).results;
-  assert.deepEqual(daily, [{ key: "2026-11-25", score: 18 }, { key: "2026-11-26", score: 20 }], "the account's daily wins a clash");
+  assert.deepEqual(daily, [{ key: "2020-01-01", score: 18 }, { key: "2020-01-02", score: 20 }], "the account's daily wins a clash; today's stays behind");
   const runs = (await h.env.DB.prepare("SELECT scenario, uplift, seed FROM ml_runs WHERE player = ? ORDER BY scenario").bind(ann.id).all()).results;
   assert.deepEqual(runs, [{ scenario: "rust", uplift: 0.5, seed: "s3" }, { scenario: "texas", uplift: 2.5, seed: "s2" }], "the better run wins");
   assert.equal((await h.env.DB.prepare("SELECT COUNT(*) n FROM players").first()).n, 1);
@@ -273,34 +276,50 @@ test("Google: off without secrets; with them, start → callback → handoff sig
   h.env.GOOGLE_CLIENT_SECRET = "secret";
   assert.equal((await h.call("GET", "/api/auth/config")).data.google, true);
   const ann = await h.newPlayer("Ann");
-  const st = await h.call("POST", "/api/auth/google/start", { token: ann.token, body: { returnTo: "/#play=founders" } });
+  const st = await h.call("POST", "/api/auth/google/start", { token: ann.token, body: { returnTo: "/" } });
+  const setCookie = st.headers.get("set-cookie");
+  assert.match(setCookie, /^__Host-usaciv-oauth=[A-Za-z0-9_-]+; Path=\/; Secure; HttpOnly; SameSite=Lax/);
+  const cookie = setCookie.split(";")[0];
   const url = new URL(st.data.url);
   assert.equal(url.origin, "https://accounts.google.com");
   assert.equal(url.searchParams.get("redirect_uri"), `${ORIGIN}/api/auth/google/callback`);
   assert.equal(url.searchParams.get("code_challenge_method"), "S256");
   const state = url.searchParams.get("state"), nonce = url.searchParams.get("nonce");
 
+  let curNonce = nonce; // what the mocked Google signs into the ID token (the latest flow's nonce)
   const realFetch = globalThis.fetch;
   const idToken = (claims) => `x.${W.b64urlEncode(new TextEncoder().encode(JSON.stringify(claims)))}.sig`;
   let sent = null;
-  globalThis.fetch = async (u, init) => { sent = { u: String(u), body: String(init.body) }; return new Response(JSON.stringify({ id_token: idToken({ iss: "https://accounts.google.com", aud: h.env.GOOGLE_CLIENT_ID, sub: "g-123", email: "ann@example.com", email_verified: true, nonce, exp: Date.now() / 1000 + 600 }) })); };
+  globalThis.fetch = async (u, init) => { sent = { u: String(u), body: String(init.body) }; return new Response(JSON.stringify({ id_token: idToken({ iss: "https://accounts.google.com", aud: h.env.GOOGLE_CLIENT_ID, sub: "g-123", email: "ann@example.com", email_verified: true, nonce: curNonce, exp: Date.now() / 1000 + 600 }) })); };
   try {
-    const cb = await h.call("GET", `/api/auth/google/callback?state=${state}&code=abc`, { origin: null });
+    // From another browser (no cookie) the state is refused, and it is spent.
+    const st0 = await h.call("POST", "/api/auth/google/start", { body: {} });
+    const s0 = new URL(st0.data.url).searchParams.get("state");
+    assert.match((await h.call("GET", `/api/auth/google/callback?state=${s0}&code=abc`, { origin: null })).headers.get("Location"), /auth-error=browser/);
+    const cb = await h.call("GET", `/api/auth/google/callback?state=${state}&code=abc`, { origin: null, cookie });
     assert.equal(cb.status, 302);
     assert.match(sent.body, /code_verifier=/);
     const loc = cb.headers.get("Location");
-    assert.match(loc, /^\/#play=founders#auth=/);
+    assert.match(loc, /^\/#auth=/);
     const hand = loc.split("#auth=")[1];
-    const hs = await h.call("POST", "/api/auth/handoff", { body: { code: hand } });
+    const hs = await h.call("POST", "/api/auth/handoff", { body: { code: hand }, cookie });
     assert.equal(hs.data.id, ann.id, "linked to the signed-in player");
     assert.equal((await h.call("POST", "/api/auth/handoff", { body: { code: hand } })).status, 404, "single use");
     const acct = (await h.call("GET", "/api/account", { token: hs.data.token })).data;
     assert.deepEqual(acct.identities.map((i) => [i.provider, i.email]), [["google", "ann@example.com"]]);
     assert.equal(acct.secured, true);
+    // A handoff link redeemed in another browser (handoff fixation) is refused.
+    const stF = await h.call("POST", "/api/auth/google/start", { body: {} });
+    const cookie2 = stF.headers.get("set-cookie").split(";")[0];
+    curNonce = new URL(stF.data.url).searchParams.get("nonce");
+    const loc2 = (await h.call("GET", `/api/auth/google/callback?state=${new URL(stF.data.url).searchParams.get("state")}&code=abc`, { origin: null, cookie: cookie2 })).headers.get("Location");
+    assert.equal((await h.call("POST", "/api/auth/handoff", { body: { code: loc2.split("#auth=")[1] } })).status, 403);
     // A replayed state is refused; a wrong nonce is refused.
     assert.match((await h.call("GET", `/api/auth/google/callback?state=${state}&code=abc`, { origin: null })).headers.get("Location"), /auth-error=expired/);
-    const st2 = new URL((await h.call("POST", "/api/auth/google/start", { body: {} })).data.url).searchParams.get("state");
-    const bad = await h.call("GET", `/api/auth/google/callback?state=${st2}&code=abc`, { origin: null });
+    const r2 = await h.call("POST", "/api/auth/google/start", { body: {} });
+    const st2 = new URL(r2.data.url).searchParams.get("state");
+    curNonce = "not-this-flows-nonce";
+    const bad = await h.call("GET", `/api/auth/google/callback?state=${st2}&code=abc`, { origin: null, cookie: r2.headers.get("set-cookie").split(";")[0] });
     assert.match(bad.headers.get("Location"), /auth-error=google/);
   } finally {
     globalThis.fetch = realFetch;
@@ -333,4 +352,21 @@ test("account stats: daily records, streaks and Mainline ranks", async () => {
   assert.deepEqual(st.fd.recent, [{ key: today, score: 700, towns: 6 }]);
   assert.deepEqual(st.ml.map((r) => [r.scenario, r.rank, r.total]), [["texas", 2, 2]]);
   assert.equal((await h.call("GET", "/api/account/stats")).status, 401);
+});
+
+test("safeReturn allows only plain same-site paths", async () => {
+  for (const ok of ["/", "/index.html", "/a/b-c_d.e"]) assert.equal(A.safeReturn(ok), ok);
+  for (const bad of ["/\\evil.com", "//evil.com", "https://evil.com", "/a//b", "/x?y=1", "/#play", "", null, "evil"]) assert.equal(A.safeReturn(bad), "/", String(bad));
+});
+
+test("a player signed in on two devices is never merged away", async () => {
+  const h = harness();
+  const p = await h.newPlayer("Pat"), q = await h.newPlayer("Quinn");
+  const code = (await h.call("POST", "/api/auth/link", { token: p.token })).data.code;
+  const dev2 = (await h.call("POST", "/api/auth/link/redeem", { body: { code } })).data.token; // Pat on a second device
+  const qcode = (await h.call("POST", "/api/auth/link", { token: q.token })).data.code;
+  const r = (await h.call("POST", "/api/auth/link/redeem", { token: dev2, body: { code: qcode } })).data;
+  assert.equal(r.id, q.id);
+  assert.equal(r.merged, null);
+  assert.equal((await h.call("GET", "/api/player", { token: p.token })).data.id, p.id, "Pat's first device still works");
 });
