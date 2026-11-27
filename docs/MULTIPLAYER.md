@@ -29,13 +29,14 @@ worker/wm.js           Which Metro?: daily submit/board, race room create
 worker/race.js         export class RaceRoom (Durable Object)
 worker/ml.js           Mainline: submit/board (uses web/js/games/mainline/sim/verify.js)
 worker/vs.js           Mainline versus: room create/info and export class VersusRoom (Durable Object)
+worker/duel.js         Metro Duel daily: duels rebuilt from the date, streak counted on the server
 worker/pp.js           Pinpoint daily: rounds rebuilt from the date, guesses scored on the server
 worker/fd.js           Founders daily: submit (replayed with sim/daily.js) and board
 worker/auth.js         login: passkeys, device codes, Google (off until configured), sign-out, merge, delete
 worker/webauthn.js     passkey verification (CBOR/COSE parsing, ES256/RS256 with WebCrypto); pure, no npm
 worker/rules.js        pure rules (names, step checks + replay, room codes, places); tested by tests/js/worker.test.mjs
 worker/blocklist.js    the short name blocklist
-migrations/0001_init.sql … 0005_pinpoint_daily.sql
+migrations/0001_init.sql … 0006_duel_daily.sql
 web/js/games/shared/net.js   the browser client (below)
 web/js/app/account.js        the top-bar account button and panel
 ```
@@ -161,6 +162,14 @@ per IP per hour. Over the limit → 429 with `Retry-After`. A daily resubmission
 - `POST /api/pp/daily {key, guesses: [cell × 8]}` → `{score, rank, total}` (`stored: true` on a resubmission; the
   first finished game counts). `GET /api/pp/daily/:key` → `{key, total, top: [{rank, name, score}], you}`.
 - Stats report it as `pp`; merge and delete include `pp_daily` (migration 0005).
+
+### Metro Duel daily
+
+- `web/js/games/duel/sim/duel.js` builds 30 chained duels from `duel:<YYYY-MM-DD>` (UTC) over the 250 largest metros.
+  The Worker (`worker/duel.js`) rebuilds them from cities.json and counts the streak with `streakOf`.
+- `POST /api/duel/daily {key, answers: [bool]}`: only a finished run (it ends on a wrong answer or after all 30) →
+  `{streak, rank, total}` (`stored: true` on a resubmission). `GET /api/duel/daily/:key` → `{key, total, top: [{rank,
+  name, streak}], you}`. Stats `dl`; merge and delete include `duel_daily` (migration 0006).
 
 ## Mainline versus (real time)
 

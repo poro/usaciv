@@ -22,6 +22,15 @@ export const GAMES = [
     load: () => import("./pinpoint/index.js"),
   },
   {
+    id: "duel",
+    title: "Metro Duel",
+    tagline: "Higher or lower? Two real metros, one statistic: rent, income, growth… How long can your streak run?",
+    players: "Single player · daily",
+    minutes: "2 min",
+    icon: "⚖️",
+    load: () => import("./duel/index.js"),
+  },
+  {
     id: "mainline",
     title: "Mainline",
     tagline: "Lay rail across the real map from 2026 to 2050. Real freight is your demand, real disaster risk your enemy.",

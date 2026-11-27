@@ -9,6 +9,7 @@ the map, lenses, City View and Advisors. On top of it sit **game modes** that pl
 | **Explore** | The original data map | n/a | n/a |
 | **Which Metro?** | A daily data puzzle: guess the metro from its workforce, industries and yields | Single player, daily seed | Shared daily leaderboard, head-to-head races |
 | **Pinpoint** | Eight real places a day (metros, parks, universities, airports, ports, plants): click where each one is | Single player, daily seed + practice; daily board | Head-to-head races |
+| **Metro Duel** | Higher or lower on real metro statistics; keep the streak alive | Single player, daily run of 30 + endless practice; daily board | Head-to-head |
 | **Mainline** | Lay rail across the real map, 2026→2050. Real freight is demand and real disaster risk is the enemy | Single player vs. "baseline America" | AI rival companies; online versus; co-op with one region each |
 | **Founders** | An empty America with real terrain and resources: found cities, grow, compare with the real country | Single player | Hotseat, then online 2–4 players |
 
@@ -96,6 +97,16 @@ labels the answer and each wrong guess on the map.
   (`#play=pinpoint~p-<seed>`). Today's game resumes after a reload.
 - Board: the server rebuilds the day's rounds from the same data and scores the eight guessed hexes itself
   (`/api/pp/daily`, docs/MULTIPLAYER.md).
+
+## New mode: Metro Duel (2026-11-27)
+
+- `web/js/games/duel/`: two real metros and one statistic (population, median income, rent, home value,
+  unemployment, GDP per person, population growth since 2021; Census ACS, BEA, Census estimates). Is the second one
+  higher or lower? A right answer makes it the next metro to beat, with a new statistic; the first miss ends the run.
+- Gaps start wide and narrow as the streak grows (never under 4%). Both metros are lit and labelled A/B on the map;
+  city banners are hidden because they show population.
+- Today's run is 30 duels, the same for everyone (resumes after a reload); practice runs are endless. Board: the
+  server rebuilds the day's duels and counts the streak (`/api/duel/daily`).
 
 ## Phase 2: polish (v0.2)
 

@@ -9,6 +9,7 @@ import * as auth from "./auth.js";
 import { submitFdDaily, fdDailyBoard } from "./fd.js";
 import { accountStats } from "./stats.js";
 import { submitPpDaily, ppDailyBoard } from "./pp.js";
+import { submitDuelDaily, duelDailyBoard } from "./duel.js";
 
 export { RaceRoom } from "./race.js";
 export { VersusRoom } from "./vs.js"; // Mainline versus and Founders multiplayer rooms
@@ -70,6 +71,8 @@ const ROUTES = [
   ["POST", /^\/api\/ml\/vs$/, createVs],
   ["GET", /^\/api\/ml\/vs\/([A-Za-z0-9]{6})$/, (req, env, code) => vsStatus(req, env, code.toUpperCase())],
   ["GET", /^\/api\/ml\/vs\/([A-Za-z0-9]{6})\/ws$/, (req, env, code) => vsSocket(req, env, code.toUpperCase(), "mainline")],
+  ["POST", /^\/api\/duel\/daily$/, submitDuelDaily],
+  ["GET", /^\/api\/duel\/daily\/([0-9-]{10})$/, duelDailyBoard],
   ["POST", /^\/api\/pp\/daily$/, submitPpDaily],
   ["GET", /^\/api\/pp\/daily\/([0-9-]{10})$/, ppDailyBoard],
   ["POST", /^\/api\/fd\/daily$/, submitFdDaily],
