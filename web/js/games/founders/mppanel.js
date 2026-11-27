@@ -39,7 +39,7 @@ export function mpSetupHtml({ online, player, prefs = {}, resume = null }) {
       <button class="g-btn" data-act="mpLocal" type="button" title="On this device: you against AI nations, or friends taking turns at the keyboard (hotseat)">Play on this device</button>
       ${online ? `<button class="g-btn" data-act="mpCreate" type="button" title="A room friends join by link; AI nations fill the seats you choose">Online room…</button>` : ""}
     </div>
-    ${online && !player ? `<label class="fd-mp-nick">Nickname for online play <input data-field="nick" maxlength="20" autocomplete="nickname" placeholder="2–20 letters"></label>` : ""}
+    ${online && !player ? `<label class="fd-mp-nick">Nickname for online play <input data-field="nick" maxlength="20" autocomplete="nickname" placeholder="2–20 letters"></label> <button type="button" class="linkish-open" data-open-account>Have a player? Sign in</button>` : ""}
     <details><summary>Multiplayer rules</summary>${MP_HOW}</details>
   </div>`;
 }

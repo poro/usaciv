@@ -34,7 +34,7 @@ export function vsPickerHtml({ online, player, defaults = {} }) {
       <button class="g-btn" data-act="vsAi" type="button" title="You against the AI companies, on this device">Play vs AI</button>
       ${online ? `<button class="g-btn" data-act="vsCreate" type="button" title="A room friends join by link; AI rivals fill the seats you choose">Online room…</button>` : ""}
     </div>
-    ${online && !player ? `<label class="ml-vs-nick">Nickname for online play <input data-field="nick" maxlength="20" autocomplete="nickname" placeholder="2–20 letters"></label>` : ""}
+    ${online && !player ? `<label class="ml-vs-nick">Nickname for online play <input data-field="nick" maxlength="20" autocomplete="nickname" placeholder="2–20 letters"></label> <button type="button" class="linkish-open" data-open-account>Have a player? Sign in</button>` : ""}
     <details class="ml-help"><summary>Versus rules</summary>${VS_HOW}</details>
   </div>`;
 }

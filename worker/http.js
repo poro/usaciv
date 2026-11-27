@@ -1,7 +1,7 @@
 // HTTP helpers for the Worker: JSON responses, body parsing, token auth, IP hashing and D1 rate limits.
 // Same origin only: no CORS headers are ever sent, and a write whose Origin header names another site is refused.
 
-export const VERSION = "0.3.0";
+export const VERSION = "0.4.0";
 
 const HEADERS = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
 
@@ -45,21 +45,39 @@ export async function ipHash(env, request) {
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{20,100}$/;
 
-/** The player for a raw token, or null. */
-export async function playerForToken(env, token) {
+/**
+ * The player for a raw token, or null: {id, name, via}. `via` is "device" for the token that created the player
+ * (players.token_hash) and "session" for a later sign-in (sessions, docs/MULTIPLAYER.md "Login").
+ */
+export async function tokenOwner(env, token) {
   if (typeof token !== "string" || !TOKEN_RE.test(token)) return null;
-  return env.DB.prepare("SELECT id, name FROM players WHERE token_hash = ?").bind(await sha256Hex(token)).first();
+  const h = await sha256Hex(token);
+  const p = await env.DB.prepare("SELECT id, name FROM players WHERE token_hash = ?").bind(h).first();
+  if (p) return { id: p.id, name: p.name, via: "device" };
+  const s = await env.DB.prepare("SELECT p.id, p.name, s.last_used FROM sessions s JOIN players p ON p.id = s.player WHERE s.token_hash = ?").bind(h).first();
+  if (!s) return null;
+  if (Date.now() - s.last_used > 86_400_000) await env.DB.prepare("UPDATE sessions SET last_used = ? WHERE token_hash = ?").bind(Date.now(), h).run();
+  return { id: s.id, name: s.name, via: "session" };
 }
+
+/** The player for a raw token, or null ({id, name}). */
+export async function playerForToken(env, token) {
+  const o = await tokenOwner(env, token);
+  return o ? { id: o.id, name: o.name } : null;
+}
+
+/** The raw bearer token of a request, or null. */
+export const bearer = (request) => /^Bearer\s+(\S+)$/.exec(request.headers.get("Authorization") || "")?.[1] ?? null;
 
 /** The player from `Authorization: Bearer <token>`, or null. */
 export function optionalPlayer(env, request) {
-  const m = /^Bearer\s+(\S+)$/.exec(request.headers.get("Authorization") || "");
-  return m ? playerForToken(env, m[1]) : Promise.resolve(null);
+  const t = bearer(request);
+  return t ? playerForToken(env, t) : Promise.resolve(null);
 }
 
-/** The authenticated player, or throw 401. */
+/** The authenticated player ({id, name, via}), or throw 401. */
 export async function requirePlayer(env, request) {
-  const p = await optionalPlayer(env, request);
+  const p = await tokenOwner(env, bearer(request));
   if (!p) throw new HttpError(401, "Sign-in token missing or unknown");
   return p;
 }

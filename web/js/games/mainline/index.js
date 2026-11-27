@@ -400,7 +400,7 @@ export async function start(ctx) {
     };
   }
   const vsNickHtml = () => `<div class="ml-vs-lobby"><div class="ml-verdict">Join versus room <b class="ml-vs-code">${esc(game.vs.code)}</b></div>
-    <label class="ml-vs-nick">Your nickname <input data-field="nick" maxlength="20" autocomplete="nickname" placeholder="2–20 letters"></label>
+    <label class="ml-vs-nick">Your nickname <input data-field="nick" maxlength="20" autocomplete="nickname" placeholder="2–20 letters"></label> <button type="button" class="linkish-open" data-open-account>Have a player? Sign in</button>
     <div class="g-row"><button class="g-btn primary" data-act="vsJoinNick">Join</button><button class="g-btn" data-act="vsLeave">Back</button></div></div>`;
   function vsInitFromRoom(v) {
     const r = v.room;

@@ -5,6 +5,7 @@ import { checkName } from "./rules.js";
 import { submitDaily, dailyBoard, createRace, raceStatus, raceSocket } from "./wm.js";
 import { submitRun, mlBoard } from "./ml.js";
 import { createVs, createFd, vsStatus, vsSocket } from "./vs.js";
+import * as auth from "./auth.js";
 
 export { RaceRoom } from "./race.js";
 export { VersusRoom } from "./vs.js"; // Mainline versus and Founders multiplayer rooms
@@ -33,8 +34,26 @@ async function renamePlayer(request, env) {
 const ROUTES = [
   ["GET", /^\/api\/health$/, () => json({ ok: true, version: VERSION })],
   ["POST", /^\/api\/player$/, createPlayer],
-  ["GET", /^\/api\/player$/, async (req, env) => json(await requirePlayer(env, req))],
+  ["GET", /^\/api\/player$/, async (req, env) => { const p = await requirePlayer(env, req); return json({ id: p.id, name: p.name }); }],
   ["PATCH", /^\/api\/player$/, renamePlayer],
+  // Login (worker/auth.js)
+  ["GET", /^\/api\/auth\/config$/, auth.authConfig],
+  ["GET", /^\/api\/account$/, auth.account],
+  ["DELETE", /^\/api\/account$/, auth.deleteAccount],
+  ["POST", /^\/api\/auth\/signout$/, auth.signOut],
+  ["POST", /^\/api\/auth\/signout-others$/, auth.signOutOthers],
+  ["POST", /^\/api\/auth\/passkey\/register\/options$/, auth.passkeyRegisterOptions],
+  ["POST", /^\/api\/auth\/passkey\/register$/, auth.passkeyRegister],
+  ["POST", /^\/api\/auth\/passkey\/login\/options$/, auth.passkeyLoginOptions],
+  ["POST", /^\/api\/auth\/passkey\/login$/, auth.passkeyLogin],
+  ["PATCH", /^\/api\/auth\/passkey\/([A-Za-z0-9_-]{16,1400})$/, auth.passkeyRename],
+  ["DELETE", /^\/api\/auth\/passkey\/([A-Za-z0-9_-]{16,1400})$/, auth.passkeyDelete],
+  ["POST", /^\/api\/auth\/link$/, auth.linkCreate],
+  ["POST", /^\/api\/auth\/link\/redeem$/, auth.linkRedeem],
+  ["POST", /^\/api\/auth\/google\/start$/, auth.googleStart],
+  ["GET", /^\/api\/auth\/google\/callback$/, auth.googleCallback],
+  ["POST", /^\/api\/auth\/handoff$/, auth.handoff],
+  ["DELETE", /^\/api\/auth\/identity\/(google|apple)$/, auth.identityDelete],
   ["POST", /^\/api\/wm\/daily$/, submitDaily],
   ["GET", /^\/api\/wm\/daily\/([0-9-]{10})$/, dailyBoard],
   ["POST", /^\/api\/wm\/race$/, createRace],

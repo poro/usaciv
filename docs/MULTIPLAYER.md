@@ -1,4 +1,4 @@
-# Multiplayer: backend and API contract (v0.3, step 1)
+# Multiplayer: backend and API contract (v0.4)
 
 The site stays static. A small Cloudflare Worker sits in front of the same static assets and answers only
 `/api/*`. Everything else is still served straight from the assets.
@@ -8,9 +8,9 @@ The site stays static. A small Cloudflare Worker sits in front of the same stati
   - `run_worker_first: ["/api/*"]` sends API calls to the Worker.
   - **D1** (`DB`, database `usaciv`) holds players and scores.
   - A **Durable Object** class `RaceRoom` (SQLite-backed, WebSocket hibernation) runs one live room per object.
-- **Identity, step 1 (no login):** a player is a random id plus a secret token, issued on first use and kept in
-  `localStorage` (`usaciv:player`). It carries a public nickname. Login (email link, Google, Apple; ROADMAP Phase 3)
-  will later attach to this same player row, so nothing is lost when it arrives.
+- **Identity:** a player is a random id plus a secret token, issued on first use and kept in `localStorage`
+  (`usaciv:player`). It carries a public nickname. **Login** (below) attaches passkeys, more devices and (once set up)
+  Google to that same player row, so a nickname player loses nothing by signing in later.
 - **Trust:** the server never takes a score from the client.
   - It replays the submitted moves with the **same pure `sim/` modules** the browser uses, imported by the Worker
     from `web/js/games/<mode>/sim/`.
@@ -29,10 +29,13 @@ worker/wm.js           Which Metro?: daily submit/board, race room create
 worker/race.js         export class RaceRoom (Durable Object)
 worker/ml.js           Mainline: submit/board (uses web/js/games/mainline/sim/verify.js)
 worker/vs.js           Mainline versus: room create/info and export class VersusRoom (Durable Object)
+worker/auth.js         login: passkeys, device codes, Google (off until configured), sign-out, merge, delete
+worker/webauthn.js     passkey verification (CBOR/COSE parsing, ES256/RS256 with WebCrypto); pure, no npm
 worker/rules.js        pure rules (names, step checks + replay, room codes, places); tested by tests/js/worker.test.mjs
 worker/blocklist.js    the short name blocklist
-migrations/0001_init.sql
+migrations/0001_init.sql, 0002_login.sql
 web/js/games/shared/net.js   the browser client (below)
+web/js/app/account.js        the top-bar account button and panel
 ```
 
 The Worker may import from `web/js/games/**/sim/*.js` and `web/js/games/shared/rng.js`, all pure ES modules. It must
@@ -253,6 +256,72 @@ name, bot, online, ready}]}`
   90 s after the first one. The AI nations append their actions, then `{r: 1}`.
 - **Codes:** room codes are shared across games, so either game's status endpoint answers with the room's own
   `game`.
+
+## Login
+
+Login is optional and never needed for single player. It exists so a player can keep one identity across devices
+and survive cleared browser data.
+
+**Methods:**
+- **Passkeys** (WebAuthn, the default; works today with no setup). A player saves a passkey from the account panel
+  (Face ID, Touch ID, Windows Hello, a phone, a password manager). On any device, "Sign in with a passkey" asks the
+  browser for a discoverable credential; no username is typed. The relying party id is the site's host name, so
+  passkeys made on `usaciv.mark-ollila.workers.dev` work only there (a custom domain later means new passkeys).
+- **Device codes.** A signed-in device shows an 8-character code (alphabet without 0/O/1/I, valid 10 minutes, single
+  use); typing it on another device signs that device in. For browsers without passkeys.
+- **Google** (OpenID Connect, authorization code with PKCE and a nonce). Built and tested but **off** until the Worker
+  has the secrets `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (a Google Cloud "Web application" OAuth client with
+  the redirect URI `https://<host>/api/auth/google/callback`). `GET /api/auth/config` reports `google: true` once
+  both are set, and the panel then shows "Continue with Google".
+- **Apple and email links:** not built. Apple needs a paid developer enrollment; email links need a sending domain.
+
+**How it fits the player rows:**
+- `players.token_hash` stays the token of the device that made the player. Every later sign-in adds a `sessions` row
+  with its own token. Signing out deletes that row (or, for the first device, replaces its hash with an unusable
+  `revoked:` value). A player keeps at most 20 sessions; the least recently used go first.
+- **Merge on sign-in:** if the device signing in holds an *anonymous* player (no passkey, no identity), its scores
+  move into the account and the anonymous player is deleted. Daily scores: the account's entry for a date wins.
+  Mainline: the better run per scenario wins. A player that has a passkey or identity is never merged.
+- A "secured" player has at least one passkey or identity. The panel warns an unsecured player that signing out or
+  clearing site data loses them.
+- **Delete player:** removes the player, its scores, sessions, passkeys and identities (the nickname must be typed).
+
+**Passkey checks** (`worker/webauthn.js`): client data type, challenge (single use, 5 minutes, stored in
+`auth_tokens`), exact origin, not cross-origin; `rpIdHash`, the user-present flag, the attested credential; ES256 or
+RS256 signatures over `authenticatorData ‖ SHA-256(clientDataJSON)`; and a sign counter that may not go backwards
+while non-zero. Attestation is "none": a passkey is trusted because a signed-in player added it.
+
+| Method and path | Auth | Body → response |
+|---|---|---|
+| `GET /api/auth/config` | | → `{passkeys, link, google, apple, email}` |
+| `GET /api/account` | ✓ | → `{id, name, created, passkeys: [{id, name, created, lastUsed}], identities: [{provider, email, created}], devices, secured, thisDevice: "device"\|"session"}` |
+| `DELETE /api/account` | ✓ | `{confirm: <nickname>}` → `{ok}` |
+| `POST /api/auth/passkey/register/options` | ✓ | → `{challengeId, publicKey}` (WebAuthn creation options, binary fields base64url). Counts as a write |
+| `POST /api/auth/passkey/register` | ✓ | `{challengeId, credential: {id, clientDataJSON, attestationObject, transports}, name?}` → `{passkey}` (201; 409 if already saved) |
+| `POST /api/auth/passkey/login/options` | | → `{challengeId, publicKey}` (request options, empty `allowCredentials`) |
+| `POST /api/auth/passkey/login` | (✓) | `{challengeId, credential: {id, clientDataJSON, authenticatorData, signature, userHandle}}` → `{id, name, token, merged}` |
+| `PATCH /api/auth/passkey/:id` | ✓ | `{name}` → `{ok, name}` |
+| `DELETE /api/auth/passkey/:id` | ✓ | → `{ok}` |
+| `POST /api/auth/link` | ✓ | → `{code, expires}` (201). One live code per player; a new one replaces it |
+| `POST /api/auth/link/redeem` | (✓) | `{code}` (case, spaces and dashes ignored) → `{id, name, token, merged}` |
+| `POST /api/auth/google/start` | (✓) | `{returnTo}` → `{url}`; signed in, the Google account is added to this player |
+| `GET /api/auth/google/callback` | | Google's redirect → 302 to `returnTo#auth=<handoff>` (or `#auth-error=…`) |
+| `POST /api/auth/handoff` | (✓) | `{code}` → `{id, name, token, merged}` (the handoff is single use, 2 minutes) |
+| `DELETE /api/auth/identity/:provider` | ✓ | → `{ok}` |
+| `POST /api/auth/signout` | ✓ | → `{ok}`; this device's token stops working |
+| `POST /api/auth/signout-others` | ✓ | → `{ok}`; every other device's token stops working |
+
+`(✓)` on a sign-in call means: send this device's current token if it has one, so its anonymous scores merge.
+`merged` is `{daily, runs}` (rows that were on the anonymous player) or `null`.
+
+**Limits:** 30 sign-in attempts (passkey options/verify, handoffs, Google starts) per IP per 10 minutes; 10 code
+redemptions per IP per 10 minutes (an 8-character code has 40 bits, so guessing is hopeless at that rate).
+
+**Browser** (`net.js`): `addPasskey()`, `signInWithPasskey()`, `linkCode()`, `redeemCode(code)`,
+`signInWithGoogle()`, `signOut()`, `account()`, `onPlayer(f)` (fires on sign-in, sign-out, rename and changes in
+other tabs). A Google redirect comes back as `/#auth=…`; `net.js` removes it from the address bar before the app reads
+its hash and restores the page's own hash from `sessionStorage`. The games' nickname prompts carry a "Have a player?
+Sign in" link (`[data-open-account]`) that opens the panel; Which Metro? continues the pending step once signed in.
 
 ## Local development
 

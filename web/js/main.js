@@ -19,6 +19,7 @@ import { resourceFilterSig, layerActive, layerError, Z as LAYER_Z } from "./rend
 import { installExtensions } from "./ext/index.js";
 import { initShare } from "./app/share.js";
 import { initHelp } from "./app/help.js";
+import { initAccount } from "./app/account.js";
 
 const { drawStatic, drawOverlay, OCEAN_BG } = mapRender;
 
@@ -684,6 +685,7 @@ async function main() {
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => (toastEl.hidden = true), 1800);
   };
+  const toastLong = (msg) => { toast(msg); clearTimeout(toastTimer); toastTimer = setTimeout(() => (toastEl.hidden = true), 4500); };
   ui = createUi(app, {
     toast,
     // A dock opened, closed or changed width: the usable map area changed.
@@ -812,6 +814,7 @@ async function main() {
     },
   });
 
+  initAccount({ toast: (m) => toastLong(m) });
   document.getElementById("btn-help").onclick = () => help.toggle();
   document.getElementById("btn-pedia").onclick = () => pedia.open();
 

@@ -109,8 +109,7 @@ labels the answer and each wrong guess on the map.
 **Step 1 shipped 2026-11-26** (no login yet; see [MULTIPLAYER.md](MULTIPLAYER.md)): a Worker in front of the static
 site with D1 and a `RaceRoom` Durable Object. Players pick a nickname (a device id and token, no account). Which
 Metro? has a daily leaderboard and live races by room link; Mainline has a best-run board per scenario. The server
-replays every submitted run with the same `sim/` code, so scores can't be typed in. Next: login (email link, Google,
-Apple) attached to the same player rows, then Mainline versus and Founders hotseat/online.
+replays every submitted run with the same `sim/` code, so scores can't be typed in.
 
 **Mainline versus shipped 2026-11-26** (sim/versus.js; protocol in [MULTIPLAYER.md](MULTIPLAYER.md)):
 - **Companies and contracts:** 2–4 rail companies on one scenario map. A contract pays only the company holding it:
@@ -134,11 +133,23 @@ Apple) attached to the same player rows, then Mainline versus and Founders hotse
   one-region-each starts met in only 3 of 6 games. "Whole country" keeps the old layout. Local URLs mark it with a
   trailing `.far`; old saves and rooms replay as "far".
 
+**Login shipped 2026-11-26** (worker/auth.js, app/account.js; details in [MULTIPLAYER.md](MULTIPLAYER.md#login)):
+- **Passkeys:** an account button in the top bar. A nickname player saves it with a passkey and can then sign in on
+  any device; no email or password is stored. Verification is our own (worker/webauthn.js, WebCrypto, no npm).
+- **Device codes:** a signed-in device shows an 8-character code that signs another device in (for browsers without
+  passkeys).
+- **Nothing lost:** login attaches to the existing player rows. Signing in on a device that played anonymously moves
+  its daily scores and Mainline runs into the account. Sign out, sign out other devices, rename passkeys, and delete
+  the player with everything stored about it.
+- **Google:** built and tested, off until a Google OAuth client id and secret are set as Worker secrets. Apple (needs
+  a developer enrollment) and email links (need a sending domain) are not built.
+
 The static site stays static. Multiplayer is added as a small backend next to it.
 
 - **Hosting:** Cloudflare Workers + Durable Objects (one object per game room) + D1 for accounts and leaderboards.
   This matches the hosting already used for your other projects.
-- **Login:** passwordless email links plus Google/Apple OAuth. Guests can always play single player with no account.
+- **Login:** passkeys and device codes (shipped); Google ready to switch on; Apple and email links later. Guests can
+  always play single player with no account.
 - **Async first:**
   - a daily leaderboard for Which Metro?
   - a shared seed, best-score board for Mainline scenarios

@@ -26,6 +26,18 @@ export function createOnline({ ctx, net, body, hooks }) {
   let race = null; // {code, room, ws, status, attempts, timer, closed, err, throttle, finishWs}
 
   const me = () => (online ? net.player() : null);
+  // Signed in (or out) from the account panel: a pending "pick a nickname first" step goes ahead with that player.
+  const offPlayer = net.onPlayer?.((p) => {
+    if (stopped || !online) return;
+    if (board.key) board.at = 0;
+    if (p && nick.open && nick.mode === "create") {
+      const then = nick.then;
+      nick = { open: false, mode: "create", then: null, err: "", busy: false, why: "", focus: false };
+      paint();
+      then?.();
+    } else paint();
+    afterRender(hooks.view());
+  });
   const sentKey = (key) => `sent:${key}`;
 
   function init() {
@@ -93,6 +105,7 @@ export function createOnline({ ctx, net, body, hooks }) {
         </div>
         ${nick.err ? `<p class="wm-err" role="alert">${esc(nick.err)}</p>` : ""}
         <p class="g-note">Shown on leaderboards and in races: 2–20 letters, digits, spaces or _ - . '</p>
+        ${nick.mode === "rename" ? "" : `<p class="g-note">Played on another device? <button type="button" class="linkish-open" data-open-account>Have a player? Sign in</button></p>`}
       </form>`;
   }
 
@@ -528,6 +541,6 @@ export function createOnline({ ctx, net, body, hooks }) {
       paint();
       return true;
     },
-    stop() { stopped = true; leaveRace(); },
+    stop() { stopped = true; offPlayer?.(); leaveRace(); },
   };
 }

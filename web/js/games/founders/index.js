@@ -786,7 +786,7 @@ export async function start(ctx) {
     if (mp && !mp.m) {
       body.classList.remove("fd-setup");
       body.innerHTML = mp.screen === "nick" ? `<div class="fd-mp-lobby"><h3 class="fd-verdict">Join Founders room <b class="fd-mp-code">${esc(mp.code)}</b></h3>
-        <label class="fd-mp-nick">Your nickname <input data-field="nick" maxlength="20" autocomplete="nickname" placeholder="2–20 letters"></label>
+        <label class="fd-mp-nick">Your nickname <input data-field="nick" maxlength="20" autocomplete="nickname" placeholder="2–20 letters"></label> <button type="button" class="linkish-open" data-open-account>Have a player? Sign in</button>
         <div class="g-row"><button class="g-btn primary" data-act="mpJoinNick">Join</button><button class="g-btn" data-act="mpLeave">Back</button></div></div>` : mpLobbyHtml(mp);
       return;
     }
