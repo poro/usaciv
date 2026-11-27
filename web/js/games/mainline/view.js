@@ -174,6 +174,100 @@ export function makeView(ctx, game) {
       `<br><span class="muted">Click to select it.</span>`;
   }
 
+  // --- power and fibre (sim/utility.js): lines, plants and research metros ---
+  const UCOL = { power: "#ffd24a", fibre: "#6fe3ff" };
+  let utilKey = "", utilGeo = null;
+  function utilGeometry() {
+    const { env, state, ev } = game;
+    const key = `${env.scenario.id}:${env.home?.id}:${state.nv}:${state.year}:${state.seed}`;
+    if (key === utilKey && utilGeo) return utilGeo;
+    utilKey = key;
+    const power = new Path2D(), fibre = new Path2D();
+    for (const [k, l] of Object.entries(state.lines || {})) {
+      const p = k[0] === "p" ? power : fibre;
+      p.moveTo(g.cx(l.a), g.cy(l.a));
+      p.lineTo(g.cx(l.b), g.cy(l.b));
+    }
+    const u = env.utility || { power: [], talent: [], talentHubs: [] };
+    const plants = u.power.map((c) => ({ c, x: g.cx(c.cell), y: g.cy(c.cell), on: ev.utility?.power.has(c.id) }));
+    const servedHubs = new Set();
+    for (const t of u.talent) if (ev.utility?.talent.has(t.id)) { servedHubs.add(t.a); servedHubs.add(t.b); }
+    const hubs = u.talentHubs.map((id) => { const m = env.cities[env.cityIdx.get(id)]; return { id, x: g.cx(m.cell), y: g.cy(m.cell), on: servedHubs.has(id) }; });
+    utilGeo = { power, fibre, plants, hubs, any: !!state.lines };
+    return utilGeo;
+  }
+  const utilityLayer = {
+    id: "utility", z: 56.6, minRpx: 0, snapshot: true,
+    visible: () => !!game.state && game.ui.screen !== "picker" && !game.vs && !!game.env.utility,
+    sig: () => (game.state ? `${game.env.scenario.id}:${game.state.seed}:${game.state.nv}:${game.state.year}:${game.ui.net}` : "none"),
+    draw(c, vp, w, o) {
+      const G = utilGeometry();
+      const s = vp.s, Rpx = o.Rpx;
+      const lw = clamp(Rpx * 0.08, 1.6, 4.5);
+      const mode = game.ui.net;
+      c.lineCap = "round";
+      c.lineJoin = "round";
+      if (G.any) {
+        c.strokeStyle = "rgba(12,10,6,.8)";
+        c.lineWidth = (lw + 2) / s;
+        c.stroke(G.power); c.stroke(G.fibre);
+        c.strokeStyle = UCOL.power;
+        c.lineWidth = lw / s;
+        c.stroke(G.power);
+        c.strokeStyle = UCOL.fibre;
+        c.setLineDash([(lw * 2.2) / s, (lw * 1.4) / s]);
+        c.stroke(G.fibre);
+        c.setLineDash([]);
+      }
+      // plants: always when served; all of them while building power
+      const r = clamp(Rpx * 0.2, 3, 10) / s;
+      for (const p of G.plants) {
+        if (!p.on && mode !== "power") continue;
+        if (p.x < vp.x0 - 40 || p.x > vp.x1 + 40 || p.y < vp.y0 - 40 || p.y > vp.y1 + 40) continue;
+        c.beginPath();
+        c.moveTo(p.x, p.y - r * 1.25); c.lineTo(p.x + r * 1.1, p.y); c.lineTo(p.x, p.y + r * 1.25); c.lineTo(p.x - r * 1.1, p.y); c.closePath();
+        c.fillStyle = p.on ? UCOL.power : "rgba(255,210,74,.35)";
+        c.fill();
+        c.lineWidth = Math.max(1, r * s * 0.3) / s;
+        c.strokeStyle = p.c.type === "coal_plant" || p.c.type === "gas_plant" ? "#6b4a2a" : "#2a1d10";
+        c.stroke();
+      }
+      // research metros: rings, while building fibre or once linked
+      for (const h of G.hubs) {
+        if (!h.on && mode !== "fibre") continue;
+        c.beginPath();
+        c.arc(h.x, h.y, r * 1.9, 0, Math.PI * 2);
+        c.lineWidth = Math.max(1.5, r * s * 0.45) / s;
+        c.strokeStyle = h.on ? UCOL.fibre : "rgba(111,227,255,.45)";
+        c.stroke();
+      }
+    },
+    hit(x, y, Rpx) {
+      if (!game.state || (!game.ui.net || game.ui.net === "rail") && !game.state.lines) return null;
+      const tol = (6 * g.R) / Math.max(1, Rpx);
+      let best = null, bd = tol;
+      for (const p of utilGeometry().plants) {
+        if (!p.on && game.ui.net !== "power") continue;
+        const d = Math.hypot(x - p.x, y - p.y);
+        if (d < bd) { bd = d; best = p.c; }
+      }
+      return best ? { kind: "plant", id: best.id } : null;
+    },
+    tooltip: (it) => plantTip(it.id),
+  };
+  function plantTip(id) {
+    const { env, state, ev } = game;
+    const c = env.utility?.byId.get(id);
+    if (!c) return null;
+    const city = env.cities[env.cityIdx.get(c.city)];
+    const on = ev.utility?.power.get(id);
+    const tr = S.transitionShare(c.type, state.year);
+    return `<b>${esc(c.name)}</b><br>${esc(TYPE_LABEL[c.type] || c.type)} · ${c.mw.toLocaleString("en-US")} MW <span class="muted">(EIA-860M)</span><br>` +
+      `Supplies <b>${esc(city.name)}</b>, ${c.km} km: ${on != null ? `<span class="ml-good">wired, +${on.toFixed(1)} cr/yr</span>` : `${c.base.toFixed(1)} cr/yr once a power line reaches downtown`}` +
+      (tr ? `<br><span class="muted">Transition cost: −${Math.round(tr * 100)}% of its pay this decade (a game model)</span>` : "");
+  }
+  const TYPE_LABEL = { nuclear: "Nuclear", hydro: "Hydro", wind: "Wind", solar: "Solar", geothermal: "Geothermal", gas_plant: "Gas plant", coal_plant: "Coal plant" };
+
   // --- demand lines ---
   let demandKey = "", demandSegs = [];
   function demand() {
@@ -320,6 +414,30 @@ export function makeView(ctx, game) {
         c.stroke();
         c.setLineDash([]);
       }
+      // highlighted power or talent contract: its two end hexes
+      const uc = hid && !hc ? env.utility?.byId.get(hid) : null;
+      if (uc) {
+        const centre = (id) => env.cities[env.cityIdx.get(id)].cell;
+        const ends = uc.kind === "power" ? [uc.cell, centre(uc.city)] : [centre(uc.a), centre(uc.b)];
+        const col = uc.kind === "power" ? "255,210,74" : "111,227,255";
+        for (const x of ends) {
+          const p = new Path2D();
+          hexPath(p, x, 1.1);
+          c.fillStyle = `rgba(${col},.3)`;
+          c.fill(p);
+          c.strokeStyle = `rgba(${col},.95)`;
+          c.lineWidth = 2 / s;
+          c.stroke(p);
+        }
+        c.beginPath();
+        c.moveTo(g.cx(ends[0]), g.cy(ends[0]));
+        c.lineTo(g.cx(ends[1]), g.cy(ends[1]));
+        c.strokeStyle = `rgba(${col},.9)`;
+        c.setLineDash([8 / s, 6 / s]);
+        c.lineWidth = 2.5 / s;
+        c.stroke();
+        c.setLineDash([]);
+      }
       // selected link
       if (ui.link && game.state.links[ui.link]) {
         const l = game.state.links[ui.link];
@@ -346,7 +464,7 @@ export function makeView(ctx, game) {
         c.strokeStyle = "rgba(10,10,10,.6)";
         c.lineWidth = 8 / s;
         c.stroke();
-        c.strokeStyle = good ? "rgba(120,240,150,.95)" : "rgba(255,90,80,.95)";
+        c.strokeStyle = !good ? "rgba(255,90,80,.95)" : pl.net === "power" ? "rgba(255,210,74,.95)" : pl.net === "fibre" ? "rgba(111,227,255,.95)" : "rgba(120,240,150,.95)";
         c.lineWidth = 4.5 / s;
         c.setLineDash([9 / s, 5 / s]);
         c.stroke();
@@ -479,6 +597,7 @@ export function makeView(ctx, game) {
   ctx.addLayer(regionLayer);
   ctx.addLayer(rivalLayer);
   ctx.addLayer(links);
+  ctx.addLayer(utilityLayer);
   ctx.addLayer(demandLayer);
   ctx.addOverlay(trainLayer);
   ctx.addOverlay(world);

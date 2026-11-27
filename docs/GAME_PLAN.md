@@ -135,7 +135,7 @@ tests/js/         node --test for sim/ (Node is already here; still no npm and n
 | M3 | Risk | Disasters are rolled from FEMA county rates. Links get damaged, repaired and hardened. Event cards quote the real rates. |
 | M4 | Win | Score against the baseline, an end screen with a share image, and three scenarios plus Sandbox. |
 | M5 | Feel | Train animation (✅ built: `trains.js`, a 30 fps overlay loop that stops when idle, hidden, over or reduced-motion; Trains toggle), sound (✅ built: `sound.js`, off-by-default Web Audio blips for build, End turn and disasters), a 3-step tutorial (✅ built), phone layout (✅ first pass: shorter sheet, End turn pinned to its bottom, tabs fit 375px; check on devices). |
-| M6 | Power and fibre | The second and third network types, with power and talent contracts. |
+| M6 | Power and fibre | The second and third network types, with power and talent contracts. ✅ built 2026-11-27 (`sim/utility.js`): power lines from the region's 24 strongest real plants (EIA-860M MW) to the metro each supplies (population ÷ distance²), coal and gas paying less each decade; fibre between the 8 research metros (Science yield) paying a little and adding GDP growth at both ends. Lines cost 60% / 25% of rail, 2% upkeep, no disaster damage; single player only (versus refuses them). Games that build no line keep their exact state and hash. |
 | Later | | AI rivals, co-op with an AI partner, the `game.json` builder, Alaska and Hawaii, the daily seed. |
 
 M0–M4 make a playable, shareable game. A focused session can do M0–M2 in roughly a day of Claude time, and M3–M4 in

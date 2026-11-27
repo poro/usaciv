@@ -6,6 +6,7 @@
 import { makeHexMap } from "../../shared/hexmap.js";
 import { scenarioById } from "./scenarios.js";
 import { riverCrossings, realRail, costTable } from "./costs.js";
+import { buildUtility } from "./utility.js";
 import { buildContracts, payFor } from "./contracts.js";
 import { hazardTable } from "./events.js";
 import { yearlyRate, partnerWeights } from "./growth.js";
@@ -154,6 +155,7 @@ export function makeEnv(data, scenarioId, { home = null, hexmap = null } = {}) {
     return Infinity;
   };
   env.contracts = buildContracts(env, { models: scenario.models });
+  env.utility = buildUtility(env, data.resources); // power and talent contracts (utility.js)
   env.contractById = new Map(env.contracts.map((c) => [c.id, c]));
   Object.assign(env, frontierGrant(env));
   env.partners = partnerWeights(env);

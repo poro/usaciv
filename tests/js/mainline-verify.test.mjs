@@ -25,7 +25,7 @@ const botRun = (id, seed, home = null) => {
 };
 
 test("REQUIRED_DATA is what index.js loads for makeEnv", () => {
-  assert.deepEqual([...REQUIRED_DATA].sort(), ["cities", "disasters", "infrastructure", "trade", "world"]);
+  assert.deepEqual([...REQUIRED_DATA].sort(), ["cities", "disasters", "infrastructure", "resources", "trade", "world"]);
   const src = readFileSync(new URL("../../web/js/games/mainline/index.js", import.meta.url), "utf8");
   for (const n of REQUIRED_DATA) assert.match(src, new RegExp(`\\b${n}\\b`), `index.js passes ${n}`);
 });

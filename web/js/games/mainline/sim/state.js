@@ -21,6 +21,7 @@
 //          {type: "harden", key, hz?} (one hazard type, or every one the link is exposed to) ·
 //          {type: "double", key} (double-track a link) · {type: "hub", city} (build or raise a terminal) ·
 //          {type: "express", id} (launch an express service on a served contract) · {type: "closeExpress", id} ·
+//          {type: "line", net: "power"|"fibre", path} (utility lines, utility.js; state.lines appears with the first) ·
 //          {type: "endTurn"}
 //
 // Upgrades are the late-game money sinks, and each answers a different question:
@@ -42,6 +43,7 @@ import { rollDisasters, linkHazards, HZ_BIT, HZ_ALL, fix } from "./events.js";
 import { HUB_MAX } from "./env.js";
 import { regionGdp } from "./score.js";
 import { expressCost, expressUpkeep, corridorStatus, expressBonus } from "./express.js";
+import { NETS, lineCost, lineKey, lineAnchors, serveUtility, lineMaintenance } from "./utility.js";
 
 export const SAVE_VERSION = 2;
 export const MAINT_RATE = 0.03; // of a link's build cost, every turn
@@ -113,6 +115,7 @@ export const maintenance = (state, env = null) => {
   for (const l of Object.values(state.links)) s += Math.max(0.05, MAINT_RATE * l.cost) * (l.dt ? DOUBLE_MAINT : 1);
   if (env) for (const [id, lv] of Object.entries(state.hubs || {})) s += HUB_MAINT * hubInvested(env, id, lv);
   if (env) s += expressUpkeep(env, state.express);
+  if (state.lines) s += lineMaintenance(state);
   return r1(s);
 };
 /** Metros with a station: a hex of the city is on your network. */
@@ -185,6 +188,29 @@ export function check(env, state, action) {
       const net = networkCells(state);
       const touches = (c) => net.has(c) || env.homeCells.has(c);
       if (!touches(p[0]) && !touches(p[p.length - 1])) return `Connect to your network (or start in ${env.home?.name || "your home metro"})`;
+      if (r1(cost) > state.cash + 1e-9) return `Not enough money: ${r1(cost)} cr needed, ${r1(state.cash)} cr in hand`;
+      return null;
+    }
+    case "line": {
+      if (!NETS.includes(action.net)) return "Unknown network";
+      if (!env.utility) return "No utility data on this map";
+      const p = action.path;
+      if (!Array.isArray(p) || p.length < 2) return "Pick two different hexes";
+      const lines = state.lines || {};
+      let cost = 0, fresh = 0;
+      for (let k = 1; k < p.length; k++) {
+        if (hm.dist(p[k - 1], p[k]) !== 1) return "Lines must run between neighbouring hexes";
+        if (lines[lineKey(action.net, hm.edgeKey(p[k - 1], p[k]))]) continue;
+        const c = lineCost(env, action.net, p[k - 1], p[k]);
+        if (!(c < Infinity)) return "Can't build there (open ocean, foreign land or outside the region)";
+        cost += c;
+        fresh++;
+      }
+      if (!fresh) return "Already built";
+      const anchors = lineAnchors(env, state, action.net);
+      if (!anchors.has(p[0]) && !anchors.has(p[p.length - 1])) {
+        return action.net === "power" ? "Start at a power plant, a metro it could supply, or your own power lines" : "Start at a research metro or your own fibre";
+      }
       if (r1(cost) > state.cash + 1e-9) return `Not enough money: ${r1(cost)} cr needed, ${r1(state.cash)} cr in hand`;
       return null;
     }
@@ -275,6 +301,25 @@ export function applyValid(env, state, action) {
         totals: { ...state.totals, built: r1(state.totals.built + cost) },
       };
     }
+    case "line": {
+      const lines = { ...(state.lines || {}) };
+      let cost = 0;
+      const p = action.path;
+      for (let k = 1; k < p.length; k++) {
+        const a = Math.min(p[k - 1], p[k]), b = Math.max(p[k - 1], p[k]);
+        const key = lineKey(action.net, hm.edgeKey(a, b));
+        if (lines[key]) continue;
+        const c = lineCost(env, action.net, a, b);
+        lines[key] = { a, b, cost: c, year: state.year };
+        cost += c;
+      }
+      cost = r1(cost);
+      return {
+        ...state, lines, nv: state.nv + 1, cash: r1(state.cash - cost),
+        undo: [...state.undo, { cash: state.cash, changes: [], lines: state.lines || null, what: "line", totals: state.totals }],
+        totals: { ...state.totals, lines: r1((state.totals.lines || 0) + cost) },
+      };
+    }
     case "repair": case "harden": case "double": {
       const l = state.links[action.key];
       let cost, next;
@@ -350,9 +395,14 @@ export function applyValid(env, state, action) {
         if (prev) links[key] = prev;
         else delete links[key];
       }
-      return {
+      const back = {
         ...state, links, hubs: u.hubs || state.hubs, express: u.express || state.express, nv: state.nv + 1, cash: u.cash, undo: state.undo.slice(0, -1), totals: u.totals || state.totals,
       };
+      if (u.what === "line") {
+        if (u.lines) back.lines = u.lines;
+        else delete back.lines; // undoing the first line leaves the state as it was before lines existed
+      }
+      return back;
     }
     case "endTurn":
       return endTurn(env, state);
@@ -404,7 +454,10 @@ export function evaluate(env, state) {
     potential = 0;
     for (const s of potentialServed.values()) potential += s.pay;
   }
-  return { graph, served, loads, revenue: r1(revenue), potential: r1(potential), potentialServed, maint: maintenance(state, env) };
+  // power and fibre (utility.js): nothing at all unless lines exist
+  const utility = serveUtility(env, state, state.lines ? growthOf(env, state) : null);
+  if (utility.revenue) { revenue = r1(revenue + utility.revenue); potential = r1(potential + utility.revenue); }
+  return { graph, served, loads, revenue: r1(revenue), potential: r1(potential), potentialServed, maint: maintenance(state, env), utility };
 }
 
 function endTurn(env, state) {
@@ -419,7 +472,8 @@ function endTurn(env, state) {
   const cash = r1(state.cash + revenue - maint - interest);
   // 3. growth: baseline on trend, your metros with the access bonus of the intact network
   const access = accessShares(env, ev.graph);
-  const extra = expressBonus(env, hit.links, ev.served, state.express, state.cities);
+  let extra = expressBonus(env, hit.links, ev.served, state.express, state.cities);
+  if (ev.utility.extra) extra = extra.map((x, i) => x + ev.utility.extra[i]); // talent links (utility.js)
   const cities = grow(env, state.cities, access, state.hubs, extra);
   const base = grow(env, state.base, null);
   const damaged = roll.events.reduce((s, e) => s + e.damaged, 0);

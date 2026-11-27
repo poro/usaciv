@@ -40,7 +40,7 @@ export async function start(ctx) {
     body.innerHTML = `<p>Mainline needs trade.json, infrastructure.json and disasters.json, and at least one is missing.</p>`;
     return {};
   }
-  const data = { world: ctx.data.world, cities: ctx.cities, trade, infrastructure, disasters };
+  const data = { world: ctx.data.world, cities: ctx.cities, trade, infrastructure, disasters, resources: ctx.data.resources };
   const getEnv = (scenario, home) => {
     const key = `${scenario}:${scenario === "sandbox" ? home : ""}`;
     if (!envCache.has(key)) envCache.set(key, S.makeEnv(data, scenario, { home, hexmap: ctx.hexmap }));
@@ -54,7 +54,7 @@ export async function start(ctx) {
     log: null, // the action log since newGame (runlog.js); null for a save from before logs
     online: { avail: false, status: "idle", error: null, result: null, board: null, nick: "" },
     sel: { start: null, end: null, hover: null, plan: null },
-    ui: { tab: "open", showDemand: prefs.showDemand !== false, trains: prefs.trains !== false, sound: prefs.sound === true, motion: true,
+    ui: { tab: "open", net: "rail", showDemand: prefs.showDemand !== false, trains: prefs.trains !== false, sound: prefs.sound === true, motion: true,
       highlight: null, hover: null, link: null, help: false, screen: "picker", coach: null },
     contractTip: (id) => {
       const c = game.env?.contractById.get(id);
@@ -168,7 +168,7 @@ export async function start(ctx) {
     if (r.error) { if (!quiet) ctx.toast(r.error); return false; }
     game.state = r.state;
     if (action.type === "endTurn") afterTurn(before);
-    else if (action.type === "build") sound.play("build");
+    else if (action.type === "build" || action.type === "line") sound.play("build");
     if (game.ui.link && !game.state.links[game.ui.link]) game.ui.link = null;
     save();
     refresh();
@@ -498,7 +498,21 @@ export async function start(ctx) {
   // --- building ---
   function setPlan(to) {
     const { sel } = game;
-    sel.plan = sel.start != null && to != null && to >= 0 && to !== sel.start ? S.plan(game.env, game.state, sel.start, to) : null;
+    const net = game.vs ? "rail" : game.ui.net;
+    if (!(sel.start != null && to != null && to >= 0 && to !== sel.start)) { sel.plan = null; return; }
+    if (net === "rail") { sel.plan = S.plan(game.env, game.state, sel.start, to); return; }
+    // power or fibre (sim/utility.js): same shape as a rail plan, so the preview and label work unchanged
+    const pl = S.planLine(game.env, game.state, net, sel.start, to);
+    sel.plan = pl.path ? { ...pl, net, error: S.check(game.env, game.state, { type: "line", net, path: pl.path }) } : { ...pl, net };
+  }
+  /** Switch what the next click builds: rail, power or fibre. */
+  function setNet(net) {
+    if (game.vs || !["rail", ...S.NETS].includes(net)) return;
+    game.ui.net = net;
+    game.ui.link = null;
+    game.sel = { start: null, end: null, hover: game.sel.hover, plan: null };
+    if (net !== "rail") game.ui.tab = "utility";
+    refresh();
   }
   function cancelBuild() {
     game.sel = { start: null, end: null, hover: game.sel.hover, plan: null };
@@ -508,7 +522,8 @@ export async function start(ctx) {
     const pl = game.sel.plan;
     if (!pl?.path) return;
     const end = pl.path[pl.path.length - 1];
-    if (act({ type: "build", path: pl.path })) {
+    const action = pl.net ? { type: "line", net: pl.net, path: pl.path } : { type: "build", path: pl.path };
+    if (act(action)) {
       // keep laying from where this stretch ended
       game.sel = { start: end, end: null, hover: game.sel.hover, plan: null };
       refreshBuild();
@@ -531,7 +546,7 @@ export async function start(ctx) {
     const { sel } = game;
     const cell = ev.cell;
     if (sel.start == null) {
-      if (ev.layer === "mainline:links" && ev.item?.key) {
+      if (ev.layer === "mainline:links" && ev.item?.key && (game.vs || game.ui.net === "rail")) {
         game.ui.link = ev.item.key;
         if (cell >= 0 && game.env.inRegion(cell)) sel.start = cell;
         refresh();
@@ -562,6 +577,21 @@ export async function start(ctx) {
   // --- dock clicks ---
   body.addEventListener("click", (e) => {
     const t = e.target.closest("[data-act]");
+    const ul = !t && e.target.closest("[data-ucontract]");
+    if (ul) {
+      const c = game.env.utility?.byId.get(ul.dataset.ucontract);
+      if (!c) return;
+      game.ui.highlight = game.ui.highlight === c.id ? null : c.id;
+      const cells = c.kind === "power" ? [c.cell, game.env.cities[game.env.cityIdx.get(c.city)].cell]
+        : [c.a, c.b].map((id) => game.env.cities[game.env.cityIdx.get(id)].cell);
+      if (game.ui.highlight && app.fitBounds) {
+        const g = ctx.hexmap.grid, pad = 90;
+        const xs = cells.map((x) => g.cx(x)), ys = cells.map((x) => g.cy(x));
+        app.fitBounds(Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad, { maxScale: 6 });
+      }
+      refresh();
+      return;
+    }
     const li = e.target.closest("[data-contract]");
     if (!t && li) {
       const id = li.dataset.contract;
@@ -603,6 +633,7 @@ export async function start(ctx) {
       case "coachReplay": game.ui.help = false; ctx.storage.set("seenHow", true); setCoach(0); body.scrollTop = 0; break;
       case "unlink": game.ui.link = null; refresh(); break;
       case "tab": game.ui.tab = t.dataset.tab; refresh(); break;
+      case "net": setNet(t.dataset.net); break;
       case "help": toggleHelp(); break;
       case "new": showPicker(); break;
       case "again": begin({ scenario: game.env.scenario.id, seed: newSeed(), home: game.env.home?.id }); break;
@@ -784,6 +815,7 @@ export async function start(ctx) {
       return true;
     }
     if (k === "h" || k === "?") { toggleHelp(); return true; }
+    if (!game.vs && (k === "1" || k === "2" || k === "3")) { setNet(["rail", "power", "fibre"][+k - 1]); return true; }
     return false;
   });
 

@@ -26,6 +26,10 @@ export const HOW_TO = `<ol class="ml-how">
   <li><b>Run express trains.</b> Once a served contract's whole route is double track, launch passenger and express
   service on it (the <i>Express</i> tab). It costs a launch price and a yearly operating cost, and speeds the growth of
   every metro it stops at: the late game's way to turn cash into growth. Its growth effect is a game model.</li>
+  <li><b>Wire power and fibre.</b> Switch the builder to <i>Power</i> (<kbd>2</kbd>) or <i>Fibre</i> (<kbd>3</kbd>).
+  A power line from a real plant (EIA capacity) to the metro it supplies pays every year; coal and gas pay less each
+  decade. Fibre between research metros pays a little and speeds both metros' growth. Lines are cheaper than track and
+  disasters don't cut them. Their pay is a game model (the <i>Power &amp; fibre</i> tab). Single player only for now.</li>
 </ol>`;
 
 /** The first-run coach: three short steps (index.js moves them on as you play). */
@@ -123,15 +127,28 @@ export function gameHtml(m) {
   </div>`;
 }
 
+const NET_LABEL = { rail: "Rail", power: "Power", fibre: "Fibre" };
+function netSwitch(m) {
+  if (m.vs || !m.env.utility) return "";
+  const cur = m.ui.net || "rail";
+  return `<div class="ml-nets" role="radiogroup" aria-label="What to build">${["rail", "power", "fibre"].map((n, k) =>
+    `<button role="radio" class="ml-net ml-net-${n}" data-act="net" data-net="${n}" aria-checked="${cur === n}" title="${NET_LABEL[n]} (${k + 1})">${NET_LABEL[n]}</button>`).join("")}</div>`;
+}
+
 export function buildHtml(m) {
   const { env, sel, touch } = m;
   const pl = sel.plan;
+  const mode = m.vs ? "rail" : m.ui.net || "rail";
+  const sw = netSwitch(m);
   if (sel.start == null) {
+    if (mode === "power") return `${sw}<span class="ml-hint">Click a <b>power plant</b> (yellow diamond) or a line of yours, then the metro it supplies. Each wired plant pays every year; the <i>Power &amp; fibre</i> tab lists them.</span>`;
+    if (mode === "fibre") return `${sw}<span class="ml-hint">Click a <b>research metro</b> (blue ring), then another. Each linked pair pays a little and speeds both metros' growth.</span>`;
     const net = Object.keys(m.state.links).length;
-    return `<span class="ml-hint">${net ? "Click a hex on your network to extend it" : `Click a hex in <b>${esc(env.home?.name || "your home metro")}</b> (the gold station) to start laying track`}, or click a contract below to see its ends.</span>`;
+    return `${sw}<span class="ml-hint">${net ? "Click a hex on your network to extend it" : `Click a hex in <b>${esc(env.home?.name || "your home metro")}</b> (the gold station) to start laying track`}, or click a contract below to see its ends.</span>`;
   }
-  if (!pl) return `<span class="ml-hint">Now click where the track should go. <kbd>Esc</kbd> cancels.</span>`;
-  const head = pl.path ? `<div><b>${cr(pl.cost)}</b> <span class="muted">≈ ${usd(pl.cost)}</span> · ${pl.fresh} new link${pl.fresh === 1 ? "" : "s"}, ${pl.km} km</div>` : "";
+  if (!pl) return `${sw}<span class="ml-hint">Now click where the ${mode === "rail" ? "track" : mode === "power" ? "power line" : "fibre"} should go. <kbd>Esc</kbd> cancels.</span>`;
+  const unit = pl.net ? `${pl.net === "power" ? "power line" : "fibre"} segment` : "link";
+  const head = pl.path ? `${sw}<div><b>${cr(pl.cost)}</b> <span class="muted">≈ ${usd(pl.cost)}</span> · ${pl.fresh} new ${unit}${pl.fresh === 1 ? "" : "s"}, ${pl.km} km</div>` : sw;
   const detail = pl.path ? [pl.rail ? `${pl.rail} upgrade real rail` : "", pl.rivers ? `${pl.rivers} river crossing${pl.rivers === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ") : "";
   const err = pl.error ? `<div class="ml-bad">${esc(pl.error)}</div>` : "";
   const confirm = touch && sel.end != null && !pl.error
@@ -267,13 +284,44 @@ function contractsHtml(m) {
   }).join("");
   const nHubs = Object.values(state.hubs || {}).reduce((a, b) => a + b, 0);
   const nExp = Object.keys(state.express || {}).length;
+  const nUtil = (ev.utility?.power.size || 0) + (ev.utility?.talent.size || 0);
+  const utilTab = !m.vs && env.utility ? `<button role="tab" data-act="tab" data-tab="utility" aria-selected="${tab === "utility"}">Power &amp; fibre${nUtil ? ` (${nUtil})` : ""}</button>` : "";
   return `<div class="ml-tabs" role="tablist">
       <button role="tab" data-act="tab" data-tab="open" aria-selected="${tab === "open"}">Open (${open.length})</button>
       <button role="tab" data-act="tab" data-tab="served" aria-selected="${tab === "served"}">Served (${served.length})</button>
       <button role="tab" data-act="tab" data-tab="hubs" aria-selected="${tab === "hubs"}">Terminals${nHubs ? ` (${nHubs})` : ""}</button>
       <button role="tab" data-act="tab" data-tab="express" aria-selected="${tab === "express"}">Express${nExp ? ` (${nExp})` : ""}</button>
-      <span class="g-note">${tab === "hubs" ? "level · cost cr" : tab === "express" ? "stops · cost cr" : "value · cr / yr"}</span></div>
-    ${tab === "hubs" ? hubsHtml(m) : tab === "express" ? expressHtml(m) : `<ul class="ml-contracts">${rows || `<li class="muted ml-empty">${tab === "served" ? "Nothing served yet." : "Every contract is served."}</li>`}</ul>`}`;
+      ${utilTab}
+      <span class="g-note">${tab === "hubs" ? "level · cost cr" : tab === "express" ? "stops · cost cr" : tab === "utility" ? "cr / yr" : "value · cr / yr"}</span></div>
+    ${tab === "hubs" ? hubsHtml(m) : tab === "express" ? expressHtml(m) : tab === "utility" && utilTab ? utilityHtml(m) : `<ul class="ml-contracts">${rows || `<li class="muted ml-empty">${tab === "served" ? "Nothing served yet." : "Every contract is served."}</li>`}</ul>`}`;
+}
+
+const PLANT = { nuclear: "Nuclear", hydro: "Hydro", wind: "Wind", solar: "Solar", geothermal: "Geothermal", gas_plant: "Gas", coal_plant: "Coal" };
+function utilityHtml(m) {
+  const { env, state, ev, ui } = m;
+  const u = env.utility;
+  const cityName = (id) => env.cities[env.cityIdx.get(id)]?.name || id;
+  const row = (c, pay, on, label, sub, title) => `<li data-ucontract="${esc(c.id)}" class="${on ? "served" : ""}${ui.highlight === c.id ? " on" : ""}" title="${esc(title)}">
+      <span class="ml-kind ${c.kind}">${label}</span><span class="ml-cname">${sub}</span>
+      <span class="ml-pay ${on ? "ml-good" : ""}">${on ? "+" : ""}${pay.toFixed(1)}</span></li>`;
+  const power = u.power.map((c) => {
+    const got = ev.utility?.power.get(c.id);
+    const tr = S.transitionShare(c.type, state.year);
+    const pay = got ?? c.base * (1 - tr);
+    return { on: got != null, pay, html: row(c, pay, got != null, PLANT[c.type] || c.type, `${esc(c.name)} → ${esc(cityName(c.city))} <span class="muted">${c.mw.toLocaleString("en-US")} MW · ${c.km} km</span>`,
+      `${c.name}: ${c.mw} MW (EIA-860M) for ${cityName(c.city)}, ${c.km} km.${tr ? ` Transition cost this decade: −${Math.round(tr * 100)}% (a game model).` : ""} Pay is a game model: ln(1 + MW/100) × metro size.`) };
+  }).sort((a, b) => b.on - a.on || b.pay - a.pay);
+  const talent = u.talent.map((c) => {
+    const got = ev.utility?.talent.get(c.id);
+    return { on: got != null, pay: got ?? c.base, html: row(c, got ?? c.base, got != null, "talent", `${esc(cityName(c.a))} ↔ ${esc(cityName(c.b))} <span class="muted">${c.km} km</span>`,
+      `Fibre between two research metros (Science yield, cities.json). Pays a little and adds ${(S.TALENT_GROWTH * 100).toFixed(2)}% GDP growth a year at both ends (a game model).`) };
+  }).sort((a, b) => b.on - a.on || b.pay - a.pay);
+  const nP = power.filter((r) => r.on).length, nT = talent.filter((r) => r.on).length;
+  return `<p class="g-note">Lines cost ${Math.round(S.LINE_FACTOR.power * 100)}% (power) or ${Math.round(S.LINE_FACTOR.fibre * 100)}% (fibre) of rail on the same hexes, upkeep ${Math.round(S.LINE_MAINT * 100)}% a year, and are not hit by disasters. Press <kbd>2</kbd> or <kbd>3</kbd> to build them.</p>
+    <div class="ml-util-h">Power plants <span class="muted">${nP} of ${power.length} wired</span></div>
+    <ul class="ml-contracts">${power.map((r) => r.html).join("") || `<li class="muted ml-empty">No large plants in this region.</li>`}</ul>
+    <div class="ml-util-h">Research links <span class="muted">${nT} of ${talent.length} linked</span></div>
+    <ul class="ml-contracts">${talent.map((r) => r.html).join("") || `<li class="muted ml-empty">Too few research metros here.</li>`}</ul>`;
 }
 
 /** Plain-text description of a contract (native title tooltips and the map tooltip). */

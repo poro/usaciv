@@ -199,3 +199,14 @@
 .ml-vs-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
 .ml-vs-spark polyline { fill: none; stroke-width: 1.6; vector-effect: non-scaling-stroke; opacity: .8; }
 .ml-vs-spark polyline.me { stroke-width: 2.6; opacity: 1; }
+
+/* Power and fibre (M6) */
+.ml-nets { display: inline-flex; margin: 0 0 6px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.ml-net { background: transparent; border: 0; color: var(--ink-dim); padding: 3px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.ml-net + .ml-net { border-left: 1px solid var(--line); }
+.ml-net[aria-checked="true"].ml-net-rail { background: rgba(240,138,44,.25); color: #ffd2a4; }
+.ml-net[aria-checked="true"].ml-net-power { background: rgba(255,210,74,.22); color: #ffe7a0; }
+.ml-net[aria-checked="true"].ml-net-fibre { background: rgba(111,227,255,.2); color: #c4f3ff; }
+.ml-kind.power { background: rgba(255,210,74,.2); color: #ffe7a0; }
+.ml-kind.talent { background: rgba(111,227,255,.18); color: #c4f3ff; }
+.ml-util-h { margin: 8px 0 4px; font-family: var(--serif); color: var(--gold); font-size: 13px; display: flex; justify-content: space-between; }

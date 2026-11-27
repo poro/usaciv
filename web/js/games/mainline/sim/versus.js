@@ -63,6 +63,7 @@ export function vsCheck(env, vs, p, action) {
   const pl = vs.players[p];
   if (!pl) return "No such player";
   if (action?.type === "endTurn") return "The year ends when every company is ready";
+  if (action?.type === "line") return "Power and fibre are single-player only for now";
   return check(env, pl.state, action);
 }
 

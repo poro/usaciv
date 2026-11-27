@@ -16,6 +16,9 @@ export {
 } from "./express.js";
 export { stateHash } from "./hash.js";
 export {
+  NETS, LINE_FACTOR, LINE_MAINT, TALENT_GROWTH, POWER_TYPES, transitionShare, lineKey, lineCost, lineCells, lineAnchors, planLine, serveUtility,
+} from "./utility.js";
+export {
   newVersus, vsCheck, vsAct, settle, resolve as vsResolve, botActions, applyEntry, replay as vsReplay, standings, vsHash,
   VS_MAX, VS_YEARS, VS_COLORS, BOT_NAMES,
 } from "./versus.js";

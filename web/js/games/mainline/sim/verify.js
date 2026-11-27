@@ -8,6 +8,7 @@
 // rebuilds from data.world), starts newGame(env, {seed}) and applies every action with check() + apply. The first
 // malformed or invalid action rejects the run. The log must end the game (state.over: 2050 played), and the score is
 // the end screen's summary(). The log is the browser's action log, undo actions included (index.js records them).
+import { NETS } from "./utility.js";
 import { makeEnv } from "./env.js";
 import { newGame, check, applyValid } from "./state.js";
 import { summary } from "./score.js";
@@ -15,7 +16,7 @@ import { stateHash } from "./hash.js";
 import { scenarioById } from "./scenarios.js";
 import { HZ_TYPES } from "./events.js";
 
-export const REQUIRED_DATA = ["world", "cities", "trade", "infrastructure", "disasters"];
+export const REQUIRED_DATA = ["world", "cities", "trade", "infrastructure", "disasters", "resources"];
 
 // Bounds. A bot Sandbox game logs ~1,500 actions and ~2,000 path cells; a person plays far fewer, undo included.
 export const MAX_LOG = 5000; // actions
@@ -26,6 +27,7 @@ const MAX_ID = 64;
 // action type → allowed fields (besides type); "?" = optional
 const SHAPES = {
   build: { path: 1 },
+  line: { net: 1, path: 1 },
   undo: {},
   repair: { key: 1 },
   repairAll: {},
@@ -45,7 +47,8 @@ export function shapeError(a, size) {
   if (!shape) return `Unknown action ${typeof a.type === "string" ? `"${a.type.slice(0, MAX_ID)}"` : ""}`.trim();
   for (const k of Object.keys(a)) if (k !== "type" && !Object.hasOwn(shape, k)) return `Unexpected field "${k.slice(0, MAX_ID)}"`;
   for (const [k, req] of Object.entries(shape)) if (req && a[k] === undefined) return `Missing "${k}"`;
-  if (a.type === "build") {
+  if (a.type === "line" && !NETS.includes(a.net)) return "Bad network";
+  if (a.type === "build" || a.type === "line") {
     const p = a.path;
     if (!Array.isArray(p) || p.length < 2 || p.length > MAX_PATH) return "Bad path";
     for (const c of p) if (!Number.isInteger(c) || c < 0 || c >= size) return "Bad path";
