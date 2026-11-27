@@ -110,3 +110,17 @@ test("Duel and Road Trip races score streaks and routes", async () => {
   assert.equal(cleanRaceProgress("trip", { round: 7, score: 0 }), null);
   assert.equal(cleanRaceProgress("whichMetro", { round: 1, score: 1 }), null);
 });
+
+test("Lens Detective race scores right picks among the rounds played", async () => {
+  const Lm = await import("../../web/js/games/lens/sim/lens.js");
+  const { r, sock, say } = await room("lens");
+  const A = sock("a", "Ann");
+  await say(A, { t: "start" });
+  const rounds = Lm.lensRounds(Lm.lensPool(Dt("lenses")), "lens-practice:abc123");
+  const picks = rounds.map((x, i) => (i < 4 ? x.answer : x.options.find((o) => o !== x.answer)));
+  await say(A, { t: "finish", picks: ["nope"] });
+  assert.match(A.errors().at(-1), /not one of the choices/);
+  await say(A, { t: "finish", picks });
+  assert.equal(r.room.players[0].score, 4);
+  assert.equal(r.room.status, "done");
+});

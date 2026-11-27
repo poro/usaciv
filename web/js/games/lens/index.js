@@ -4,6 +4,7 @@
 //   #play=lens~p-<seed>   practice
 // Saves: "d:<key>" = today's picks, "stats" = {played, best, last}. Online: the day's board (/api/lens/daily).
 import { loadCss } from "../shared/css.js";
+import { makeRace } from "../shared/race.js";
 import { net } from "../shared/net.js";
 import { esc } from "../../format.js";
 import * as L from "./sim/lens.js";
@@ -27,6 +28,8 @@ export async function start(ctx) {
   let g = null; // {mode, key, seed, rounds, picks: [id]}
   const online = { avail: false, status: "idle", res: null, board: null, err: null };
 
+  // Races (shared/race.js): everyone plays the same practice seed; the room scores the picks.
+  const race = makeRace({ ctx, game: "lens", onLive: (seed) => newGame("race", seed), onChange: () => refresh(), label: (p) => `${p.score}/${p.round || 0}` });
   function newGame(mode, seedOrKey) {
     const rounds = L.lensRounds(pool, mode === "daily" ? L.dailySeed(seedOrKey) : `lens-practice:${seedOrKey}`);
     g = { mode, key: mode === "daily" ? seedOrKey : null, seed: mode === "daily" ? null : seedOrKey, rounds, picks: [], showing: -1 };
@@ -35,7 +38,7 @@ export async function start(ctx) {
       if (Array.isArray(saved)) g.picks = saved.filter((id, i) => rounds[i]?.options.includes(id)).slice(0, rounds.length);
     }
     online.status = "idle"; online.res = null; online.board = null; online.err = null;
-    ctx.setParam(mode === "daily" ? null : `p-${seedOrKey}`);
+    ctx.setParam(mode === "daily" ? null : mode === "race" ? `race-${race.code}` : `p-${seedOrKey}`);
     showLens();
     app.home?.();
     refresh();
@@ -46,10 +49,11 @@ export async function start(ctx) {
   function showLens() { if (!done()) app.setLens?.(cur().answer); else app.setLens?.(null); }
 
   function pick(id) {
-    if (!g || g.showing >= 0 || g.picks.length >= g.rounds.length) return;
+    if (!g || g.showing >= 0 || g.picks.length >= g.rounds.length || (race.active && g.mode !== "race")) return;
     g.showing = g.picks.length;
     g.picks.push(id);
     if (g.mode === "daily") ctx.storage.set(`d:${g.key}`, g.picks);
+    if (g.mode === "race") race.progress({ round: g.picks.length, score: g.picks.filter((x, i) => x === g.rounds[i].answer).length });
     refresh();
   }
   function next() {
@@ -65,6 +69,7 @@ export async function start(ctx) {
       if (st.last !== g.key) { st.played++; st.last = g.key; st.best = Math.max(st.best, s); ctx.storage.set("stats", st); }
       postDaily();
     }
+    if (g.mode === "race") race.finish({ picks: g.picks });
     showLens();
     refresh();
   }
@@ -103,15 +108,16 @@ export async function start(ctx) {
     return `<div class="g-section">Today's board</div>${res}${online.err ? `<p class="ld-err">${esc(online.err)}</p>` : ""}${post}${rows}`;
   }
   function refresh() {
+    if (race.active && g?.mode !== "race") { body.innerHTML = race.html() + how(); return; } // the lobby
     if (!g) return;
     const dots = g.rounds.map((r, i) => `<i class="${i < g.picks.length ? (g.picks[i] === r.answer ? "ok" : "bad") : i === g.picks.length ? "cur" : ""}"></i>`).join("");
-    const head = `<div class="ld-head"><span class="ld-dots">${dots}</span><span class="g-note">${g.mode === "daily" ? `Daily ${esc(g.key)}` : "Practice"}</span></div>`;
+    const head = `<div class="ld-head"><span class="ld-dots">${dots}</span><span class="g-note">${g.mode === "daily" ? `Daily ${esc(g.key)}` : g.mode === "race" ? "Race" : "Practice"}</span></div>${race.active ? race.html() : ""}`;
     if (done()) {
       const sc = L.scoreLens(g.rounds, g.picks);
       const st = ctx.storage.get("stats", null);
       body.innerHTML = `${head}<h3 class="ld-final">${sc.score} <small>of ${g.rounds.length}</small></h3>
         <ul class="ld-list">${g.rounds.map((r, i) => `<li class="${sc.results[i] ? "ok" : "bad"}">${sc.results[i] ? "✓" : "✗"} <b>${esc(nameOf(r.answer))}</b>${sc.results[i] ? "" : ` <span class="muted">(you said ${esc(nameOf(g.picks[i]))})</span>`}</li>`).join("")}</ul>
-        <div class="g-row"><button class="g-btn primary" data-act="share">Copy result</button><button class="g-btn" data-act="practice">Practice round</button>${g.mode === "practice" ? `<button class="g-btn" data-act="daily">Today's game</button>` : ""}</div>
+        <div class="g-row"><button class="g-btn primary" data-act="share">Copy result</button><button class="g-btn" data-act="practice">Practice round</button><button class="g-btn" data-act="race-create" title="Race friends on the same six lenses">Race friends</button>${g.mode === "practice" ? `<button class="g-btn" data-act="daily">Today's game</button>` : ""}</div>
         ${boardHtml()}${st && g.mode === "daily" ? `<p class="g-note">Days played ${st.played} · best ${st.best}/6</p>` : ""}${how()}`;
       return;
     }
@@ -137,7 +143,11 @@ export async function start(ctx) {
   body.addEventListener("click", (e) => {
     const t = e.target.closest("[data-act]");
     if (!t) return;
-    switch (t.dataset.act) {
+    const act = t.dataset.act;
+    if (act === "race-create") { race.create(); return; }
+    if (act === "race-leave") { race.click(act, t); newGame("daily", utcKey()); return; }
+    if (act.startsWith("race-")) { race.click(act, t); return; }
+    switch (act) {
       case "pick": pick(t.dataset.id); break;
       case "next": next(); break;
       case "share": navigator.clipboard?.writeText(`${share()}\n${location.origin}${location.pathname}#play=lens`).then(() => ctx.toast("Result copied"), () => ctx.toast("Could not copy")); break;
@@ -157,7 +167,9 @@ export async function start(ctx) {
   app.lensgame = { get g() { return g; }, pick: (id) => pick(id), next: () => next() }; // debugging handle
   ctx.onCleanup(() => { delete app.lensgame; });
   const pm = /^p-([a-z0-9]{1,12})$/.exec(ctx.param || "");
-  newGame(pm ? "practice" : "daily", pm ? pm[1] : utcKey());
+  const rc = /^race-([A-Za-z0-9]{6})$/.exec(ctx.param || "");
+  if (rc) race.join(rc[1].toUpperCase());
+  else newGame(pm ? "practice" : "daily", pm ? pm[1] : utcKey());
   net.available().then((ok) => { online.avail = !!ok; if (ok && g && done() && g.mode === "daily") postDaily(); else refresh(); });
-  return { stop() {}, onEscape: () => true, param: () => (g?.mode === "practice" ? `p-${g.seed}` : null) };
+  return { stop() {}, onEscape: () => true, param: () => (race.active ? `race-${race.code}` : g?.mode === "practice" ? `p-${g.seed}` : null) };
 }

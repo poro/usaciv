@@ -10,7 +10,7 @@ GitHub Action ([.github/workflows/refresh-data.yml](.github/workflows/refresh-da
 | **Pinpoint** | Click where eight real places are: metros, parks, universities, airports, ports, dams | Daily board, races |
 | **Metro Duel** | Higher or lower on real metro statistics; keep the streak alive | Daily board, races |
 | **Road Trip** | Visit six real metros by the shortest loop | Daily board, races |
-| **Lens Detective** | Name the hidden data lens colouring the map | Daily board |
+| **Lens Detective** | Name the hidden data lens colouring the map | Daily board, races |
 | **Mainline** | Lay rail (plus power lines and fibre) across the real map, 2026–2050 | Scenario boards, daily challenge, versus |
 | **Founders** | Settle an empty America with its real terrain and resources | Daily challenge, hotseat and online matches |
 

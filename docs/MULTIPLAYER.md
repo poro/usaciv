@@ -185,13 +185,13 @@ per IP per hour. Over the limit → 429 with `Retry-After`. A daily resubmission
 
 ### Races for Pinpoint, Metro Duel and Road Trip
 
-- `POST /api/race {game: "pinpoint"|"duel"|"trip"}` → `{code}` (a write). `GET /api/race/:code` → `{code, game, status,
+- `POST /api/race {game: "pinpoint"|"duel"|"trip"|"lens"}` → `{code}` (a write). `GET /api/race/:code` → `{code, game, status,
   players}`; `GET /api/race/:code/ws?token=…` → the room's socket. Same `RaceRoom` Durable Object and protocol as Which
   Metro? races (`start`, `progress`, `finish`, `room` broadcasts; 8 players; lobby-only joining; closes 30 minutes after
   the start), with `room.game` set. Which Metro? rooms keep `game: "whichMetro"` and their own endpoints.
 - The race plays the game's **practice** seed (`room.seed`). `progress {round, score}` is bounded per game. `finish`
   carries `{guesses}` (Pinpoint: 1–8 hexes, scored round by round), `{answers}` (Duel: the streak over a 400-duel
-  practice run) or `{order}` (Road Trip: 0–1000; an unfinished route scores 0). The room scores it
+  practice run) `{order}` (Road Trip: 0–1000; an unfinished route scores 0) or `{picks}` (Lens Detective: right picks among the rounds played). The room scores it
   (`worker/racegames.js`) and places players by score, then finish time.
 - Browser: `web/js/games/shared/race.js` (`makeRace`): create/join by `#play=<game>~race-<CODE>`, lobby with the
   link and the host's Start button, live standings at the top of the game's panel.

@@ -8,6 +8,7 @@ import { loadMany } from "./data.js";
 
 const ASSET_BASE = { url: "https://usaciv.internal/" };
 let poolPromise = null;
+export const lensPoolFor = (env) => pool(env);
 const pool = (env) => {
   poolPromise ||= loadMany(env, ASSET_BASE, ["lenses"]).then((d) => lensPool(d.lenses));
   poolPromise.catch(() => { poolPromise = null; });

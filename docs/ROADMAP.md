@@ -128,7 +128,7 @@ labels the answer and each wrong guess on the map.
 
 ## Races for the short games (2026-11-27)
 
-- Pinpoint, Metro Duel and Road Trip have **Race friends**: a room by link (up to 8), the host starts it, everyone plays
+- Pinpoint, Metro Duel, Road Trip and Lens Detective have **Race friends**: a room by link (up to 8), the host starts it, everyone plays
   the same practice puzzle at once with live standings, and the room scores each finish itself. It is the Which
   Metro? race room (`RaceRoom`), now game-aware, with scorers in `worker/racegames.js` and one shared browser
   controller (`web/js/games/shared/race.js`).
