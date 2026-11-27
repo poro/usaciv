@@ -9,6 +9,7 @@
 import { loadCss } from "../shared/css.js";
 import { fitVisible } from "../shared/frame.js";
 import { makeRace } from "../shared/race.js";
+import { mapImage, downloadBlob } from "../shared/shareimg.js";
 import { net } from "../shared/net.js";
 import { esc } from "../../format.js";
 import * as P from "./sim/rounds.js";
@@ -168,7 +169,9 @@ export async function start(ctx) {
     c.fillStyle = "#ffd75e"; c.fill(); c.lineWidth = 2.5 / s; c.strokeStyle = "#3a2a08"; c.stroke();
     c.globalAlpha = 1;
   }
-  ctx.addOverlay({
+  const myOverlays = []; // also drawn into the share image
+  const addOv = (o) => { myOverlays.push(o); ctx.addOverlay(o); };
+  addOv({
     id: "pins", z: 95, space: "world", snapshot: false,
     draw(c, cam) {
       if (!g) return;
@@ -182,7 +185,7 @@ export async function start(ctx) {
       }
     },
   });
-  ctx.addOverlay({
+  addOv({
     id: "pin-label", z: 101, space: "screen", snapshot: false,
     draw(c, cam) {
       if (!g) return;
@@ -266,7 +269,7 @@ export async function start(ctx) {
         <h3 class="pp-final">${tot.toLocaleString("en-US")} <small>of ${(g.rounds.length * P.MAX_POINTS).toLocaleString("en-US")}</small></h3>
         <p class="pp-squares">${g.results.map((r) => P.square(r.points)).join("")}</p>
         <ul class="pp-list">${rows}</ul>
-        <div class="g-row"><button class="g-btn primary" data-act="share">Copy result</button><button class="g-btn" data-act="practice">Practice round</button><button class="g-btn" data-act="race-create" title="Race friends on the same eight places">Race friends</button>
+        <div class="g-row"><button class="g-btn primary" data-act="share">Copy result</button><button class="g-btn" data-act="practice">Practice round</button><button class="g-btn" data-act="race-create" title="Race friends on the same eight places">Race friends</button><button class="g-btn" data-act="image" title="A PNG of the map with your eight guesses">Download image</button>
           ${g.mode === "practice" ? `<button class="g-btn" data-act="daily">Today's game</button>` : ""}</div>
         ${boardHtml()}
         ${st && g.mode === "daily" ? `<p class="g-note">Days played ${st.played} · best ${st.best.toLocaleString("en-US")} · streak ${st.streak}</p>` : ""}
@@ -301,6 +304,9 @@ export async function start(ctx) {
     if (act.startsWith("race-")) { race.click(act, t); return; }
     switch (act) {
       case "next": next(); break;
+      case "image": mapImage(app, { box: { x0: usBox.x0 - 80, y0: usBox.y0 - 80, x1: usBox.x1 + 80, y1: usBox.y1 + 80 }, overlays: myOverlays,
+        kicker: `Pinpoint · ${g.mode === "daily" ? g.key : g.mode}`, title: `${total().toLocaleString("en-US")} / ${(g.rounds.length * P.MAX_POINTS).toLocaleString("en-US")}`,
+        sub: g.results.map((r) => P.square(r.points)).join("") }).then((b) => downloadBlob(b, `pinpoint-${g.key || g.seed}.png`) || ctx.toast("Could not draw the image")); break;
       case "share": navigator.clipboard?.writeText(`${share()}\n${location.origin}${location.pathname}#play=pinpoint`).then(() => ctx.toast("Result copied"), () => ctx.toast("Could not copy")); break;
       case "practice": newGame("practice", Math.random().toString(36).slice(2, 8)); break;
       case "daily": newGame("daily", utcKey()); break;
