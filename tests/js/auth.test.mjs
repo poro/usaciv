@@ -309,3 +309,28 @@ test("Google: off without secrets; with them, start → callback → handoff sig
   const p = await A.playerForIdentity(h.env, "google", { sub: "g-999", given_name: "Zed" }, null);
   assert.equal((await h.env.DB.prepare("SELECT name FROM players WHERE id = ?").bind(p).first()).name, "Zed");
 });
+
+test("account stats: daily records, streaks and Mainline ranks", async () => {
+  const { streak } = await import("../../worker/stats.js");
+  assert.equal(streak(["2026-11-27", "2026-11-26", "2026-11-24"], "2026-11-27"), 2);
+  assert.equal(streak(["2026-11-26", "2026-11-25"], "2026-11-27"), 2, "yesterday keeps a streak alive");
+  assert.equal(streak(["2026-11-25"], "2026-11-27"), 0);
+  assert.equal(streak([], "2026-11-27"), 0);
+  const h = harness();
+  const ann = await h.newPlayer("Ann"), bob = await h.newPlayer("Bob");
+  const now = Date.now();
+  const today = new Date().toISOString().slice(0, 10);
+  await h.env.DB.prepare("INSERT INTO wm_daily VALUES (?, ?, 20, '[]', ?)").bind(ann.id, today, now).run();
+  await h.env.DB.prepare("INSERT INTO wm_daily VALUES (?, '2000-01-01', 10, '[]', ?)").bind(ann.id, now).run();
+  await h.env.DB.prepare("INSERT INTO fd_daily VALUES (?, ?, 700, 6, '[]', ?)").bind(ann.id, today, now).run();
+  await h.env.DB.prepare("INSERT INTO ml_runs VALUES (?, 'texas', 's', NULL, 1.5, 'h', 2050, NULL, ?)").bind(ann.id, now).run();
+  await h.env.DB.prepare("INSERT INTO ml_runs VALUES (?, 'texas', 's', NULL, 2.5, 'h', 2050, NULL, ?)").bind(bob.id, now).run();
+  const st = (await h.call("GET", "/api/account/stats", { token: ann.token })).data;
+  assert.equal(st.wm.played, 2);
+  assert.equal(st.wm.best, 20);
+  assert.equal(st.wm.avg, 15);
+  assert.equal(st.wm.streak, 1);
+  assert.deepEqual(st.fd.recent, [{ key: today, score: 700, towns: 6 }]);
+  assert.deepEqual(st.ml.map((r) => [r.scenario, r.rank, r.total]), [["texas", 2, 2]]);
+  assert.equal((await h.call("GET", "/api/account/stats")).status, 401);
+});

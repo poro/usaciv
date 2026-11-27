@@ -575,3 +575,9 @@ body.panel-open #lens-area { right: calc(394px + var(--dock-right, 0px)); }
 .acct-foot { margin-top: 16px !important; }
 .g-btn.danger { border-color: #c96a5c; color: #ffb3a6; background: linear-gradient(180deg, #3a1f18, #24120e); }
 @media (max-width: 700px) { .acct-card { width: 100vw; max-height: 100dvh; height: 100dvh; border-radius: 0; } }
+.acct-stats { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.acct-stats th, .acct-stats td { padding: 3px 6px; text-align: right; border-bottom: 1px solid rgba(201,164,92,.15); }
+.acct-stats th[scope="row"] { text-align: left; font-weight: normal; }
+.acct-stats thead th { color: var(--ink-dim); font-weight: normal; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.acct-stats a { color: var(--gold-bright); }
+.acct-ml { margin: 4px 0; padding-left: 18px; font-size: 12.5px; }

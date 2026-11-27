@@ -3,6 +3,7 @@
 // device with a one-time code, sign in elsewhere (this device's scores merge in), sign out, or delete it.
 import { net } from "../games/shared/net.js";
 import { icon } from "../ui/icon.js";
+import { scenarioById } from "../games/mainline/sim/scenarios.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const day = (ms) => (ms ? new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "never");
@@ -26,7 +27,7 @@ export function initAccount({ toast } = {}) {
   const card = modal.firstElementChild;
 
   // view: null (loading) | {acct, error, busy, code, codeExpires, confirmDelete, enter, renaming}
-  let state = { acct: null, error: null, busy: null, code: null, codeExpires: 0, enter: false, confirmDelete: false, renaming: null, cfg: null };
+  let state = { stats: null, acct: null, error: null, busy: null, code: null, codeExpires: 0, enter: false, confirmDelete: false, renaming: null, cfg: null };
   let restore = null, timer = null;
 
   const label = () => {
@@ -60,6 +61,23 @@ export function initAccount({ toast } = {}) {
       : `<p class="g-note">That code expired.</p><button class="g-btn" data-act="link">New code</button>`;
   }
 
+  function statsBlock() {
+    const st = state.stats;
+    if (!st) return "";
+    const pct = (u) => `${u >= 0 ? "+" : ""}${(u * 100).toFixed(1)}%`;
+    const dailyRow = (label, d, unit, href) => d.played
+      ? `<tr><th scope="row"><a href="${href}">${label}</a></th><td>${d.played}</td><td>${d.best}${unit}</td><td>${d.avg}${unit}</td><td>${d.streak ? `${d.streak} day${d.streak === 1 ? "" : "s"}` : "–"}</td></tr>`
+      : `<tr><th scope="row"><a href="${href}">${label}</a></th><td colspan="4" class="g-note">not played yet</td></tr>`;
+    const ml = st.ml.map((r) => `<li><b>${esc(scenarioById(r.scenario)?.name || r.scenario)}</b> ${pct(r.uplift)} GDP · #${r.rank} of ${r.total}</li>`).join("");
+    return `
+      <h3>Your record</h3>
+      <table class="acct-stats"><thead><tr><th></th><th>Days</th><th>Best</th><th>Average</th><th>Streak</th></tr></thead><tbody>
+        ${dailyRow("Which Metro?", st.wm, "", "#play=whichMetro")}
+        ${dailyRow("Founders daily", st.fd, "", "#play=founders~daily")}
+      </tbody></table>
+      ${ml ? `<p class="g-note">Mainline bests:</p><ul class="acct-ml">${ml}</ul>` : `<p class="g-note">No Mainline runs on the boards yet.</p>`}`;
+  }
+
   function render() {
     const p = net.player();
     const a = state.acct;
@@ -88,6 +106,7 @@ export function initAccount({ toast } = {}) {
         ${a.secured
           ? `<p class="acct-ok">${icon("check", "✓", { size: 14 })} Saved. Sign in on any device with your passkey${a.identities.length ? " or Google" : ""}.</p>`
           : `<p class="acct-warn">This player lives only in this browser. Clearing site data loses it. Save it with a passkey (Face ID, Touch ID, Windows Hello, your phone or a password manager) to sign in anywhere.</p>`}
+        ${statsBlock()}
         <h3>Ways to sign in</h3>
         ${keys || ids ? `<ul class="acct-list">${keys}${ids}</ul>` : ""}
         <div class="g-row">${passkeyBtn("pk-add", a.secured ? "Add a passkey" : "Save with a passkey", !a.secured)}
@@ -121,7 +140,10 @@ export function initAccount({ toast } = {}) {
   async function refresh() {
     label();
     if (!net.player()) { state.acct = null; render(); return; }
-    try { state.acct = await net.account(); state.error = null; } catch (err) { state.acct = null; state.error = err.message; }
+    try {
+      const [a, st] = await Promise.all([net.account(), net.get("/api/account/stats")]);
+      state.acct = a; state.stats = st.ok ? st.data : null; state.error = null;
+    } catch (err) { state.acct = null; state.stats = null; state.error = err.message; }
     label();
     render();
   }
@@ -137,6 +159,7 @@ export function initAccount({ toast } = {}) {
   const focusFirst = () => (card.querySelector("input") || card.querySelector("[data-act]") || card.querySelector("[data-close]"))?.focus();
 
   card.addEventListener("click", (e) => {
+    if (e.target.closest('a[href^="#"]')) { close(); return; } // a game link: go there
     const b = e.target.closest("[data-act]");
     if (!b || b.disabled) return;
     const id = b.dataset.id;

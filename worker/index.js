@@ -7,6 +7,7 @@ import { submitRun, mlBoard } from "./ml.js";
 import { createVs, createFd, vsStatus, vsSocket } from "./vs.js";
 import * as auth from "./auth.js";
 import { submitFdDaily, fdDailyBoard } from "./fd.js";
+import { accountStats } from "./stats.js";
 
 export { RaceRoom } from "./race.js";
 export { VersusRoom } from "./vs.js"; // Mainline versus and Founders multiplayer rooms
@@ -40,6 +41,7 @@ const ROUTES = [
   // Login (worker/auth.js)
   ["GET", /^\/api\/auth\/config$/, auth.authConfig],
   ["GET", /^\/api\/account$/, auth.account],
+  ["GET", /^\/api\/account\/stats$/, accountStats],
   ["DELETE", /^\/api\/account$/, auth.deleteAccount],
   ["POST", /^\/api\/auth\/signout$/, auth.signOut],
   ["POST", /^\/api\/auth\/signout-others$/, auth.signOutOthers],

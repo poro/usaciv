@@ -315,6 +315,7 @@ while non-zero. Attestation is "none": a passkey is trusted because a signed-in 
 |---|---|---|
 | `GET /api/auth/config` | | → `{passkeys, link, google, apple, email}` |
 | `GET /api/account` | ✓ | → `{id, name, created, passkeys: [{id, name, created, lastUsed}], identities: [{provider, email, created}], devices, secured, thisDevice: "device"\|"session"}` |
+| `GET /api/account/stats` | ✓ | → `{wm: {played, best, avg, streak, recent}, fd: {…same}, ml: [{scenario, uplift, year, seed, rank, total}]}`; streaks count days in a row ending today or yesterday (UTC) |
 | `DELETE /api/account` | ✓ | `{confirm: <nickname>}` → `{ok}` |
 | `POST /api/auth/passkey/register/options` | ✓ | → `{challengeId, publicKey}` (WebAuthn creation options, binary fields base64url). Counts as a write |
 | `POST /api/auth/passkey/register` | ✓ | `{challengeId, credential: {id, clientDataJSON, attestationObject, transports}, name?}` → `{passkey}` (201; 409 if already saved) |
