@@ -1,0 +1,19 @@
+/* Settle (web/js/games/settle). While the real cities are hidden: no lens dock, map-layer menu or city search. */
+body[data-game="settle"]:not(.st-revealed) #lens-dock, body[data-game="settle"]:not(.st-revealed) #map-layers-pop,
+body[data-game="settle"]:not(.st-revealed) #topbar .search, body[data-game="settle"]:not(.st-revealed) #lens-area,
+body[data-game="settle"]:not(.st-revealed) #legend { display: none !important; }
+.st-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.st-q { font-size: 15px; margin: 4px 0 6px; }
+.st-count { font: 26px/1.2 var(--serif); color: var(--gold-bright); margin: 10px 0 8px; }
+.st-count b { font-weight: normal; }
+.st-final { font: 34px/1 var(--serif); color: var(--gold-bright); margin: 6px 0; }
+.st-final small { font-size: 14px; color: var(--ink-dim); }
+.st-list { margin: 4px 0 8px 18px; padding: 0; font-size: 13px; color: #ffe7a6; }
+.st-top { list-style: none; margin: 6px 0 4px; padding: 0; display: grid; gap: 2px; }
+.st-top li { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; padding: 2px 4px; }
+.st-top .rk { color: var(--ink-dim); text-align: right; } .st-top .sc { font-family: var(--serif); color: var(--gold-bright); }
+.st-err { color: #ff9c8a; }
+.st-nick { display: grid; gap: 3px; font-size: 12px; color: var(--ink-dim); }
+.st-nick input { font: inherit; padding: 4px 6px; background: #0d1520; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; }
+.st-how { margin-top: 14px; font-size: 12.5px; color: var(--ink-dim); }
+.st-how summary { cursor: pointer; }

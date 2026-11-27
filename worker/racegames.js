@@ -6,6 +6,7 @@
 //   lens      finish {picks: [lensId…]}  → right answers among the rounds played (1–6)
 //   rank      finish {orders: [[id×5]…]} → points of the rankings played (1–5 rounds, 0–100 each)
 //   shapes    finish {picks: [abbr…]}    → right answers among the rounds played (1–8)
+//   settle    finish {sites: [cell × 5]} → 1000 × people reached ÷ par's (progress round = settlements placed)
 //   guess     finish {guesses: [number…]} → points of the questions answered (1–6, 0–100 each)
 //   link      finish {edges: [[a, b]…]}  → 1000 × (par ÷ cost)³ for a network joining all five metros (progress round = metros joined)
 import { roundsFor, scoreGuess, ROUNDS as PP_ROUNDS, MAX_POINTS as PP_MAX } from "../web/js/games/pinpoint/sim/rounds.js";
@@ -24,10 +25,20 @@ import { scoreNetwork, practiceSeed as linkPractice, TERMINALS as LINK_TERMINALS
 import { linkBaseFor, linkPuzzleFor } from "./link.js";
 import { guessRounds, scoreGuesses, practiceSeed as guessPractice, ROUNDS as GUESS_ROUNDS, MAX_SCORE as GUESS_MAX } from "../web/js/games/guess/sim/guess.js";
 import { guessPoolFor } from "./guess.js";
+import { scoreSites, practiceSeed as settlePractice, SITES as SETTLE_SITES, MAX_SCORE as SETTLE_MAX } from "../web/js/games/settle/sim/settle.js";
+import { settleEnvFor, settleFor } from "./settle.js";
 
 export const DUEL_RACE_LEN = 400;
 
 export const RACE_GAMES = {
+  settle: {
+    maxRound: SETTLE_SITES, maxScore: SETTLE_MAX,
+    async score(env, seed, m) {
+      const { E, puzzle, par } = settleFor(await settleEnvFor(env), settlePractice(seed));
+      const r = scoreSites(E, puzzle, m?.sites, par);
+      return r.error ? r : { score: Math.min(SETTLE_MAX, r.score), round: SETTLE_SITES };
+    },
+  },
   guess: {
     maxRound: GUESS_ROUNDS, maxScore: GUESS_MAX,
     async score(env, seed, m) {

@@ -95,6 +95,16 @@ export const GAMES = [
     load: () => import("./link/index.js"),
   },
   {
+    id: "settle",
+    group: "daily",
+    title: "Settle",
+    tagline: "One region, its real cities hidden. Read the land and place five settlements where the most people live.",
+    players: "Single player · daily",
+    minutes: "2–3 min",
+    icon: "🏘️",
+    load: () => import("./settle/index.js"),
+  },
+  {
     id: "mainline",
     group: "strategy",
     title: "Mainline",

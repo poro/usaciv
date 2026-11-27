@@ -78,7 +78,8 @@ export async function mergeInto(env, from, to) {
          + (SELECT COUNT(*) FROM rank_daily WHERE player = ?1 AND key < ?2)
          + (SELECT COUNT(*) FROM shapes_daily WHERE player = ?1 AND key < ?2)
          + (SELECT COUNT(*) FROM link_daily WHERE player = ?1 AND key < ?2)
-         + (SELECT COUNT(*) FROM guess_daily WHERE player = ?1 AND key < ?2) AS daily,
+         + (SELECT COUNT(*) FROM guess_daily WHERE player = ?1 AND key < ?2)
+         + (SELECT COUNT(*) FROM settle_daily WHERE player = ?1 AND key < ?2) AS daily,
        (SELECT COUNT(*) FROM ml_runs WHERE player = ?1) + (SELECT COUNT(*) FROM ml_daily WHERE player = ?1 AND key < ?2) AS runs`,
   ).bind(from, cutoff).first();
   await env.DB.batch([
@@ -89,6 +90,10 @@ export async function mergeInto(env, from, to) {
     env.DB.prepare(
       `INSERT OR IGNORE INTO fd_daily (player, key, score, towns, log_json, created)
        SELECT ?2, key, score, towns, log_json, created FROM fd_daily WHERE player = ?1 AND key < ?3`,
+    ).bind(from, to, cutoff),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO settle_daily (player, key, score, sites_json, created)
+       SELECT ?2, key, score, sites_json, created FROM settle_daily WHERE player = ?1 AND key < ?3`,
     ).bind(from, to, cutoff),
     env.DB.prepare(
       `INSERT OR IGNORE INTO guess_daily (player, key, score, guesses_json, created)
@@ -151,6 +156,7 @@ function deleteStatements(env, id) {
     "DELETE FROM shapes_daily WHERE player = ?",
     "DELETE FROM link_daily WHERE player = ?",
     "DELETE FROM guess_daily WHERE player = ?",
+    "DELETE FROM settle_daily WHERE player = ?",
     "DELETE FROM ml_runs WHERE player = ?",
     "DELETE FROM sessions WHERE player = ?",
     "DELETE FROM passkeys WHERE player = ?",

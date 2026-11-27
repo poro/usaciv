@@ -91,7 +91,7 @@ test("GET /api/today: every daily's player count and, signed in, your rank", asy
   const ann = (await call("POST", "/api/player", { name: "Ann" })).data;
   await call("POST", "/api/duel/daily", { key, answers: [!seq[0].higher] }, ann.token);
   const anon = (await call("GET", "/api/today")).data;
-  assert.deepEqual(Object.keys(anon.games).sort(), ["duel", "founders", "guess", "lens", "link", "mainline", "pinpoint", "rank", "shapes", "trip", "whichMetro"]);
+  assert.deepEqual(Object.keys(anon.games).sort(), ["duel", "founders", "guess", "lens", "link", "mainline", "pinpoint", "rank", "settle", "shapes", "trip", "whichMetro"]);
   assert.equal(anon.games.duel.total, 1);
   assert.equal(anon.games.duel.you, null);
   const mine = (await call("GET", `/api/today?local=${key}`, undefined, ann.token)).data;

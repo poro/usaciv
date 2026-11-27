@@ -15,6 +15,7 @@ const BOARDS = {
   shapes: ["shapes_daily", "score"],
   link: ["link_daily", "score"],
   guess: ["guess_daily", "score"],
+  settle: ["settle_daily", "score"],
   founders: ["fd_daily", "score"],
   mainline: ["ml_daily", "uplift"],
 };

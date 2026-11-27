@@ -81,6 +81,7 @@ export function initAccount({ toast } = {}) {
         ${dailyRow("State Shapes", st.sh, "", "#play=shapes")}
         ${dailyRow("Rail Link", st.lk, "", "#play=link")}
         ${dailyRow("Ballpark", st.bp, "", "#play=guess")}
+        ${dailyRow("Settle", st.st, "", "#play=settle")}
         ${dailyRow("Founders daily", st.fd, "", "#play=founders~daily")}
         ${dailyRow("Mainline daily", st.md, "", "#play=mainline~daily", (bp) => `${bp >= 0 ? "+" : ""}${(bp / 100).toFixed(2)}%`)}
       </tbody></table>

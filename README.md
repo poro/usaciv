@@ -12,6 +12,7 @@ GitHub Action ([.github/workflows/refresh-data.yml](.github/workflows/refresh-da
 | **Road Trip** | Visit six real metros by the shortest loop | Daily board, races |
 | **Lens Detective** | Name the hidden data lens colouring the map | Daily board, races |
 | **Metro Ranking** | Put five real metros in order by one statistic | Daily board, races |
+| **Settle** | One region with its real cities hidden: place five settlements where the most people live | Daily board, races |
 | **Ballpark** | Estimate six real numbers (metro statistics, distances) on a slider | Daily board, races |
 | **Rail Link** | Join five real metros with the cheapest rail network on real terrain; beat par | Daily board, races |
 | **State Shapes** | Name a state from its outline on the hex map (later rounds turned) | Daily board, races |
