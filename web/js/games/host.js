@@ -24,6 +24,7 @@ import { makeRng, seedFrom, todayKey } from "./shared/rng.js";
 import { makeHexMap } from "./shared/hexmap.js";
 import { makeStorage } from "./shared/storage.js";
 import { esc } from "../format.js";
+import { net } from "./shared/net.js";
 
 export async function install(app) {
   let active = null; // {id, game, session, cleanups, param, token}
@@ -45,14 +46,32 @@ export async function install(app) {
   const card = (g) => `<button class="games-item" data-game="${esc(g.id)}">
       <span class="games-ic" aria-hidden="true">${esc(g.icon || "•")}</span>
       <span class="games-txt"><b>${esc(g.title)}</b><span>${esc(g.tagline)}</span>
-      <small class="muted">${esc(g.players)}${g.minutes ? ` · ${esc(g.minutes)}` : ""}</small></span></button>`;
+      <small class="muted">${esc(g.players)}${g.minutes ? ` · ${esc(g.minutes)}` : ""}</small>
+      ${g.id ? `<small class="games-today" hidden></small>` : ""}</span></button>`;
   list.innerHTML = card({ id: "", title: "Explore", tagline: "The data map: lenses, City View and Advisors.", players: "No goal, just browse", icon: "🗺️" }) +
     GAMES.map(card).join("");
   const closeMenu = () => { menu.hidden = true; };
+  // Today's boards on the cards (GET /api/today): how many played each daily and, signed in, your rank.
+  const FMT = { whichMetro: (v) => `${v} pts`, pinpoint: (v) => `${Number(v).toLocaleString("en-US")} pts`, duel: (v) => `streak ${v}`,
+    founders: (v) => `${Number(v).toLocaleString("en-US")} pts`, mainline: (v) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(2)}%` };
+  async function decorateToday() {
+    if (!(await net.available())) return;
+    const r = await net.get(`/api/today?local=${encodeURIComponent(todayKey())}`);
+    if (!r.ok || menu.hidden) return;
+    for (const [id, g] of Object.entries(r.data.games || {})) {
+      const el = list.querySelector(`.games-item[data-game="${id}"] .games-today`);
+      if (!el) continue;
+      const players = `${g.total} played today`;
+      el.innerHTML = g.you ? `<span class="done">✓ ${esc(FMT[id]?.(g.you.value) ?? g.you.value)} · #${g.you.rank}</span> of ${g.total}`
+        : `${g.total ? players : "Nobody yet today"} · <span class="todo">your daily is waiting</span>`;
+      el.hidden = false;
+    }
+  }
   const openMenu = () => {
     menu.hidden = false;
     for (const b of list.querySelectorAll(".games-item")) b.classList.toggle("on", (b.dataset.game || "") === (active?.id || ""));
     list.querySelector(".games-item.on, .games-item")?.focus();
+    decorateToday();
   };
   menu.addEventListener("click", (e) => {
     if (e.target === menu || e.target.closest("[data-close]")) return closeMenu();

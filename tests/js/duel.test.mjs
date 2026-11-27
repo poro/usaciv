@@ -75,3 +75,27 @@ test("Worker: only finished runs, server-counted streak, first run counts, board
   assert.deepEqual(b.you, { streak: 7, rank: 2 });
   assert.equal((await call("GET", "/api/account/stats", undefined, bob.token)).data.dl.best, 30);
 });
+
+test("GET /api/today: every daily's player count and, signed in, your rank", async () => {
+  const assets = { fetch: async (req) => new Response(readFileSync(dataUrl(new URL(req.url).pathname.match(/\/data\/(\w+)\.json/)[1]))) };
+  const wenv = { DB: makeD1(), ASSETS: assets, IP_SALT: "t" };
+  const call = async (method, path, body, token) => {
+    const res = await worker.fetch(new Request(`https://usaciv.test${path}`, {
+      method, headers: { "Content-Type": "application/json", Origin: "https://usaciv.test", "CF-Connecting-IP": "1.2.3.4", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }), wenv);
+    return { status: res.status, data: await res.json() };
+  };
+  const key = utcToday();
+  const seq = D.duelSequence(pool, D.dailySeed(key));
+  const ann = (await call("POST", "/api/player", { name: "Ann" })).data;
+  await call("POST", "/api/duel/daily", { key, answers: [!seq[0].higher] }, ann.token);
+  const anon = (await call("GET", "/api/today")).data;
+  assert.deepEqual(Object.keys(anon.games).sort(), ["duel", "founders", "mainline", "pinpoint", "whichMetro"]);
+  assert.equal(anon.games.duel.total, 1);
+  assert.equal(anon.games.duel.you, null);
+  const mine = (await call("GET", `/api/today?local=${key}`, undefined, ann.token)).data;
+  assert.deepEqual(mine.games.duel.you, { value: 0, rank: 1 });
+  assert.equal(mine.games.pinpoint.you, null);
+  assert.equal((await call("GET", "/api/today?local=1999-01-01")).data.local, key, "an out-of-window local date falls back to UTC");
+});

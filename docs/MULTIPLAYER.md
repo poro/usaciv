@@ -53,6 +53,7 @@ another site gets 403. An unknown `/api` path is 404 JSON; a known path with the
 | Method and path | Auth | Body → response |
 |---|---|---|
 | `GET /api/health` | | → `{ok: true, version}` |
+| `GET /api/today` | (✓) | `?local=YYYY-MM-DD` → `{utc, local, games: {whichMetro, pinpoint, duel, founders, mainline: {key, total, you: {value, rank} \| null}}}`: every daily board at a glance (the Play menu's cards). Which Metro? uses `local`, the rest UTC |
 | `POST /api/player` | | `{name}` → `{id, token, name}` (201). Creates a player |
 | `GET /api/player` | ✓ | → `{id, name}` |
 | `PATCH /api/player` | ✓ | `{name}` → `{id, name}` |

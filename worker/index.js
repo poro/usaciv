@@ -10,6 +10,7 @@ import { submitFdDaily, fdDailyBoard } from "./fd.js";
 import { accountStats } from "./stats.js";
 import { submitPpDaily, ppDailyBoard } from "./pp.js";
 import { submitDuelDaily, duelDailyBoard } from "./duel.js";
+import { today } from "./today.js";
 
 export { RaceRoom } from "./race.js";
 export { VersusRoom } from "./vs.js"; // Mainline versus and Founders multiplayer rooms
@@ -37,6 +38,7 @@ async function renamePlayer(request, env) {
 /** [method, pattern, handler(request, env, ...groups)] */
 const ROUTES = [
   ["GET", /^\/api\/health$/, () => json({ ok: true, version: VERSION })],
+  ["GET", /^\/api\/today$/, today],
   ["POST", /^\/api\/player$/, createPlayer],
   ["GET", /^\/api\/player$/, async (req, env) => { const p = await requirePlayer(env, req); return json({ id: p.id, name: p.name }); }],
   ["PATCH", /^\/api\/player$/, renamePlayer],
