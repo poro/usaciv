@@ -75,6 +75,16 @@ export const GAMES = [
     load: () => import("./shapes/index.js"),
   },
   {
+    id: "guess",
+    group: "daily",
+    title: "Ballpark",
+    tagline: "How much is rent in Boise? How far is Tulsa from Omaha? Six real numbers to estimate on a slider.",
+    players: "Single player · daily",
+    minutes: "2 min",
+    icon: "🎯",
+    load: () => import("./guess/index.js"),
+  },
+  {
     id: "link",
     group: "daily",
     title: "Rail Link",

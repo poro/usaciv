@@ -14,6 +14,7 @@ the map, lenses, City View and Advisors. On top of it sit **game modes** that pl
 | **Lens Detective** | Name the hidden data lens colouring the map, from four choices | Single player, daily 6 + practice; daily board | |
 | **Metro Ranking** | Five real metros, one statistic: put them in order, highest first | Single player, daily 5 + practice; daily board, races | |
 | **State Shapes** | A state's outline on the hex map, alone: which one is it? | Single player, daily 8 + practice; daily board, races | |
+| **Ballpark** | Estimate real numbers on a slider: metro statistics and distances | Single player, daily 6 + practice; daily board, races | |
 | **Rail Link** | Join five real metros with the cheapest rail network you can find; beat par | Single player, daily puzzle + practice; daily board, races | |
 | **Mainline** | Lay rail across the real map, 2026→2050. Real freight is demand and real disaster risk is the enemy | Single player vs. "baseline America" | AI rival companies; online versus; co-op with one region each |
 | **Founders** | An empty America with real terrain and resources: found cities, grow, compare with the real country | Single player | Hotseat, then online 2–4 players |
@@ -161,9 +162,17 @@ labels the answer and each wrong guess on the map.
   (par ÷ cost)³, so a clever junction can beat par (over 1000). The end screen draws par dashed over yours. One puzzle a
   day, practice, races; the server rebuilds puzzle and par and scores the links (`/api/link/daily`).
 
+## New mode: Ballpark (2026-11-27)
+
+- `web/js/games/guess/`: six questions a day, four real metro statistics (Metro Duel's) and two straight-line distances,
+  answered on a slider (logarithmic, except growth; Enter locks in). Up to 100 points each by how close the guess is as a
+  ratio, against a tolerance per question type (×3 for population, ×1.6 for income, ×1.7 for distance, 6 points for
+  growth). The metros are lit on the map; the distance is drawn at the reveal. Practice, races; the server scores the
+  guesses (`/api/guess/daily`). The lens bar is hidden while it runs.
+
 ## Races for the short games (2026-11-27)
 
-- Pinpoint, Metro Duel, Road Trip, Lens Detective, Metro Ranking, State Shapes and Rail Link have **Race friends**: a room by link (up to 8), the host starts it, everyone plays
+- Pinpoint, Metro Duel, Road Trip, Lens Detective, Metro Ranking, State Shapes, Rail Link and Ballpark have **Race friends**: a room by link (up to 8), the host starts it, everyone plays
   the same practice puzzle at once with live standings, and the room scores each finish itself. It is the Which
   Metro? race room (`RaceRoom`), now game-aware, with scorers in `worker/racegames.js` and one shared browser
   controller (`web/js/games/shared/race.js`).

@@ -185,13 +185,13 @@ per IP per hour. Over the limit → 429 with `Retry-After`. A daily resubmission
 
 ### Races for the short games
 
-- `POST /api/race {game: "pinpoint"|"duel"|"trip"|"lens"|"rank"|"shapes"|"link"}` → `{code}` (a write). `GET /api/race/:code` → `{code, game, status,
+- `POST /api/race {game: "pinpoint"|"duel"|"trip"|"lens"|"rank"|"shapes"|"link"|"guess"}` → `{code}` (a write). `GET /api/race/:code` → `{code, game, status,
   players}`; `GET /api/race/:code/ws?token=…` → the room's socket. Same `RaceRoom` Durable Object and protocol as Which
   Metro? races (`start`, `progress`, `finish`, `room` broadcasts; 8 players; lobby-only joining; closes 30 minutes after
   the start), with `room.game` set. Which Metro? rooms keep `game: "whichMetro"` and their own endpoints.
 - The race plays the game's **practice** seed (`room.seed`). `progress {round, score}` is bounded per game. `finish`
   carries `{guesses}` (Pinpoint: 1–8 hexes, scored round by round), `{answers}` (Duel: the streak over a 400-duel
-  practice run) `{order}` (Road Trip: 0–1000; an unfinished route scores 0) `{picks}` (Lens Detective: right picks among the rounds played) `{orders}` (Metro Ranking: points of the rankings played, 1–5) `{picks}` (State Shapes: right picks among the rounds played) or `{edges}` (Rail Link: a network joining all five metros, scored against par; progress `round` = metros joined). The room scores it
+  practice run) `{order}` (Road Trip: 0–1000; an unfinished route scores 0) `{picks}` (Lens Detective: right picks among the rounds played) `{orders}` (Metro Ranking: points of the rankings played, 1–5) `{picks}` (State Shapes: right picks among the rounds played) `{guesses}` (Ballpark: points of the questions answered) or `{edges}` (Rail Link: a network joining all five metros, scored against par; progress `round` = metros joined). The room scores it
   (`worker/racegames.js`) and places players by score, then finish time.
 - Browser: `web/js/games/shared/race.js` (`makeRace`): create/join by `#play=<game>~race-<CODE>`, lobby with the
   link and the host's Start button, live standings at the top of the game's panel.
@@ -228,6 +228,14 @@ per IP per hour. Over the limit → 429 with `Retry-After`. A daily resubmission
   1000 × (par ÷ cost)³. `POST /api/link/daily {key, edges: [[cell, cell]…]}` (at most 3,000 links; each must join
   buildable neighbours; the network must join all five) → `{score, rank, total}`; `GET /api/link/daily/:key`. Stats
   `lk`; merge (open days excepted) and delete include `link_daily` (migration 0011).
+
+### Ballpark daily
+
+- `web/js/games/guess/sim/guess.js` builds six questions from `guess:<YYYY-MM-DD>` (UTC): four metro statistics and two
+  straight-line distances (questions 3 and 6). Points per question: 100 × (1 − (ratio − 1) ÷ (tolerance − 1)) with
+  ratio = the larger of guess ÷ answer and answer ÷ guess (plain division, identical in every engine); growth by
+  percentage points. `POST /api/guess/daily {key, guesses: [number × 6]}` (each inside the question's slider range) →
+  `{score, rank, total}`; `GET /api/guess/daily/:key`. Stats `bp`; merge and delete include `guess_daily` (migration 0012).
 
 ## Mainline versus (real time)
 

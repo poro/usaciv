@@ -6,6 +6,7 @@
 //   lens      finish {picks: [lensId…]}  → right answers among the rounds played (1–6)
 //   rank      finish {orders: [[id×5]…]} → points of the rankings played (1–5 rounds, 0–100 each)
 //   shapes    finish {picks: [abbr…]}    → right answers among the rounds played (1–8)
+//   guess     finish {guesses: [number…]} → points of the questions answered (1–6, 0–100 each)
 //   link      finish {edges: [[a, b]…]}  → 1000 × (par ÷ cost)³ for a network joining all five metros (progress round = metros joined)
 import { roundsFor, scoreGuess, ROUNDS as PP_ROUNDS, MAX_POINTS as PP_MAX } from "../web/js/games/pinpoint/sim/rounds.js";
 import { duelSequence, streakOf } from "../web/js/games/duel/sim/duel.js";
@@ -21,10 +22,20 @@ import { shapeRounds, scoreShapes, practiceSeed as shapesPractice, ROUNDS as SHA
 import { shapesPoolFor } from "./shapes.js";
 import { scoreNetwork, practiceSeed as linkPractice, TERMINALS as LINK_TERMINALS, MAX_SCORE as LINK_MAX } from "../web/js/games/link/sim/link.js";
 import { linkBaseFor, linkPuzzleFor } from "./link.js";
+import { guessRounds, scoreGuesses, practiceSeed as guessPractice, ROUNDS as GUESS_ROUNDS, MAX_SCORE as GUESS_MAX } from "../web/js/games/guess/sim/guess.js";
+import { guessPoolFor } from "./guess.js";
 
 export const DUEL_RACE_LEN = 400;
 
 export const RACE_GAMES = {
+  guess: {
+    maxRound: GUESS_ROUNDS, maxScore: GUESS_MAX,
+    async score(env, seed, m) {
+      const pool = await guessPoolFor(env);
+      const r = scoreGuesses(pool, guessRounds(pool, guessPractice(seed)), m?.guesses, { partial: true });
+      return r.error ? r : { score: r.score, round: r.points.length };
+    },
+  },
   link: {
     maxRound: LINK_TERMINALS, maxScore: LINK_MAX,
     async score(env, seed, m) {

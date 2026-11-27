@@ -36,12 +36,16 @@ export async function start(ctx) {
       const d = g && cur();
       if (!d || (g.over && g.reveal < 0)) return;
       c.font = "600 13px system-ui, sans-serif";
+      let prevBox = null; // B steps up if it would cover A (close metros)
       for (const [id, tag, col] of [[d.a, "A", "#ecd08e"], [d.b, "B", HL]]) {
         const m = byId.get(id);
         const [sx, sy] = cam.toScreen(m.x, m.y);
         const text = `${tag} · ${m.name}`;
         const w = c.measureText(text).width + 14;
-        const x = Math.min(cam.w - w - 6, Math.max(6, sx - w / 2)), y = sy - 36;
+        const x = Math.min(cam.w - w - 6, Math.max(6, sx - w / 2));
+        let y = sy - 36;
+        if (prevBox && x < prevBox.x + prevBox.w + 4 && prevBox.x < x + w + 4 && Math.abs(y - prevBox.y) < 26) y = prevBox.y - 26;
+        prevBox = { x, y, w };
         c.fillStyle = "rgba(14,18,24,.92)"; c.strokeStyle = col; c.lineWidth = 1.5;
         c.beginPath(); c.roundRect ? c.roundRect(x, y, w, 22, 5) : c.rect(x, y, w, 22); c.fill(); c.stroke();
         c.fillStyle = "#fff6dc"; c.fillText(text, x + 7, y + 15);

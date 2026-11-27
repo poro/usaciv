@@ -21,7 +21,7 @@ export function streak(keys, today) {
 
 export async function accountStats(request, env) {
   const me = await requirePlayer(env, request);
-  const [wm, fd, md, pp, dl, tr, ld, rk, sh, lk, ml] = await Promise.all([
+  const [wm, fd, md, pp, dl, tr, ld, rk, sh, lk, bp, ml] = await Promise.all([
     env.DB.prepare("SELECT key, score FROM wm_daily WHERE player = ? ORDER BY key DESC LIMIT 400").bind(me.id).all(),
     env.DB.prepare("SELECT key, score, towns FROM fd_daily WHERE player = ? ORDER BY key DESC LIMIT 400").bind(me.id).all(),
     env.DB.prepare("SELECT key, ROUND(uplift * 10000) AS score, scenario FROM ml_daily WHERE player = ? ORDER BY key DESC LIMIT 400").bind(me.id).all(),
@@ -32,6 +32,7 @@ export async function accountStats(request, env) {
     env.DB.prepare("SELECT key, score FROM rank_daily WHERE player = ? ORDER BY key DESC LIMIT 400").bind(me.id).all(),
     env.DB.prepare("SELECT key, score FROM shapes_daily WHERE player = ? ORDER BY key DESC LIMIT 400").bind(me.id).all(),
     env.DB.prepare("SELECT key, score FROM link_daily WHERE player = ? ORDER BY key DESC LIMIT 400").bind(me.id).all(),
+    env.DB.prepare("SELECT key, score FROM guess_daily WHERE player = ? ORDER BY key DESC LIMIT 400").bind(me.id).all(),
     env.DB.prepare(
       `SELECT r.scenario, r.uplift, r.year, r.seed,
          (SELECT COUNT(*) FROM ml_runs x WHERE x.scenario = r.scenario AND x.uplift > r.uplift) + 1 AS rank,
@@ -51,5 +52,5 @@ export async function accountStats(request, env) {
     };
   };
 
-  return json({ wm: sum(wm.results || []), fd: sum(fd.results || []), md: sum(md.results || []), pp: sum(pp.results || []), dl: sum(dl.results || []), tr: sum(tr.results || []), ld: sum(ld.results || []), rk: sum(rk.results || []), sh: sum(sh.results || []), lk: sum(lk.results || []), ml: ml.results || [] });
+  return json({ wm: sum(wm.results || []), fd: sum(fd.results || []), md: sum(md.results || []), pp: sum(pp.results || []), dl: sum(dl.results || []), tr: sum(tr.results || []), ld: sum(ld.results || []), rk: sum(rk.results || []), sh: sum(sh.results || []), lk: sum(lk.results || []), bp: sum(bp.results || []), ml: ml.results || [] });
 }

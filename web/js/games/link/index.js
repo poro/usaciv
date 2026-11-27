@@ -183,8 +183,10 @@ export async function start(ctx) {
       const text = preview.add ? `+${preview.add} cr · ${K.dollars(preview.add)}` : "on your track (free)";
       c.font = "600 12px system-ui, sans-serif";
       const w = c.measureText(text).width + 12;
-      c.fillStyle = "rgba(14,18,24,.9)"; c.beginPath(); c.roundRect ? c.roundRect(sx + 12, sy - 26, w, 20, 4) : c.rect(sx + 12, sy - 26, w, 20); c.fill();
-      c.fillStyle = "#ffe2b0"; c.fillText(text, sx + 18, sy - 12);
+      // above and to the left of the pointer: the map's own tooltip opens below and to the right
+      const x = Math.max(4, sx - w - 10), y = Math.max(4, sy - 32);
+      c.fillStyle = "rgba(14,18,24,.9)"; c.beginPath(); c.roundRect ? c.roundRect(x, y, w, 20, 4) : c.rect(x, y, w, 20); c.fill();
+      c.fillStyle = "#ffe2b0"; c.fillText(text, x + 6, y + 14);
     },
   });
   ctx.on("hover", (h) => {
