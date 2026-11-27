@@ -6,6 +6,7 @@
 // Online: the day's board (docs/MULTIPLAYER.md "Metro Duel daily"); the server replays the answers.
 import { loadCss } from "../shared/css.js";
 import { fitVisible } from "../shared/frame.js";
+import { makeRace } from "../shared/race.js";
 import { net } from "../shared/net.js";
 import { esc } from "../../format.js";
 import * as D from "./sim/duel.js";
@@ -48,6 +49,8 @@ export async function start(ctx) {
   let timer = 0;
   const online = { avail: false, status: "idle", res: null, board: null, err: null };
 
+  // Races (shared/race.js): everyone plays the same practice seed; the room scores the result.
+  const race = makeRace({ ctx, game: "duel", onLive: (seed) => newGame("race", seed), onChange: () => refresh(), label: (p) => `streak ${p.score}` });
   function newGame(mode, seedOrKey) {
     clearTimeout(timer);
     const seq = mode === "daily" ? D.duelSequence(pool, D.dailySeed(seedOrKey), D.DAILY_DUELS) : D.duelSequence(pool, `duel-practice:${seedOrKey}`, 400);
@@ -60,7 +63,7 @@ export async function start(ctx) {
       }
     }
     online.status = "idle"; online.res = null; online.board = null; online.err = null;
-    ctx.setParam(mode === "daily" ? null : `p-${seedOrKey}`);
+    ctx.setParam(mode === "daily" ? null : mode === "race" ? `race-${race.code}` : `p-${seedOrKey}`);
     frame();
     refresh();
     if (g.over && mode === "daily") postDaily();
@@ -69,11 +72,12 @@ export async function start(ctx) {
   const cur = () => g.seq[g.answers.length - (g.reveal >= 0 ? 1 : 0)];
 
   function answer(higher) {
-    if (!g || g.over || g.reveal >= 0) return;
+    if (!g || g.over || g.reveal >= 0 || (race.active && g.mode !== "race")) return;
     const i = g.answers.length;
     g.answers.push(higher);
     const right = g.seq[i].higher === higher;
     if (g.mode === "daily") ctx.storage.set(`d:${g.key}`, g.answers);
+    if (g.mode === "race") race.progress({ round: g.answers.length, score: D.streakOf(g.seq, g.answers).streak });
     g.reveal = i;
     refresh();
     timer = setTimeout(() => {
@@ -85,6 +89,7 @@ export async function start(ctx) {
   }
   function endRun() {
     g.over = true;
+    if (g.mode === "race") race.finish({ answers: g.answers });
     if (g.mode === "daily") {
       const st = ctx.storage.get("stats", { played: 0, best: 0, last: null, days: 0 });
       if (st.last !== g.key) { st.played++; st.last = g.key; st.best = Math.max(st.best, streak()); ctx.storage.set("stats", st); }
@@ -161,10 +166,11 @@ export async function start(ctx) {
   const share = () => `Metro Duel ${g.mode === "daily" ? g.key : "practice"} · streak ${streak()}${g.mode === "daily" && streak() === g.seq.length ? " (perfect)" : ""}\n${"🟦".repeat(Math.min(streak(), 30))}${g.over && streak() < g.seq.length ? "🟥" : ""}`;
 
   function refresh() {
+    if (race.active && g?.mode !== "race") { body.innerHTML = race.html() + how(); return; } // the lobby
     if (!g) return;
     app.requestDraw?.(); // the map overlays follow the game state
     const head = `<div class="dl-head"><div class="g-stat"><b>${streak()}</b><span>streak</span></div>
-      <span class="g-note">${g.mode === "daily" ? `Daily ${esc(g.key)} · ${g.answers.length}/${g.seq.length}` : `Practice · best ${ctx.storage.get("pbest", 0)}`}</span></div>`;
+      <span class="g-note">${g.mode === "daily" ? `Daily ${esc(g.key)} · ${g.answers.length}/${g.seq.length}` : g.mode === "race" ? "Race" : `Practice · best ${ctx.storage.get("pbest", 0)}`}</span></div>${race.active ? race.html() : ""}`;
     if (g.over && g.reveal < 0) {
       const last = g.seq[g.answers.length - 1];
       const missed = last && g.answers.at(-1) !== last.higher ? last : null;
@@ -173,7 +179,7 @@ export async function start(ctx) {
       body.innerHTML = `${head}
         <h3 class="dl-final">${streak()} <small>${streak() === 1 ? "duel" : "duels"} in a row</small></h3>
         ${missed ? `<p class="g-note">Ended on ${esc(s.label)}: ${esc(byId.get(missed.b).name)} ${esc(s.fmt(s.value(byId.get(missed.b))))} vs ${esc(byId.get(missed.a).name)} ${esc(s.fmt(s.value(byId.get(missed.a))))}.</p>` : `<p>A perfect day: all ${g.seq.length}!</p>`}
-        <div class="g-row"><button class="g-btn primary" data-act="share">Copy result</button><button class="g-btn" data-act="practice">${g.mode === "practice" ? "Play again" : "Practice run"}</button>
+        <div class="g-row"><button class="g-btn primary" data-act="share">Copy result</button><button class="g-btn" data-act="practice">${g.mode === "practice" ? "Play again" : "Practice run"}</button><button class="g-btn" data-act="race-create" title="Race friends on the same duels">Race friends</button>
           ${g.mode === "practice" ? `<button class="g-btn" data-act="daily">Today's run</button>` : ""}</div>
         ${boardHtml()}
         ${st && g.mode === "daily" ? `<p class="g-note">Days played ${st.played} · best daily streak ${st.best}</p>` : ""}
@@ -189,7 +195,11 @@ export async function start(ctx) {
   body.addEventListener("click", (e) => {
     const t = e.target.closest("[data-act]");
     if (!t) return;
-    switch (t.dataset.act) {
+    const act = t.dataset.act;
+    if (act === "race-create") { race.create(); return; }
+    if (act === "race-leave") { race.click(act, t); newGame("daily", utcKey()); return; }
+    if (act.startsWith("race-")) { race.click(act, t); return; }
+    switch (act) {
       case "hi": answer(true); break;
       case "lo": answer(false); break;
       case "share": navigator.clipboard?.writeText(`${share()}\n${location.origin}${location.pathname}#play=duel`).then(() => ctx.toast("Result copied"), () => ctx.toast("Could not copy")); break;
@@ -210,7 +220,9 @@ export async function start(ctx) {
   ctx.onCleanup(() => { delete app.duel; });
 
   const pm = /^p-([a-z0-9]{1,12})$/.exec(ctx.param || "");
-  newGame(pm ? "practice" : "daily", pm ? pm[1] : utcKey());
+  const rc = /^race-([A-Za-z0-9]{6})$/.exec(ctx.param || "");
+  if (rc) race.join(rc[1].toUpperCase());
+  else newGame(pm ? "practice" : "daily", pm ? pm[1] : utcKey());
   { const t = setTimeout(() => { if (g && !g.over) frame(); }, 900); ctx.onCleanup(() => clearTimeout(t)); } // after the dock lays out
   const offPlayer = net.onPlayer?.(() => { if (g?.over) refresh(); });
   ctx.onCleanup(() => offPlayer?.());
@@ -219,5 +231,5 @@ export async function start(ctx) {
     if (ok && g?.over && g.mode === "daily") postDaily(); else refresh();
   });
 
-  return { stop() {}, onEscape: () => true, param: () => (g?.mode === "practice" ? `p-${g.seed}` : null) };
+  return { stop() {}, onEscape: () => true, param: () => (race.active ? `race-${race.code}` : g?.mode === "practice" ? `p-${g.seed}` : null) };
 }

@@ -6,6 +6,7 @@
 // (docs/MULTIPLAYER.md "Road Trip daily"); the server rebuilds the trip and scores the order.
 import { loadCss } from "../shared/css.js";
 import { fitVisible } from "../shared/frame.js";
+import { makeRace } from "../shared/race.js";
 import { net } from "../shared/net.js";
 import { esc } from "../../format.js";
 import * as T from "./sim/trip.js";
@@ -28,6 +29,8 @@ export async function start(ctx) {
   let hover = null;
   const online = { avail: false, status: "idle", res: null, board: null, err: null };
 
+  // Races (shared/race.js): everyone plays the same practice seed; the room scores the result.
+  const race = makeRace({ ctx, game: "trip", onLive: (seed) => newGame("race", seed), onChange: () => refresh(), label: (p) => (p.done ? `${p.score}` : `${p.round}/6 stops`) });
   function newGame(mode, seedOrKey) {
     const trip = T.tripFor(pool, mode === "daily" ? T.dailySeed(seedOrKey) : `trip-practice:${seedOrKey}`);
     g = { mode, key: mode === "daily" ? seedOrKey : null, seed: mode === "daily" ? null : seedOrKey, trip, order: [], done: false, result: null };
@@ -37,7 +40,7 @@ export async function start(ctx) {
       if (g.order.length === T.STOPS) finish({ quiet: true });
     }
     online.status = "idle"; online.res = null; online.board = null; online.err = null;
-    ctx.setParam(mode === "daily" ? null : `p-${seedOrKey}`);
+    ctx.setParam(mode === "daily" ? null : mode === "race" ? `race-${race.code}` : `p-${seedOrKey}`);
     highlight();
     frame();
     refresh();
@@ -55,9 +58,10 @@ export async function start(ctx) {
   }
 
   function pick(id) {
-    if (!g || g.done || g.order.includes(id) || !stopById(id)) return;
+    if (!g || g.done || g.order.includes(id) || !stopById(id) || (race.active && g.mode !== "race")) return;
     g.order.push(id);
     save();
+    if (g.mode === "race") race.progress({ round: g.order.length, score: 0 });
     if (g.order.length === T.STOPS) finish();
     else refresh();
   }
@@ -71,6 +75,7 @@ export async function start(ctx) {
   function finish({ quiet = false } = {}) {
     g.done = true;
     g.result = T.scoreTrip(g.trip, g.order);
+    if (g.mode === "race" && !quiet) race.finish({ order: g.order });
     if (g.mode === "daily" && !quiet) {
       const st = ctx.storage.get("stats", { played: 0, best: 0, last: null });
       if (st.last !== g.key) { st.played++; st.last = g.key; st.best = Math.max(st.best, g.result.points); ctx.storage.set("stats", st); }
@@ -156,7 +161,7 @@ export async function start(ctx) {
     if (cell !== hover) { hover = cell >= 0 ? cell : null; app.requestDraw?.(); }
   });
   ctx.on("mapclick", (ev) => {
-    if (!g || g.done) return true;
+    if (!g || g.done || (race.active && g.mode !== "race")) return true;
     const s = stopAt(ev.cell);
     if (s) pick(s.id); else ctx.toast("Click one of the stops (white circles)");
     return true;
@@ -203,6 +208,7 @@ export async function start(ctx) {
     return `<div class="g-section">Today's board</div>${res}${online.status === "sending" ? `<p class="g-note">Checking your route…</p>` : ""}${online.err ? `<p class="tr-err" role="alert">${esc(online.err)}</p>` : ""}${post}${rows}`;
   }
   function refresh() {
+    if (race.active && g?.mode !== "race") { body.innerHTML = race.html() + how(); return; } // the lobby
     if (!g) return;
     app.requestDraw?.(); // the map overlays follow the game state
     const st = g.trip.start;
@@ -214,18 +220,18 @@ export async function start(ctx) {
     if (g.done) {
       const r = g.result;
       const s = ctx.storage.get("stats", null);
-      body.innerHTML = `<p class="g-note">${g.mode === "daily" ? `Daily ${esc(g.key)}` : "Practice"} · from ${esc(st.name)}</p>
+      body.innerHTML = `${race.active ? race.html() : ""}<p class="g-note">${g.mode === "daily" ? `Daily ${esc(g.key)}` : g.mode === "race" ? "Race" : "Practice"} · from ${esc(st.name)}</p>
         <h3 class="tr-final">${r.points} <small>of ${T.MAX_POINTS}</small></h3>
         <p>Your loop: <b>${kmFmt(r.km)}</b> · best possible: <b>${kmFmt(r.best)}</b>${r.points === T.MAX_POINTS ? " · <b class=\"ok\">perfect!</b>" : ` (+${(((r.km - r.best) / r.best) * 100).toFixed(1)}%)`}</p>
         <p class="g-note">Orange: your route. Dashed green: the shortest loop.</p>
         <ol class="tr-order">${[...g.order.map(stopById)].map((p) => `<li>${esc(p.name)}</li>`).join("")}</ol>
-        <div class="g-row"><button class="g-btn primary" data-act="share">Copy result</button><button class="g-btn" data-act="practice">${g.mode === "practice" ? "Another trip" : "Practice trip"}</button>
+        <div class="g-row"><button class="g-btn primary" data-act="share">Copy result</button><button class="g-btn" data-act="practice">${g.mode === "practice" ? "Another trip" : "Practice trip"}</button><button class="g-btn" data-act="race-create" title="Race friends on the same trip">Race friends</button>
           ${g.mode === "practice" ? `<button class="g-btn" data-act="daily">Today's trip</button>` : ""}</div>
         ${boardHtml()}
         ${s && g.mode === "daily" ? `<p class="g-note">Days played ${s.played} · best ${s.best}</p>` : ""}${how()}`;
       return;
     }
-    body.innerHTML = `<p class="g-note">${g.mode === "daily" ? `Daily ${esc(g.key)}` : "Practice"}</p>
+    body.innerHTML = `${race.active ? race.html() : ""}<p class="g-note">${g.mode === "daily" ? `Daily ${esc(g.key)}` : g.mode === "race" ? "Race" : "Practice"}</p>
       <p class="tr-q">Leave <b>${esc(st.name)}</b> (⌂), visit all six, and come home by the shortest loop. Click the stops in order.</p>
       <ul class="tr-stops">${list}</ul>
       <p class="tr-km">So far: <b>${kmFmt(sofar)}</b>${g.order.length ? ` · then ${kmFmt(T.km(stopById(g.order.at(-1)), st))} home` : ""}</p>
@@ -239,7 +245,11 @@ export async function start(ctx) {
   body.addEventListener("click", (e) => {
     const t = e.target.closest("[data-act]");
     if (!t) return;
-    switch (t.dataset.act) {
+    const act = t.dataset.act;
+    if (act === "race-create") { race.create(); return; }
+    if (act === "race-leave") { race.click(act, t); newGame("daily", utcKey()); return; }
+    if (act.startsWith("race-")) { race.click(act, t); return; }
+    switch (act) {
       case "undo": undo(); break;
       case "share": navigator.clipboard?.writeText(`${share()}\n${location.origin}${location.pathname}#play=trip`).then(() => ctx.toast("Result copied"), () => ctx.toast("Could not copy")); break;
       case "practice": newGame("practice", Math.random().toString(36).slice(2, 8)); break;
@@ -251,7 +261,9 @@ export async function start(ctx) {
   app.trip = { get g() { return g; }, pick: (id) => pick(id) }; // debugging handle, removed on exit
   ctx.onCleanup(() => { delete app.trip; });
   const pm = /^p-([a-z0-9]{1,12})$/.exec(ctx.param || "");
-  newGame(pm ? "practice" : "daily", pm ? pm[1] : utcKey());
+  const rc = /^race-([A-Za-z0-9]{6})$/.exec(ctx.param || "");
+  if (rc) race.join(rc[1].toUpperCase());
+  else newGame(pm ? "practice" : "daily", pm ? pm[1] : utcKey());
   { const t = setTimeout(() => g && frame(), 900); ctx.onCleanup(() => clearTimeout(t)); }
   const offPlayer = net.onPlayer?.(() => { if (g?.done) refresh(); });
   ctx.onCleanup(() => offPlayer?.());
@@ -259,5 +271,5 @@ export async function start(ctx) {
     online.avail = !!ok;
     if (ok && g?.done && g.mode === "daily") postDaily(); else refresh();
   });
-  return { stop() {}, onEscape: () => true, param: () => (g?.mode === "practice" ? `p-${g.seed}` : null) };
+  return { stop() {}, onEscape: () => true, param: () => (race.active ? `race-${race.code}` : g?.mode === "practice" ? `p-${g.seed}` : null) };
 }

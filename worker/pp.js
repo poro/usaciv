@@ -9,7 +9,7 @@ import { loadMany } from "./data.js";
 
 const ASSET_BASE = { url: "https://usaciv.internal/" };
 let poolPromise = null; // {grid, pool}, once per isolate
-function ppPool(env) {
+export function ppPool(env) {
   poolPromise ||= loadMany(env, ASSET_BASE, ["world", "cities", "resources", "wonders", "infrastructure"]).then((d) => {
     const grid = makeHexMap(d.world).grid;
     return { grid, pool: buildPool(d, grid) };

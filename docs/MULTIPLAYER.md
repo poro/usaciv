@@ -29,6 +29,7 @@ worker/wm.js           Which Metro?: daily submit/board, race room create
 worker/race.js         export class RaceRoom (Durable Object)
 worker/ml.js           Mainline: submit/board (uses web/js/games/mainline/sim/verify.js)
 worker/vs.js           Mainline versus: room create/info and export class VersusRoom (Durable Object)
+worker/racegames.js    race scorers for Pinpoint, Duel and Road Trip (used by RaceRoom)
 worker/trip.js         Road Trip daily: trip rebuilt from the date, order scored on the server
 worker/today.js        GET /api/today: every daily board at a glance
 worker/duel.js         Metro Duel daily: duels rebuilt from the date, streak counted on the server
@@ -181,6 +182,19 @@ per IP per hour. Over the limit → 429 with `Retry-After`. A daily resubmission
 - `POST /api/trip/daily {key, order: [six metro ids]}` → `{score, km, best, rank, total}` (`stored: true` on a
   resubmission). `GET /api/trip/daily/:key` → `{key, total, top: [{rank, name, score, km}], you}`. Stats `tr`; merge
   and delete include `trip_daily` (migration 0007).
+
+### Races for Pinpoint, Metro Duel and Road Trip
+
+- `POST /api/race {game: "pinpoint"|"duel"|"trip"}` → `{code}` (a write). `GET /api/race/:code` → `{code, game, status,
+  players}`; `GET /api/race/:code/ws?token=…` → the room's socket. Same `RaceRoom` Durable Object and protocol as Which
+  Metro? races (`start`, `progress`, `finish`, `room` broadcasts; 8 players; lobby-only joining; closes 30 minutes after
+  the start), with `room.game` set. Which Metro? rooms keep `game: "whichMetro"` and their own endpoints.
+- The race plays the game's **practice** seed (`room.seed`). `progress {round, score}` is bounded per game. `finish`
+  carries `{guesses}` (Pinpoint: 1–8 hexes, scored round by round), `{answers}` (Duel: the streak over a 400-duel
+  practice run) or `{order}` (Road Trip: 0–1000; an unfinished route scores 0). The room scores it
+  (`worker/racegames.js`) and places players by score, then finish time.
+- Browser: `web/js/games/shared/race.js` (`makeRace`): create/join by `#play=<game>~race-<CODE>`, lobby with the
+  link and the host's Start button, live standings at the top of the game's panel.
 
 ## Mainline versus (real time)
 

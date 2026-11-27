@@ -8,6 +8,7 @@ import { loadMany } from "./data.js";
 
 const ASSET_BASE = { url: "https://usaciv.internal/" };
 let poolPromise = null;
+export const tripPoolFor = (env) => pool(env);
 const pool = (env) => {
   poolPromise ||= loadMany(env, ASSET_BASE, ["cities"]).then((d) => tripPool(d.cities));
   poolPromise.catch(() => { poolPromise = null; });

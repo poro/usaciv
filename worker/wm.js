@@ -80,6 +80,20 @@ export async function createRace(request, env) {
   return error(503, "Could not make a room, try again");
 }
 
+/** POST /api/race {game: "pinpoint"|"duel"|"trip"} → {code}: a race on a practice seed of that game (worker/racegames.js). */
+export async function createGameRace(request, env) {
+  const me = await requirePlayer(env, request);
+  const game = (await readJson(request))?.game;
+  if (!["pinpoint", "duel", "trip"].includes(game)) return error(400, "game must be pinpoint, duel or trip");
+  await limitWrite(env, me.id);
+  for (let tries = 0; tries < 5; tries++) {
+    const code = newRoomCode(randomByte);
+    const ok = await roomStub(env, code).init({ code, seed: newPracticeSeed(random01), host: { id: me.id, name: me.name }, game });
+    if (ok) return json({ code });
+  }
+  return error(503, "Could not make a room, try again");
+}
+
 /** GET /api/wm/race/:code → {code, status, players} */
 export async function raceStatus(request, env, code) {
   if (!isRoomCode(code)) return error(404, "No such room");

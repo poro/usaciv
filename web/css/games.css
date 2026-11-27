@@ -37,3 +37,16 @@
 .games-today { font-size: 11.5px; color: var(--ink-dim); }
 .games-today .done { color: #8fe3a2; }
 .games-today .todo { color: var(--gold-bright); }
+
+/* Races for the short games (games/shared/race.js) */
+.race-box { padding: 8px 10px; margin: 0 0 10px; border: 1px solid rgba(127,215,255,.55); border-radius: 6px; background: rgba(127,215,255,.06); font-size: 13px; }
+.race-list { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 2px; }
+.race-list li { display: grid; grid-template-columns: 24px 1fr auto; gap: 6px; align-items: baseline; padding: 2px 4px; border-radius: 3px; }
+.race-list li.me { background: rgba(127,215,255,.14); }
+.race-list li.off { opacity: .55; }
+.race-list .sc { font-family: var(--serif); color: var(--gold-bright); }
+.race-list small { color: var(--ink-dim); font-size: 10.5px; }
+.race-link input { flex: 1; min-width: 0; font: 12px ui-monospace, Menlo, monospace; padding: 4px 6px; background: #0d1520; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; }
+.race-nick { display: grid; gap: 3px; font-size: 12px; color: var(--ink-dim); }
+.race-nick input { font: inherit; padding: 4px 6px; background: #0d1520; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; }
+.race-err { color: #ff9c8a; }

@@ -6,6 +6,7 @@ import { DurableObject } from "cloudflare:workers";
 import { practiceAnswers } from "../web/js/games/whichMetro/sim/puzzle.js";
 import { wmPool } from "./data.js";
 import { cleanRounds, replayRounds, cleanProgress, placePlayers, MAX_PLAYERS, RACE_MINUTES, FORGET_HOURS } from "./rules.js";
+import { RACE_GAMES, cleanRaceProgress } from "./racegames.js";
 
 const CLOSE_MS = RACE_MINUTES * 60_000;
 const FORGET_MS = FORGET_HOURS * 3600_000;
@@ -31,12 +32,12 @@ export class RaceRoom extends DurableObject {
   // --- RPC from the Worker -------------------------------------------------------------------------------------
 
   /** Make the room; false when this code is already taken. */
-  async init({ code, seed, host }) {
+  async init({ code, seed, host, game = "whichMetro" }) {
     if (this.room) return false;
     this.ensureTable();
     const now = Date.now();
     this.room = {
-      code, seed, status: "lobby", host: host.id, createdAt: now, startedAt: null, lastActivity: now,
+      code, seed, game, status: "lobby", host: host.id, createdAt: now, startedAt: null, lastActivity: now,
       players: [newPlayer(host, now)],
     };
     await this.save();
@@ -46,7 +47,7 @@ export class RaceRoom extends DurableObject {
   /** {code, status, players: n}, or null for an unknown room. */
   async status() {
     const r = this.room;
-    return r ? { code: r.code, status: r.status, players: r.players.length } : null;
+    return r ? { code: r.code, game: r.game || "whichMetro", status: r.status, players: r.players.length } : null;
   }
 
   // --- sockets -------------------------------------------------------------------------------------------------
@@ -105,7 +106,7 @@ export class RaceRoom extends DurableObject {
         const now = Date.now();
         if (now - (this.lastProgress.get(id) || 0) < PROGRESS_GAP_MS) return;
         this.lastProgress.set(id, now);
-        const pr = cleanProgress(m);
+        const pr = RACE_GAMES[r.game] ? cleanRaceProgress(r.game, m) : cleanProgress(m);
         if (!pr) return;
         Object.assign(p, pr);
         return this.touchAndBroadcast();
@@ -114,6 +115,19 @@ export class RaceRoom extends DurableObject {
         if (r.status === "lobby") return send(ws, { t: "error", error: "The race has not started" });
         if (r.status === "done") return send(ws, { t: "error", error: "The race is over" });
         if (p.finishedAt != null) return send(ws, { t: "error", error: "You already finished" });
+        if (RACE_GAMES[r.game]) {
+          const v = await RACE_GAMES[r.game].score(this.env, r.seed, m);
+          if (v.error) return send(ws, { t: "error", error: v.error });
+          p.score = v.score;
+          p.round = v.round;
+          p.clues = 0;
+          p.finishedAt = Date.now();
+          p.done = true;
+          const allIn = r.players.every((x) => x.finishedAt != null);
+          if (allIn) r.status = "done";
+          placePlayers(r.players, allIn);
+          return this.touchAndBroadcast();
+        }
         const c = cleanRounds(m.rounds);
         if (c.error) return send(ws, { t: "error", error: c.error });
         const answers = practiceAnswers(await wmPool(this.env, ASSET_BASE), r.seed);
@@ -191,7 +205,7 @@ export class RaceRoom extends DurableObject {
       if (a?.id) online.add(a.id);
     }
     return {
-      code: r.code, status: r.status, seed: r.status === "lobby" ? null : r.seed, host: r.host, startedAt: r.startedAt,
+      code: r.code, game: r.game || "whichMetro", status: r.status, seed: r.status === "lobby" ? null : r.seed, host: r.host, startedAt: r.startedAt,
       players: r.players.map((p) => ({
         id: p.id, name: p.name, round: p.round, clues: p.clues, score: p.score, done: p.done, place: p.place, online: online.has(p.id),
       })),

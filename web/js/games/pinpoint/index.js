@@ -8,6 +8,7 @@
 // board (docs/MULTIPLAYER.md "Pinpoint daily"); the server rebuilds the rounds from the date and scores the guesses.
 import { loadCss } from "../shared/css.js";
 import { fitVisible } from "../shared/frame.js";
+import { makeRace } from "../shared/race.js";
 import { net } from "../shared/net.js";
 import { esc } from "../../format.js";
 import * as P from "./sim/rounds.js";
@@ -59,6 +60,8 @@ export async function start(ctx) {
   let hover = null;
   const online = { avail: false, status: "idle", res: null, board: null, err: null };
 
+  // Races (shared/race.js): everyone plays the same practice seed; the room scores the guesses.
+  const race = makeRace({ ctx, game: "pinpoint", onLive: (seed) => newGame("race", seed), onChange: () => refresh(), label: (p) => `${p.score.toLocaleString("en-US")} pts` });
   function newGame(mode, seedOrKey) {
     const rounds = mode === "daily" ? P.dailyRounds(pool, seedOrKey) : P.roundsFor(pool, `pinpoint-practice:${seedOrKey}`);
     g = { mode, key: mode === "daily" ? seedOrKey : null, seed: mode === "daily" ? null : seedOrKey, rounds, guesses: [], results: [], i: 0 };
@@ -67,7 +70,7 @@ export async function start(ctx) {
       if (Array.isArray(saved)) for (const c of saved.slice(0, rounds.length)) guessAt(c, { quiet: true });
     }
     online.status = "idle"; online.res = null; online.board = null; online.err = null;
-    ctx.setParam(mode === "daily" ? null : `p-${seedOrKey}`);
+    ctx.setParam(mode === "daily" ? null : mode === "race" ? `race-${race.code}` : `p-${seedOrKey}`);
     if (g.guesses.length < g.rounds.length) { g.i = g.guesses.length; frameUS(); }
     else { g.i = g.rounds.length; finish({ quiet: true }); }
     refresh();
@@ -83,6 +86,7 @@ export async function start(ctx) {
     g.results.push(r);
     if (g.mode === "daily") ctx.storage.set(`d:${g.key}`, g.guesses);
     if (quiet) { g.i = g.guesses.length; return; }
+    if (g.mode === "race") race.progress({ round: g.guesses.length, score: total() });
     frameRound(g.i);
     refresh();
   }
@@ -114,6 +118,7 @@ export async function start(ctx) {
     frameUS();
     refresh();
     if (g.mode === "daily") postDaily();
+    if (g.mode === "race") race.finish({ guesses: g.guesses });
   }
   const total = () => g.results.reduce((s, r) => s + r.points, 0);
 
@@ -203,7 +208,7 @@ export async function start(ctx) {
     if (cell !== hover) { hover = cell >= 0 ? cell : null; app.requestDraw?.(); }
   });
   ctx.on("mapclick", (ev) => {
-    if (!g) return true;
+    if (!g || (race.active && g.mode !== "race")) return true;
     if (done()) return true;
     if (revealing()) { next(); return true; }
     if (ev.cell == null || ev.cell < 0) return true;
@@ -247,12 +252,13 @@ export async function start(ctx) {
   }
 
   function refresh() {
+    if (race.active && g?.mode !== "race") { body.innerHTML = race.html() + how(); return; } // the lobby
     if (!g) return;
     app.requestDraw?.(); // the map overlays follow the game state
     const tot = total();
     const head = `<div class="pp-top-row"><div class="g-stat"><b>${tot.toLocaleString("en-US")}</b><span>points</span></div>
       <div class="pp-dots">${g.rounds.map((_, i) => `<i class="${i < g.results.length ? `s${P.square(g.results[i].points) === "🟩" ? 4 : P.square(g.results[i].points) === "🟨" ? 3 : P.square(g.results[i].points) === "🟧" ? 2 : 1}` : i === g.i ? "cur" : ""}"></i>`).join("")}</div>
-      <span class="g-note">${g.mode === "daily" ? `Daily ${esc(g.key)}` : "Practice"}</span></div>`;
+      <span class="g-note">${g.mode === "daily" ? `Daily ${esc(g.key)}` : g.mode === "race" ? "Race" : "Practice"}</span></div>${race.active ? race.html() : ""}`;
     if (done()) {
       const st = ctx.storage.get("stats", null);
       const rows = g.rounds.map((p, i) => `<li><span>${KIND_ICON[p.kind] || "📍"}</span><span class="nm">${esc(p.name)} <span class="muted">${esc(p.where)}</span></span><span class="km">${g.results[i].km.toLocaleString("en-US")} km</span><span class="pt">${g.results[i].points}</span></li>`).join("");
@@ -260,7 +266,7 @@ export async function start(ctx) {
         <h3 class="pp-final">${tot.toLocaleString("en-US")} <small>of ${(g.rounds.length * P.MAX_POINTS).toLocaleString("en-US")}</small></h3>
         <p class="pp-squares">${g.results.map((r) => P.square(r.points)).join("")}</p>
         <ul class="pp-list">${rows}</ul>
-        <div class="g-row"><button class="g-btn primary" data-act="share">Copy result</button><button class="g-btn" data-act="practice">Practice round</button>
+        <div class="g-row"><button class="g-btn primary" data-act="share">Copy result</button><button class="g-btn" data-act="practice">Practice round</button><button class="g-btn" data-act="race-create" title="Race friends on the same eight places">Race friends</button>
           ${g.mode === "practice" ? `<button class="g-btn" data-act="daily">Today's game</button>` : ""}</div>
         ${boardHtml()}
         ${st && g.mode === "daily" ? `<p class="g-note">Days played ${st.played} · best ${st.best.toLocaleString("en-US")} · streak ${st.streak}</p>` : ""}
@@ -289,7 +295,11 @@ export async function start(ctx) {
   body.addEventListener("click", (e) => {
     const t = e.target.closest("[data-act]");
     if (!t) return;
-    switch (t.dataset.act) {
+    const act = t.dataset.act;
+    if (act === "race-create") { race.create(); return; }
+    if (act === "race-leave") { race.click(act, t); newGame("daily", utcKey()); return; }
+    if (act.startsWith("race-")) { race.click(act, t); return; }
+    switch (act) {
       case "next": next(); break;
       case "share": navigator.clipboard?.writeText(`${share()}\n${location.origin}${location.pathname}#play=pinpoint`).then(() => ctx.toast("Result copied"), () => ctx.toast("Could not copy")); break;
       case "practice": newGame("practice", Math.random().toString(36).slice(2, 8)); break;
@@ -304,7 +314,9 @@ export async function start(ctx) {
 
   // --- start -------------------------------------------------------------------------------------------------------
   const pm = /^p-([a-z0-9]{1,12})$/.exec(ctx.param || "");
-  newGame(pm ? "practice" : "daily", pm ? pm[1] : utcKey());
+  const rc = /^race-([A-Za-z0-9]{6})$/.exec(ctx.param || "");
+  if (rc) race.join(rc[1].toUpperCase());
+  else newGame(pm ? "practice" : "daily", pm ? pm[1] : utcKey());
   { const t = setTimeout(() => { if (g && !revealing()) frameUS(); }, 900); ctx.onCleanup(() => clearTimeout(t)); } // after the dock has laid out
   const offPlayer = net.onPlayer?.(() => { if (g && done()) refresh(); });
   ctx.onCleanup(() => offPlayer?.());
@@ -317,6 +329,6 @@ export async function start(ctx) {
   return {
     stop() {},
     onEscape: () => true,
-    param: () => (g?.mode === "practice" ? `p-${g.seed}` : null),
+    param: () => (race.active ? `race-${race.code}` : g?.mode === "practice" ? `p-${g.seed}` : null),
   };
 }

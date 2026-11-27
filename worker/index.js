@@ -2,7 +2,7 @@
 // wrangler.jsonc routes only /api/* here first (assets.run_worker_first), so the asset fallback below is a safety net.
 import { json, error, readJson, requirePlayer, ipHash, rateLimit, limitWrite, sameOrigin, randomId, randomToken, sha256Hex, HttpError, LIMITS, VERSION } from "./http.js";
 import { checkName } from "./rules.js";
-import { submitDaily, dailyBoard, createRace, raceStatus, raceSocket } from "./wm.js";
+import { submitDaily, dailyBoard, createRace, createGameRace, raceStatus, raceSocket } from "./wm.js";
 import { submitRun, mlBoard, submitMlDaily, mlDailyBoard } from "./ml.js";
 import { createVs, createFd, vsStatus, vsSocket } from "./vs.js";
 import * as auth from "./auth.js";
@@ -65,6 +65,9 @@ const ROUTES = [
   ["POST", /^\/api\/wm\/daily$/, submitDaily],
   ["GET", /^\/api\/wm\/daily\/([0-9-]{10})$/, dailyBoard],
   ["POST", /^\/api\/wm\/race$/, createRace],
+  ["POST", /^\/api\/race$/, createGameRace],
+  ["GET", /^\/api\/race\/([A-Za-z0-9]{6})$/, (req, env, code) => raceStatus(req, env, code.toUpperCase())],
+  ["GET", /^\/api\/race\/([A-Za-z0-9]{6})\/ws$/, (req, env, code) => raceSocket(req, env, code.toUpperCase())],
   ["GET", /^\/api\/wm\/race\/([A-Za-z0-9]{6})$/, (req, env, code) => raceStatus(req, env, code.toUpperCase())],
   ["GET", /^\/api\/wm\/race\/([A-Za-z0-9]{6})\/ws$/, (req, env, code) => raceSocket(req, env, code.toUpperCase())],
   ["POST", /^\/api\/ml\/run$/, submitRun],
