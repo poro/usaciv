@@ -6,6 +6,7 @@ import { submitDaily, dailyBoard, createRace, raceStatus, raceSocket } from "./w
 import { submitRun, mlBoard } from "./ml.js";
 import { createVs, createFd, vsStatus, vsSocket } from "./vs.js";
 import * as auth from "./auth.js";
+import { submitFdDaily, fdDailyBoard } from "./fd.js";
 
 export { RaceRoom } from "./race.js";
 export { VersusRoom } from "./vs.js"; // Mainline versus and Founders multiplayer rooms
@@ -64,6 +65,8 @@ const ROUTES = [
   ["POST", /^\/api\/ml\/vs$/, createVs],
   ["GET", /^\/api\/ml\/vs\/([A-Za-z0-9]{6})$/, (req, env, code) => vsStatus(req, env, code.toUpperCase())],
   ["GET", /^\/api\/ml\/vs\/([A-Za-z0-9]{6})\/ws$/, (req, env, code) => vsSocket(req, env, code.toUpperCase(), "mainline")],
+  ["POST", /^\/api\/fd\/daily$/, submitFdDaily],
+  ["GET", /^\/api\/fd\/daily\/([0-9-]{10})$/, fdDailyBoard],
   ["POST", /^\/api\/fd\/match$/, createFd],
   ["GET", /^\/api\/fd\/match\/([A-Za-z0-9]{6})$/, (req, env, code) => vsStatus(req, env, code.toUpperCase())],
   ["GET", /^\/api\/fd\/match\/([A-Za-z0-9]{6})\/ws$/, (req, env, code) => vsSocket(req, env, code.toUpperCase(), "founders")],

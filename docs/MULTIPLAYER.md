@@ -29,11 +29,12 @@ worker/wm.js           Which Metro?: daily submit/board, race room create
 worker/race.js         export class RaceRoom (Durable Object)
 worker/ml.js           Mainline: submit/board (uses web/js/games/mainline/sim/verify.js)
 worker/vs.js           Mainline versus: room create/info and export class VersusRoom (Durable Object)
+worker/fd.js           Founders daily: submit (replayed with sim/daily.js) and board
 worker/auth.js         login: passkeys, device codes, Google (off until configured), sign-out, merge, delete
 worker/webauthn.js     passkey verification (CBOR/COSE parsing, ES256/RS256 with WebCrypto); pure, no npm
 worker/rules.js        pure rules (names, step checks + replay, room codes, places); tested by tests/js/worker.test.mjs
 worker/blocklist.js    the short name blocklist
-migrations/0001_init.sql, 0002_login.sql
+migrations/0001_init.sql, 0002_login.sql, 0003_founders_daily.sql
 web/js/games/shared/net.js   the browser client (below)
 web/js/app/account.js        the top-bar account button and panel
 ```
@@ -120,6 +121,24 @@ per IP per hour. Over the limit → 429 with `Retry-After`. A daily resubmission
   whether this run replaced it.
 - `ml.js` imports `verify.js` lazily, and loads exactly its `REQUIRED_DATA` files. If `verify.js` is missing from
   a build, both Mainline endpoints answer 503 "Mainline boards are not ready".
+
+### Founders daily
+
+- One map a day for everyone: seed `daily-YYYY-MM-DD` (UTC), the same five starts, **30 turns** (1790–1906).
+  `#play=founders~daily` opens today's; `#play=founders~daily-2026-11-27` a given day's (the board takes a day only
+  within one day of the server's UTC date, like Which Metro?).
+- The browser records every action it applies in a solo game (`model.slog`, saved with the game). When a daily ends
+  it posts `{key, log}`; the server replays it with `web/js/games/founders/sim/daily.js` (`verifyDaily`: clean the log,
+  replay from `newDaily`, require the game to be over, score with `prosperity`). A full replay takes about 6 ms.
+- The first finished game per player per day counts; a resubmission returns it (`stored: true`). A game saved before
+  logs were kept, or one longer than 6,000 actions, can't be posted.
+- The Founders env must be complete (disasters loaded) to score: otherwise 503, so a degraded env never refuses a
+  real game.
+
+| Method and path | Auth | Body → response |
+|---|---|---|
+| `POST /api/fd/daily` | ✓ | `{key, log: [action]}` → `{score, towns, rank, total}` (`stored: true` on a resubmission). Counts as a write |
+| `GET /api/fd/daily/:key` | (✓) | `?limit=20` → `{key, total, top: [{rank, name, score, towns}], you: {rank, score, towns} \| null}` |
 
 ## Mainline versus (real time)
 
@@ -280,7 +299,8 @@ and survive cleared browser data.
   with its own token. Signing out deletes that row (or, for the first device, replaces its hash with an unusable
   `revoked:` value). A player keeps at most 20 sessions; the least recently used go first.
 - **Merge on sign-in:** if the device signing in holds an *anonymous* player (no passkey, no identity), its scores
-  move into the account and the anonymous player is deleted. Daily scores: the account's entry for a date wins.
+  move into the account and the anonymous player is deleted. Daily scores (Which Metro? and Founders): the
+  account's entry for a date wins.
   Mainline: the better run per scenario wins. A player that has a passkey or identity is never merged.
 - A "secured" player has at least one passkey or identity. The panel warns an unsecured player that signing out or
   clearing site data loses them.

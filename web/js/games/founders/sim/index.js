@@ -9,3 +9,4 @@ export * from "./score.js";
 export * from "./advice.js";
 export * from "./auto.js";
 export * from "./match.js";
+export * from "./daily.js";

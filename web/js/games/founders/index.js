@@ -90,19 +90,27 @@ export async function start(ctx) {
 
   // --- state, saves, seed ----------------------------------------------------------------------------------------
   const randomSeed = () => Math.random().toString(36).slice(2, 8);
+  const todayKey = () => new Date().toISOString().slice(0, 10); // the daily challenge follows the UTC day
+  // A solo game: a daily seed ("daily-YYYY-MM-DD") plays that day's challenge (30 turns), any other seed the full game.
+  const soloGame = (seed) => (S.isDailySeed(seed) ? S.newDaily(env, S.dailyKeyOf(seed)) : S.newGame(env, seed));
   const saved = ctx.storage.get(SAVE_KEY);
   const savedState = saved && saved.v === SAVE_V && saved.state && saved.state.v === 1 ? saved.state : null;
   const mpParam = /^(ai|hot)\.|^mp-/.test(ctx.param || "");
-  const seed = (!mpParam && ctx.param) || savedState?.seed || randomSeed();
-  setState(savedState && savedState.seed === seed ? savedState : S.newGame(env, seed), false);
+  const wantSeed = ctx.param === "daily" ? S.dailySeed(todayKey()) : ctx.param;
+  const seed = (!mpParam && wantSeed) || savedState?.seed || randomSeed();
+  // model.slog: the solo game's applied actions, for the daily board (null for a save from before logs were kept).
+  if (savedState && savedState.seed === seed) { model.slog = Array.isArray(saved.log) ? saved.log : null; setState(savedState, false); }
+  else { model.slog = []; setState(soloGame(seed), false); }
   if (!mpParam) ctx.setParam(model.state.seed);
   const online = { avail: false };
+  // The daily board for the finished game on screen: {key, status: "idle"|"sending"|"done"|"error", res, board, err}.
+  model.daily = null;
 
   function setState(s, save = true) {
     model.state = s;
     model.ver++;
     model.land = s.phase === "setup" ? null : prepareLand(env, s);
-    if (save && !model.mp) ctx.storage.set(SAVE_KEY, { v: SAVE_V, state: s }); // a match never touches the solo save
+    if (save && !model.mp) ctx.storage.set(SAVE_KEY, { v: SAVE_V, state: s, log: model.slog }); // a match never touches the solo save
   }
 
   function act(action, { quiet = false } = {}) {
@@ -112,6 +120,8 @@ export async function start(ctx) {
       if (!quiet) ctx.toast(r.error);
       return r;
     }
+    if (model.slog && model.slog.length < S.DAILY_MAX_ACTIONS) model.slog.push(JSON.parse(JSON.stringify(action)));
+    else model.slog = null; // too long to verify: no board for this game
     setState(r.state);
     if (r.msg && !quiet) ctx.toast(r.msg);
     return r;
@@ -120,8 +130,10 @@ export async function start(ctx) {
   function newGame(seedStr) {
     model.selTown = model.selParty = model.selCell = null;
     model.history = null;
+    model.daily = null;
     if (model.revealed) reveal(false);
-    setState(S.newGame(env, seedStr));
+    model.slog = [];
+    setState(soloGame(seedStr));
     ctx.setParam(seedStr);
     app.home?.();
     refresh();
@@ -456,7 +468,8 @@ export async function start(ctx) {
     // back to a fresh solo setup (the solo save is untouched)
     const sv = ctx.storage.get(SAVE_KEY);
     const st = sv && sv.v === SAVE_V && sv.state?.v === 1 ? sv.state : null;
-    setState(st && st.phase !== "over" ? st : S.newGame(env, randomSeed()), false);
+    if (st && st.phase !== "over") { model.slog = Array.isArray(sv.log) ? sv.log : null; setState(st, false); }
+    else { model.slog = []; setState(S.newGame(env, randomSeed()), false); }
     ctx.setParam(model.state.seed);
     refresh();
   }
@@ -492,11 +505,66 @@ export async function start(ctx) {
     model.history = { ...S.compareHistory(env, model.state, H), vintage: counties?.vintage || "ACS", hasCounties: H.hasCounties };
     reveal(true);
     model.selTown = model.selParty = model.selCell = null;
+    if (!model.mp && S.isDailySeed(model.state.seed)) dailyFinished();
     refresh();
     frameTowns();
     // Again once the host has framed the docked map (a resumed game reaches here before that).
     const t = setTimeout(frameTowns, 1000);
     ctx.onCleanup(() => clearTimeout(t));
+  }
+
+  // --- daily challenge board (sim/daily.js; /api/fd/daily in docs/MULTIPLAYER.md) ------------------------------
+  async function dailyFinished() {
+    const key = S.dailyKeyOf(model.state.seed);
+    model.daily = { key, status: "idle", res: null, board: null, err: null };
+    if (!(await net.available())) { model.daily.status = "offline"; refresh(); return; }
+    online.avail = true;
+    if (net.player() && model.slog) await dailyPost();
+    else await dailyBoard();
+  }
+  async function dailyPost() {
+    const d = model.daily;
+    if (!d || d.status === "sending") return;
+    if (!model.slog) { d.err = "This game was saved before moves were recorded, so it can't be checked for the board."; refresh(); return; }
+    if (!net.player()) {
+      const name = body.querySelector('[data-field="dnick"]')?.value?.trim();
+      if (!name) { d.err = "Pick a nickname first (2–20 letters, digits or spaces)."; refresh(); return; }
+      try { await net.ensurePlayer(name); } catch (err) { d.err = err.message; refresh(); return; }
+    }
+    d.status = "sending"; d.err = null; refresh();
+    const r = await net.post("/api/fd/daily", { key: d.key, log: model.slog });
+    if (model.daily !== d) return;
+    if (r.ok) { d.res = r.data; d.status = "done"; }
+    else { d.status = "error"; d.err = r.error; }
+    await dailyBoard();
+  }
+  async function dailyBoard() {
+    const d = model.daily;
+    if (!d) return;
+    const r = await net.get(`/api/fd/daily/${d.key}?limit=10`);
+    if (model.daily !== d) return;
+    if (r.ok) d.board = r.data;
+    refresh();
+  }
+  function dailyHtml() {
+    const d = model.daily;
+    if (!d) return "";
+    const me = net.player();
+    const head = `<p class="fd-kicker">Daily challenge · ${esc(d.key)}</p>`;
+    if (d.status === "offline") return `<div class="fd-daily">${head}<p class="g-note">This copy of the site has no leaderboard. Same map for everyone today: compare scores by hand.</p></div>`;
+    const res = d.res ? `<p class="fd-daily-res">${d.res.stored ? "Your first game today is on the board" : "On the board"}: <b>#${d.res.rank}</b> of ${d.res.total} with <b>${int(d.res.score)}</b>.
+        ${d.res.stored && d.res.score !== S.prosperity(env, model.state).score ? `<span class="g-note">Only the first finished game of the day counts.</span>` : ""}</p>` : "";
+    const post = !d.res && d.status !== "sending" && model.slog ? (me
+      ? `<button class="g-btn primary" data-act="daily-post">Post to today's board as ${esc(me.name)}</button>`
+      : `<div class="g-row"><label class="fd-mp-nick">Nickname <input data-field="dnick" maxlength="20" autocomplete="nickname" placeholder="2–20 letters"></label>
+          <button class="g-btn primary" data-act="daily-post">Post score</button></div>
+          <p class="g-note"><button type="button" class="linkish-open" data-open-account>Have a player? Sign in</button></p>`) : "";
+    const rows = d.board?.top?.length ? `<ol class="fd-daily-top">${d.board.top.map((r) => `<li${d.board.you && r.name === me?.name && r.score === d.board.you.score ? ` class="me"` : ""}><span class="rk">${r.rank}</span><span class="nm">${esc(r.name)}</span><span class="sc">${int(r.score)}</span><span class="tw g-note">${r.towns} towns</span></li>`).join("")}</ol>
+        <p class="g-note">${d.board.total} player${d.board.total === 1 ? "" : "s"} today${d.board.you && !d.board.top.some((r) => r.rank === d.board.you.rank && r.score === d.board.you.score) ? ` · you: #${d.board.you.rank}` : ""}. <button type="button" class="linkish-open" data-act="daily-board">Refresh</button></p>`
+      : d.board ? `<p class="g-note">Nobody has posted today's challenge yet.</p>` : "";
+    return `<div class="fd-daily">${head}${res}${d.status === "sending" ? `<p class="g-note">Checking your game on the server…</p>` : ""}
+      ${d.err ? `<p class="fd-daily-err" role="alert">${esc(d.err)}</p>` : ""}${post}${rows}
+      <p class="g-note">Tomorrow brings a new map. Share the link to play today's.</p></div>`;
   }
 
   function reveal(on) {
@@ -766,6 +834,22 @@ export async function start(ctx) {
         newGame(randomSeed());
         return;
       case "replay": if (model.mp) mpLeave({ quietly: true }); newGame(s.seed); return;
+      case "daily": {
+        const seed = S.dailySeed(todayKey());
+        if (seed === s.seed && !model.mp) { ctx.toast("You are playing today's challenge."); return; }
+        if (!model.confirmNew && s.phase === "play" && s.turn > 1 && !model.mp) {
+          model.confirmNew = true;
+          b.textContent = "Click again to abandon this game";
+          setTimeout(() => { model.confirmNew = false; refresh(); }, 4000);
+          return;
+        }
+        model.confirmNew = false;
+        if (model.mp) mpLeave({ quietly: true });
+        newGame(seed);
+        return;
+      }
+      case "daily-post": dailyPost(); return;
+      case "daily-board": dailyBoard(); return;
       case "deselect": model.selTown = model.selParty = model.selCell = null; break;
       default: return;
     }
@@ -830,10 +914,11 @@ export async function start(ctx) {
       ${logPanel()}
       ${howItWorks()}
       <div class="fd-foot g-row">
-        <span class="g-note">Seed <code>${esc(s.seed)}</code></span>
+        <span class="g-note">${S.isDailySeed(s.seed) ? `Daily challenge <code>${esc(S.dailyKeyOf(s.seed))}</code> · ${s.maxTurns} turns` : `Seed <code>${esc(s.seed)}</code>`}</span>
         <button class="g-btn" data-act="how" title="How to play (H)">How to play</button>
         ${mp ? `<button class="g-btn" data-act="mpLeave" title="${mp.mode === "online" ? "Leave the room (rejoin with its link)" : "Back to a solo game (this match is saved)"}">Leave</button>` : `<button class="g-btn" data-act="replay" title="Restart with the same seed">Restart</button>
-        <button class="g-btn" data-act="new">New game</button>`}
+        <button class="g-btn" data-act="new">New game</button>
+        <button class="g-btn" data-act="daily" title="Today's map for everyone: 30 turns, one leaderboard">Daily</button>`}
       </div>`;
   }
 
@@ -1214,6 +1299,7 @@ export async function start(ctx) {
         <div class="g-stat"><b>${S.nationOutput(env, s).pop}</b><span>People</span></div>
         <div class="g-stat"><b>${int(sc.score)}</b><span>Score</span></div>
       </div>
+      ${dailyHtml()}
       ${fx ? `<ul class="fd-facts">${fx}</ul>` : ""}
       <div class="g-row"><button class="g-btn primary" data-act="share" title="Copy a short result to paste anywhere">Copy result</button>
         <button class="g-btn" data-act="image" title="A PNG of your country beside the real one">Download image</button></div>
@@ -1233,6 +1319,7 @@ export async function start(ctx) {
         <button class="g-btn" data-act="reveal">${model.revealed ? "Hide real cities" : "Show real cities"}</button>
         <button class="g-btn" data-act="replay">Replay this seed</button>
         <button class="g-btn primary" data-act="new">New game</button>
+        ${S.isDailySeed(s.seed) && S.dailyKeyOf(s.seed) === todayKey() ? "" : `<button class="g-btn" data-act="daily">Today's challenge</button>`}
       </div>
       <p class="g-note">Seed <code>${esc(s.seed)}</code>: share the link to play the same starts.</p>
     </div>`;

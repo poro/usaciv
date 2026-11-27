@@ -151,6 +151,7 @@ export function fdEnv(env) {
     }),
   ]).then(([{ world, resources }, disasters]) => {
     const e = fdMakeEnv({ world, resources, hazards: buildHazards(disasters, world) });
+    if (!full) e.degraded = true; // the daily board refuses to score with it (worker/fd.js)
     if (!full && fdEnvPromise === p) fdEnvPromise = null;
     return e;
   });
