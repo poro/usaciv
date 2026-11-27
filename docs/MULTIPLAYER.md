@@ -185,13 +185,13 @@ per IP per hour. Over the limit → 429 with `Retry-After`. A daily resubmission
 
 ### Races for the short games
 
-- `POST /api/race {game: "pinpoint"|"duel"|"trip"|"lens"|"rank"|"shapes"}` → `{code}` (a write). `GET /api/race/:code` → `{code, game, status,
+- `POST /api/race {game: "pinpoint"|"duel"|"trip"|"lens"|"rank"|"shapes"|"link"}` → `{code}` (a write). `GET /api/race/:code` → `{code, game, status,
   players}`; `GET /api/race/:code/ws?token=…` → the room's socket. Same `RaceRoom` Durable Object and protocol as Which
   Metro? races (`start`, `progress`, `finish`, `room` broadcasts; 8 players; lobby-only joining; closes 30 minutes after
   the start), with `room.game` set. Which Metro? rooms keep `game: "whichMetro"` and their own endpoints.
 - The race plays the game's **practice** seed (`room.seed`). `progress {round, score}` is bounded per game. `finish`
   carries `{guesses}` (Pinpoint: 1–8 hexes, scored round by round), `{answers}` (Duel: the streak over a 400-duel
-  practice run) `{order}` (Road Trip: 0–1000; an unfinished route scores 0) `{picks}` (Lens Detective: right picks among the rounds played) `{orders}` (Metro Ranking: points of the rankings played, 1–5) or `{picks}` (State Shapes: right picks among the rounds played). The room scores it
+  practice run) `{order}` (Road Trip: 0–1000; an unfinished route scores 0) `{picks}` (Lens Detective: right picks among the rounds played) `{orders}` (Metro Ranking: points of the rankings played, 1–5) `{picks}` (State Shapes: right picks among the rounds played) or `{edges}` (Rail Link: a network joining all five metros, scored against par; progress `round` = metros joined). The room scores it
   (`worker/racegames.js`) and places players by score, then finish time.
 - Browser: `web/js/games/shared/race.js` (`makeRace`): create/join by `#play=<game>~race-<CODE>`, lobby with the
   link and the host's Start button, live standings at the top of the game's panel.
@@ -219,6 +219,15 @@ per IP per hour. Over the limit → 429 with `Retry-After`. A daily resubmission
   hexes (states with at least 38). `worker/shapes.js` rebuilds them and scores the picks. `POST /api/shapes/daily
   {key, picks: [stateAbbr × 8]}` → `{score, rank, total}`; `GET /api/shapes/daily/:key`. Stats `sh`; merge (open days
   excepted) and delete include `shapes_daily` (migration 0010).
+
+### Rail Link daily
+
+- `web/js/games/link/sim/link.js` builds the day's five metros from `link:<YYYY-MM-DD>` (UTC) and the link costs from
+  world.json and infrastructure.json (Mainline's `costs.js`), and finds par (a shortest-path Steiner heuristic, the
+  best over each metro as root). `worker/link.js` rebuilds puzzle and par (cached per isolate) and scores the network:
+  1000 × (par ÷ cost)³. `POST /api/link/daily {key, edges: [[cell, cell]…]}` (at most 3,000 links; each must join
+  buildable neighbours; the network must join all five) → `{score, rank, total}`; `GET /api/link/daily/:key`. Stats
+  `lk`; merge (open days excepted) and delete include `link_daily` (migration 0011).
 
 ## Mainline versus (real time)
 

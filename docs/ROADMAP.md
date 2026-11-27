@@ -14,6 +14,7 @@ the map, lenses, City View and Advisors. On top of it sit **game modes** that pl
 | **Lens Detective** | Name the hidden data lens colouring the map, from four choices | Single player, daily 6 + practice; daily board | |
 | **Metro Ranking** | Five real metros, one statistic: put them in order, highest first | Single player, daily 5 + practice; daily board, races | |
 | **State Shapes** | A state's outline on the hex map, alone: which one is it? | Single player, daily 8 + practice; daily board, races | |
+| **Rail Link** | Join five real metros with the cheapest rail network you can find; beat par | Single player, daily puzzle + practice; daily board, races | |
 | **Mainline** | Lay rail across the real map, 2026→2050. Real freight is demand and real disaster risk is the enemy | Single player vs. "baseline America" | AI rival companies; online versus; co-op with one region each |
 | **Founders** | An empty America with real terrain and resources: found cities, grow, compare with the real country | Single player | Hotseat, then online 2–4 players |
 
@@ -136,7 +137,7 @@ labels the answer and each wrong guess on the map.
   apart, so there is one right order. 10 points for each of the 10 pairs in the right order; five rounds a day
   (500 max), practice by seed, races. The server rebuilds the rounds and scores the orders (`/api/rank/daily`).
 - Duel and Ranking hide the lens bar while they run: a population or income lens would give the answer away.
-- **Play menu groups (2026-11-27):** Explore, then the seven daily puzzles in a compact two-column grid, then the two
+- **Play menu groups (2026-11-27):** Explore, then the daily puzzles in a compact two-column grid, then the two
   strategy games (registry `group`).
 - **Next daily:** every short daily's end screen links to the next one you haven't finished today
   (`shared/nextdaily.js`), so the day's games run one after another.
@@ -150,9 +151,19 @@ labels the answer and each wrong guess on the map.
   NJ, MD, DE) are left out. Eight rounds a day, practice, races; the server rebuilds the rounds from world.json
   (`/api/shapes/daily`).
 
+## New mode: Rail Link (2026-11-27)
+
+- `web/js/games/link/`: a daily network puzzle on Mainline's real build costs (relief, land cover, river crossings; real
+  rail at about half price). Five metros of 250,000+ people, 200–700 km from the first and 170 km apart. Click a metro
+  (or your track; clicks snap within two hexes) to build from it, then click anywhere: the cheapest track to the click
+  is laid, your own track free to reuse, with a live preview and its cost under the pointer. Undo, Clear, Esc to stop.
+- Par is the game's own network (shortest-path heuristic for the Steiner tree, best of five roots); score = 1000 ×
+  (par ÷ cost)³, so a clever junction can beat par (over 1000). The end screen draws par dashed over yours. One puzzle a
+  day, practice, races; the server rebuilds puzzle and par and scores the links (`/api/link/daily`).
+
 ## Races for the short games (2026-11-27)
 
-- Pinpoint, Metro Duel, Road Trip, Lens Detective, Metro Ranking and State Shapes have **Race friends**: a room by link (up to 8), the host starts it, everyone plays
+- Pinpoint, Metro Duel, Road Trip, Lens Detective, Metro Ranking, State Shapes and Rail Link have **Race friends**: a room by link (up to 8), the host starts it, everyone plays
   the same practice puzzle at once with live standings, and the room scores each finish itself. It is the Which
   Metro? race room (`RaceRoom`), now game-aware, with scorers in `worker/racegames.js` and one shared browser
   controller (`web/js/games/shared/race.js`).

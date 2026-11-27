@@ -13,6 +13,7 @@ const BOARDS = {
   lens: ["lens_daily", "score"],
   rank: ["rank_daily", "score"],
   shapes: ["shapes_daily", "score"],
+  link: ["link_daily", "score"],
   founders: ["fd_daily", "score"],
   mainline: ["ml_daily", "uplift"],
 };

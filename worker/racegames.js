@@ -6,6 +6,7 @@
 //   lens      finish {picks: [lensId…]}  → right answers among the rounds played (1–6)
 //   rank      finish {orders: [[id×5]…]} → points of the rankings played (1–5 rounds, 0–100 each)
 //   shapes    finish {picks: [abbr…]}    → right answers among the rounds played (1–8)
+//   link      finish {edges: [[a, b]…]}  → 1000 × (par ÷ cost)³ for a network joining all five metros (progress round = metros joined)
 import { roundsFor, scoreGuess, ROUNDS as PP_ROUNDS, MAX_POINTS as PP_MAX } from "../web/js/games/pinpoint/sim/rounds.js";
 import { duelSequence, streakOf } from "../web/js/games/duel/sim/duel.js";
 import { tripFor, scoreTrip, STOPS } from "../web/js/games/trip/sim/trip.js";
@@ -18,10 +19,20 @@ import { rankRounds, scoreRank, practiceSeed as rankPractice, ROUNDS as RANK_ROU
 import { rankPoolFor } from "./rank.js";
 import { shapeRounds, scoreShapes, practiceSeed as shapesPractice, ROUNDS as SHAPES_ROUNDS } from "../web/js/games/shapes/sim/shapes.js";
 import { shapesPoolFor } from "./shapes.js";
+import { scoreNetwork, practiceSeed as linkPractice, TERMINALS as LINK_TERMINALS, MAX_SCORE as LINK_MAX } from "../web/js/games/link/sim/link.js";
+import { linkBaseFor, linkPuzzleFor } from "./link.js";
 
 export const DUEL_RACE_LEN = 400;
 
 export const RACE_GAMES = {
+  link: {
+    maxRound: LINK_TERMINALS, maxScore: LINK_MAX,
+    async score(env, seed, m) {
+      const { L, puzzle, par } = linkPuzzleFor(await linkBaseFor(env), linkPractice(seed));
+      const r = scoreNetwork(L, puzzle, m?.edges, par);
+      return r.error ? r : { score: Math.min(LINK_MAX, r.score), round: LINK_TERMINALS };
+    },
+  },
   shapes: {
     maxRound: SHAPES_ROUNDS, maxScore: SHAPES_ROUNDS,
     async score(env, seed, m) {

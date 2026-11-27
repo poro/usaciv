@@ -6,7 +6,7 @@ import { makeStorage } from "./storage.js";
 import { todayKey } from "./rng.js";
 import { esc } from "../../format.js";
 
-export const SHORT_DAILIES = ["whichMetro", "pinpoint", "duel", "trip", "lens", "rank", "shapes"];
+export const SHORT_DAILIES = ["whichMetro", "pinpoint", "duel", "trip", "lens", "rank", "shapes", "link"];
 
 export function dailyDone(id) {
   const key = id === "whichMetro" ? todayKey() : new Date().toISOString().slice(0, 10);

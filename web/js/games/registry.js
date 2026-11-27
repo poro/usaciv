@@ -75,6 +75,16 @@ export const GAMES = [
     load: () => import("./shapes/index.js"),
   },
   {
+    id: "link",
+    group: "daily",
+    title: "Rail Link",
+    tagline: "Five real metros, real terrain costs. Join them all with the cheapest rail network you can find, and beat par.",
+    players: "Single player · daily",
+    minutes: "3–5 min",
+    icon: "🛤️",
+    load: () => import("./link/index.js"),
+  },
+  {
     id: "mainline",
     group: "strategy",
     title: "Mainline",

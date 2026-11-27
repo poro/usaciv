@@ -1,0 +1,16 @@
+/* Rail Link (web/js/games/link) */
+.lk-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.lk-q { font-size: 14px; margin: 4px 0 6px; }
+.lk-metros { list-style: none; padding: 0; margin: 4px 0 8px; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; color: #ffe7a6; }
+.lk-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0; }
+.lk-hint { min-height: 2.6em; }
+.lk-final { font: 34px/1 var(--serif); color: var(--gold-bright); margin: 6px 0; }
+.lk-final small { font-size: 14px; color: var(--ink-dim); }
+.lk-top { list-style: none; margin: 6px 0 4px; padding: 0; display: grid; gap: 2px; }
+.lk-top li { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; padding: 2px 4px; }
+.lk-top .rk { color: var(--ink-dim); text-align: right; } .lk-top .sc { font-family: var(--serif); color: var(--gold-bright); }
+.lk-err { color: #ff9c8a; }
+.lk-nick { display: grid; gap: 3px; font-size: 12px; color: var(--ink-dim); }
+.lk-nick input { font: inherit; padding: 4px 6px; background: #0d1520; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; }
+.lk-how { margin-top: 14px; font-size: 12.5px; color: var(--ink-dim); }
+.lk-how summary { cursor: pointer; }
