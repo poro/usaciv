@@ -1,9 +1,22 @@
 # usaciv: the United States as a strategy game, built from real data
 
 **This fork:** live at **[usaciv.mark-ollila.workers.dev](https://usaciv.mark-ollila.workers.dev/)**. It adds a
-**Play** menu with single-player game modes on the real map (Which Metro?, Mainline, Founders); see
-[docs/ROADMAP.md](docs/ROADMAP.md). The data refreshes monthly via a GitHub Action
-([.github/workflows/refresh-data.yml](.github/workflows/refresh-data.yml)).
+**Play** menu of game modes on the real map; see [docs/ROADMAP.md](docs/ROADMAP.md). The data refreshes monthly via a
+GitHub Action ([.github/workflows/refresh-data.yml](.github/workflows/refresh-data.yml)).
+
+| Mode | What you do | Online |
+|---|---|---|
+| **Which Metro?** | Name the metro from its workforce, industries and yields | Daily board, races |
+| **Pinpoint** | Click where eight real places are: metros, parks, universities, airports, ports, dams | Daily board, races |
+| **Metro Duel** | Higher or lower on real metro statistics; keep the streak alive | Daily board, races |
+| **Road Trip** | Visit six real metros by the shortest loop | Daily board, races |
+| **Mainline** | Lay rail (plus power lines and fibre) across the real map, 2026–2050 | Scenario boards, daily challenge, versus |
+| **Founders** | Settle an empty America with its real terrain and resources | Daily challenge, hotseat and online matches |
+
+Online play runs on a small Cloudflare Worker (D1 + Durable Objects) next to the static site
+([docs/MULTIPLAYER.md](docs/MULTIPLAYER.md)): every score is replayed or recomputed on the server from the same game
+code, so nothing can be typed in. Players start with a nickname and can **sign in with a passkey** (or a one-time code
+from another device) to keep one player across devices; no email or password is stored.
 
 **Original** by Andrej Karpathy (MIT): [karpathy.ai/usaciv](https://karpathy.ai/usaciv) · Source code:
 [usaciv-source.zip](https://karpathy.ai/usaciv/usaciv-source.zip) (this fork's own source zip is linked from the in-app help, `?`)
