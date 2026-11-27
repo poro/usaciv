@@ -6,7 +6,8 @@
 // picks it up with no change here.
 import { json, error, readJson, requirePlayer, optionalPlayer, limitWrite, HttpError } from "./http.js";
 import { loadMany } from "./data.js";
-import { cleanMlRun, ML_SCENARIOS } from "./rules.js";
+import { cleanMlRun, ML_SCENARIOS, keyInWindow, utcToday, ML_MAX_LOG } from "./rules.js";
+import { mlDaily } from "../web/js/games/mainline/sim/daily.js";
 
 const NOT_READY = "Mainline boards are not ready";
 
@@ -88,3 +89,59 @@ export async function mlBoard(request, env, scenario) {
 }
 
 const rowOut = (r) => ({ uplift: r.uplift, seed: Number(r.seed), home: r.home, year: r.year });
+
+// --- Mainline daily (sim/daily.js; docs/MULTIPLAYER.md "Mainline daily") -----------------------------------------
+
+const dailyRank = async (env, key, uplift) => {
+  const r = await env.DB.prepare("SELECT SUM(uplift > ?2) AS above, COUNT(*) AS total FROM ml_daily WHERE key = ?1").bind(key, uplift).first();
+  return { rank: (r.above | 0) + 1, total: r.total | 0 };
+};
+
+/** POST /api/ml/daily {key, log} → {uplift, beat, rank, total, best, improved, scenario, seed} (stored: true on a resubmission). */
+export async function submitMlDaily(request, env) {
+  const me = await requirePlayer(env, request);
+  const body = await readJson(request, 512 * 1024);
+  const key = body?.key;
+  if (!keyInWindow(key, utcToday())) throw new HttpError(400, "That day's challenge is closed");
+  const d = mlDaily(key);
+  const prev = await env.DB.prepare("SELECT uplift FROM ml_daily WHERE player = ? AND key = ?").bind(me.id, key).first();
+  if (prev) return json({ uplift: prev.uplift, ...(await dailyRank(env, key, prev.uplift)), best: prev.uplift, improved: false, stored: true, scenario: d.scenario, seed: d.seed });
+  const v = await verifier();
+  if (!v) return error(503, NOT_READY);
+  await limitWrite(env, me.id);
+  if (!Array.isArray(body.log) || body.log.length > ML_MAX_LOG) throw new HttpError(400, "log must be an array");
+  const data = await loadMany(env, request, v.REQUIRED_DATA);
+  let res;
+  try {
+    res = v.verifyRun(data, { scenario: d.scenario, seed: d.seed, home: null, log: body.log, daily: key });
+  } catch {
+    throw new HttpError(422, "Run does not replay");
+  }
+  if (!res?.ok || !Number.isFinite(res.uplift)) throw new HttpError(422, res?.error || "Run is not finished or does not replay");
+  await env.DB.prepare("INSERT OR IGNORE INTO ml_daily (player, key, scenario, uplift, hash, log_json, created) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .bind(me.id, key, d.scenario, res.uplift, String(res.hash ?? ""), JSON.stringify(body.log), Date.now()).run();
+  const row = await env.DB.prepare("SELECT uplift FROM ml_daily WHERE player = ? AND key = ?").bind(me.id, key).first();
+  return json({ uplift: row.uplift, beat: res.beat ?? null, ...(await dailyRank(env, key, row.uplift)), best: row.uplift, improved: true, scenario: d.scenario, seed: d.seed });
+}
+
+/** GET /api/ml/daily/:key?limit=20 → {key, scenario, seed, total, top: [{rank, name, uplift, seed, home, year}], you} */
+export async function mlDailyBoard(request, env, key) {
+  const d = mlDaily(key);
+  if (!d) return error(400, "Bad date key");
+  const limit = Math.max(1, Math.min(100, Number.parseInt(new URL(request.url).searchParams.get("limit") || "20", 10) || 20));
+  const [me, top, tot] = await Promise.all([
+    optionalPlayer(env, request),
+    env.DB.prepare(
+      `SELECT p.name, r.uplift, (SELECT COUNT(*) FROM ml_daily b WHERE b.key = r.key AND b.uplift > r.uplift) + 1 AS rank
+       FROM ml_daily r JOIN players p ON p.id = r.player WHERE r.key = ? ORDER BY r.uplift DESC, r.created ASC LIMIT ?`,
+    ).bind(key, limit).all(),
+    env.DB.prepare("SELECT COUNT(*) AS n FROM ml_daily WHERE key = ?").bind(key).first(),
+  ]);
+  const out = (r) => ({ uplift: r.uplift, seed: d.seed, home: null, year: 2026 + d.years });
+  let you = null;
+  if (me) {
+    const mine = await env.DB.prepare("SELECT uplift FROM ml_daily WHERE player = ? AND key = ?").bind(me.id, key).first();
+    if (mine) you = { rank: (await dailyRank(env, key, mine.uplift)).rank, ...out(mine) };
+  }
+  return json({ key, scenario: d.scenario, seed: d.seed, total: tot?.n | 0, top: top.results.map((r) => ({ rank: r.rank, name: r.name, ...out(r) })), you });
+}

@@ -59,7 +59,7 @@ function coachHtml(m) {
 
 const HZ_ICON = { hurricane: "🌀", flood: "🌊", fire: "🔥", severe_storm: "⛈️", winter: "❄️", other: "⚠️" };
 
-export function pickerHtml({ save, saveEnv, cities, defaults, online = false, vs = "" }) {
+export function pickerHtml({ save, saveEnv, cities, defaults, online = false, vs = "", daily = null }) {
   const resume = save && saveEnv && !save.over
     ? `<button class="g-btn primary ml-wide" data-act="resume">Resume ${esc(saveEnv.scenario.name)}${save.home && saveEnv.scenario.id === "sandbox" ? ` (${esc(saveEnv.home?.name || "")})` : ""}, ${save.year}</button>`
     : "";
@@ -68,8 +68,11 @@ export function pickerHtml({ save, saveEnv, cities, defaults, online = false, vs
       <span><b>${esc(sc.name)}</b><span class="g-note">${esc(sc.blurb)}</span>
       <small>Budget ${sc.cash} cr · goal ${signed(sc.goal)} GDP vs baseline by 2050</small></span></label>`).join("");
   const opts = cities.map((c) => `<option value="${c.id}"${c.id === defaults.home ? " selected" : ""}>${esc(c.name)}, ${esc(c.states.join("-"))}</option>`).join("");
+  const day = daily ? `<button class="g-btn ml-wide ml-daily-btn" data-act="daily" title="Same scenario and seed for everyone today; 10 years; one leaderboard">
+      📅 Daily challenge: <b>${esc(daily.name)}</b>, 10 years${daily.status === "done" ? " · played" : daily.status ? ` · resume ${daily.status}` : ""}</button>` : "";
   return `<div class="ml-picker">
     ${resume}
+    ${day}
     <p class="g-note">Build the freight rail network that carries the real America from 2026 to 2050. Real cities,
     real FAF freight flows, real FEMA disaster records.</p>
     <div class="g-section">Scenario</div>
@@ -106,7 +109,7 @@ export function gameHtml(m) {
     <button class="g-btn" data-act="undo" ${state.undo.length ? "" : "disabled"} title="Undo the last build, repair or hardening this turn (Z)">Undo <kbd>Z</kbd></button>
   </div>
   ${m.vs ? `${vsStandingsHtml(m)}${vsNewsHtml(m)}` : `  <div class="ml-goal" title="${esc(`Your region's metros: ${money(sum.you)} GDP; baseline America (same metros, real trend, no network): ${money(sum.base)}. Goal: ${signed(sum.goal)} by 2050.`)}">
-    <div class="ml-goal-txt"><span>GDP vs baseline America</span><b class="${sum.uplift >= sum.goal ? "ml-good" : ""}">${signed(sum.uplift, 2)}</b><span class="muted">goal ${signed(sum.goal)}</span></div>
+    <div class="ml-goal-txt"><span>GDP vs baseline America</span><b class="${sum.uplift >= sum.goal ? "ml-good" : ""}">${signed(sum.uplift, 2)}</b><span class="muted">${state.daily ? `daily · ends ${state.end}` : `goal ${signed(sum.goal)}`}</span></div>
     <div class="ml-bar"><i style="width:${(goalPct * 100).toFixed(1)}%"></i><em style="left:${(goalMark * 100).toFixed(1)}%"></em></div>
   </div>`}
   ${env.grant && state.year === S.START_YEAR ? `<div class="g-note ml-grant" title="${esc(`Contracts with both ends within ${env.scenario.grant.km} km of ${env.home?.name} pay ${env.market} cr a year in all; the grant tops up homes below ${env.scenario.grant.ref}.`)}">Frontier grant: <b>+${env.grant} cr</b> at the start, because ${esc(env.home?.name || "your home")} has little freight within ${env.scenario.grant.km} km. A game model for balance, after the 1862 Pacific Railway Act's federal bonds.</div>` : ""}
@@ -352,11 +355,13 @@ export function endHtml(m, best, online = null) {
   const gy = (H - (sum.goal / maxU) * H).toFixed(1);
   const links = Object.keys(state.links).length;
   return `<div class="ml-end">
-    <div class="ml-verdict ${sum.beat ? "win" : "lose"}">${sum.beat ? "You beat baseline America" : "Baseline America wins"}</div>
-    <p>${esc(env.scenario.name)}${env.scenario.id === "sandbox" ? ` from ${esc(env.home?.name || "")}` : ""}, 2026–2050 · seed ${state.seed}</p>
+    ${state.daily ? `<div class="ml-verdict win">Daily challenge · ${esc(state.daily)}</div>
+    <p>${esc(env.scenario.name)}, 2026–${state.end} · the same map and seed for everyone today</p>`
+    : `<div class="ml-verdict ${sum.beat ? "win" : "lose"}">${sum.beat ? "You beat baseline America" : "Baseline America wins"}</div>
+    <p>${esc(env.scenario.name)}${env.scenario.id === "sandbox" ? ` from ${esc(env.home?.name || "")}` : ""}, 2026–2050 · seed ${state.seed}</p>`}
     <div class="ml-top">
       <div class="g-stat"><b class="${sum.beat ? "ml-good" : "ml-bad"}">${signed(sum.uplift, 2)}</b><span>GDP vs baseline</span></div>
-      <div class="g-stat"><b>${signed(sum.goal)}</b><span>goal</span></div>
+      ${state.daily ? "" : `<div class="g-stat"><b>${signed(sum.goal)}</b><span>goal</span></div>`}
       <div class="g-stat"><b>${sum.score}</b><span>score${best != null ? ` · best ${best}` : ""}</span></div>
     </div>
     <svg class="ml-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="GDP uplift by year">
@@ -384,7 +389,7 @@ export function endHtml(m, best, online = null) {
 
 export function shareText(m) {
   const { env, state, sum } = m;
-  return `Mainline · ${env.scenario.name}${env.scenario.id === "sandbox" ? ` (${env.home?.name})` : ""} · seed ${state.seed}\n` +
+  return `Mainline${state.daily ? ` daily ${state.daily}` : ""} · ${env.scenario.name}${env.scenario.id === "sandbox" ? ` (${env.home?.name})` : ""} · seed ${state.seed}\n` +
     `${sum.beat ? "Beat" : "Lost to"} baseline America: ${signed(sum.uplift, 2)} GDP by 2050 (goal ${signed(sum.goal)}) · score ${sum.score}\n` +
     `${Object.keys(state.links).length} links · ${cr(state.totals.revenue)} freight revenue · ${pct(sum.resilience, 0)} resilience`;
 }
@@ -412,7 +417,7 @@ function boardTable(rows, { you = null, sandbox = false, cityName = (id) => id }
  * cityName(id)}
  */
 export function boardHtml(o) {
-  const name = boardName(o.scenario);
+  const name = o.daily ? `daily ${o.daily}` : boardName(o.scenario);
   const sandbox = o.scenario.id === "sandbox";
   let inner;
   if (!o.hasLog) {
@@ -420,7 +425,8 @@ export function boardHtml(o) {
       Your next game can be.</p>`;
   } else if (o.status === "done" && o.result) {
     const r = o.result;
-    const bestNote = r.improved === true ? " A new personal best."
+    const bestNote = o.daily ? (r.stored ? " Only your first finished game of the day counts." : "")
+      : r.improved === true ? " A new personal best."
       : typeof r.best === "number" && r.best > r.uplift ? ` Your best stays ${signed(r.best, 2)}.` : "";
     inner = `<p>Rank <b>#${r.rank}</b> of ${r.total} on the ${esc(name)} board with ${signed(r.uplift, 2)}.${bestNote}</p>
       ${o.board ? boardTable(o.board.top, { you: o.board.you, sandbox, cityName: o.cityName }) : ""}`;

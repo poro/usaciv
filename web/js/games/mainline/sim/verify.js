@@ -8,6 +8,7 @@
 // rebuilds from data.world), starts newGame(env, {seed}) and applies every action with check() + apply. The first
 // malformed or invalid action rejects the run. The log must end the game (state.over: 2050 played), and the score is
 // the end screen's summary(). The log is the browser's action log, undo actions included (index.js records them).
+import { mlDaily, newDailyGame } from "./daily.js";
 import { NETS } from "./utility.js";
 import { makeEnv } from "./env.js";
 import { newGame, check, applyValid } from "./state.js";
@@ -76,11 +77,14 @@ function envFor(data, scenario, home) {
 
 const fail = (error, at = null) => ({ ok: false, error, at, uplift: null, beat: false, score: null, hash: null, year: null });
 
-export function verifyRun(data, { scenario, seed, home = null, log } = {}) {
+export function verifyRun(data, { scenario, seed, home = null, log, daily = null } = {}) {
   for (const n of REQUIRED_DATA) if (!data?.[n]) return fail(`Server is missing ${n}.json`);
   const sc = scenarioById(scenario);
   if (!sc) return fail("Unknown scenario");
   if (!Number.isSafeInteger(seed) || seed < 0) return fail("Bad seed");
+  // a daily run: the date decides scenario and seed (sim/daily.js)
+  const day = daily == null ? null : mlDaily(daily);
+  if (daily != null && (!day || day.scenario !== sc.id || day.seed !== seed)) return fail("Not that day's challenge");
   if (sc.home) {
     if (home != null && home !== sc.home) return fail("This scenario has a fixed home");
     home = null;
@@ -98,7 +102,7 @@ export function verifyRun(data, { scenario, seed, home = null, log } = {}) {
 
   const size = env.hexmap.size;
   let cells = 0;
-  let s = newGame(env, { seed });
+  let s = day ? newDailyGame(env, day) : newGame(env, { seed });
   for (let i = 0; i < log.length; i++) {
     const a = log[i];
     const bad = shapeError(a, size);

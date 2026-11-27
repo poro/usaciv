@@ -15,6 +15,7 @@ export {
   corridors, corridorStatus, expressCost, expressOps, EXPRESS_GROWTH, EXPRESS_CAP, EXPRESS_OPS,
 } from "./express.js";
 export { stateHash } from "./hash.js";
+export { mlDaily, newDailyGame, isMlDailyKey, ML_DAILY_YEARS, ML_DAILY_SCENARIOS } from "./daily.js";
 export {
   NETS, LINE_FACTOR, LINE_MAINT, TALENT_GROWTH, POWER_TYPES, transitionShare, lineKey, lineCost, lineCells, lineAnchors, planLine, serveUtility,
 } from "./utility.js";

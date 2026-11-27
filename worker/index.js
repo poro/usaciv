@@ -3,7 +3,7 @@
 import { json, error, readJson, requirePlayer, ipHash, rateLimit, limitWrite, sameOrigin, randomId, randomToken, sha256Hex, HttpError, LIMITS, VERSION } from "./http.js";
 import { checkName } from "./rules.js";
 import { submitDaily, dailyBoard, createRace, raceStatus, raceSocket } from "./wm.js";
-import { submitRun, mlBoard } from "./ml.js";
+import { submitRun, mlBoard, submitMlDaily, mlDailyBoard } from "./ml.js";
 import { createVs, createFd, vsStatus, vsSocket } from "./vs.js";
 import * as auth from "./auth.js";
 import { submitFdDaily, fdDailyBoard } from "./fd.js";
@@ -64,6 +64,8 @@ const ROUTES = [
   ["GET", /^\/api\/wm\/race\/([A-Za-z0-9]{6})\/ws$/, (req, env, code) => raceSocket(req, env, code.toUpperCase())],
   ["POST", /^\/api\/ml\/run$/, submitRun],
   ["GET", /^\/api\/ml\/board\/([a-z]{1,20})$/, mlBoard],
+  ["POST", /^\/api\/ml\/daily$/, submitMlDaily],
+  ["GET", /^\/api\/ml\/daily\/([0-9-]{10})$/, mlDailyBoard],
   ["POST", /^\/api\/ml\/vs$/, createVs],
   ["GET", /^\/api\/ml\/vs\/([A-Za-z0-9]{6})$/, (req, env, code) => vsStatus(req, env, code.toUpperCase())],
   ["GET", /^\/api\/ml\/vs\/([A-Za-z0-9]{6})\/ws$/, (req, env, code) => vsSocket(req, env, code.toUpperCase(), "mainline")],

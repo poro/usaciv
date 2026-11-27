@@ -78,15 +78,25 @@ export async function start(ctx) {
 
   // --- flow ---
   /** A usable save {state (migrated to the current version), log}, or null. */
-  function loadSave() {
-    const sv = unpackSave(ctx.storage.get("save", null));
+  function loadSave(slot = "save") {
+    const sv = unpackSave(ctx.storage.get(slot, null));
     return sv && S.scenarioById(sv.state.scenario) ? sv : null;
   }
+  // The daily challenge (sim/daily.js) keeps its own save slot, so it never replaces a long solo game.
+  const todayKey = () => new Date().toISOString().slice(0, 10);
+  const dailyParam = (key) => `daily-${key}`;
+  const parseDaily = (p) => (p === "daily" ? todayKey() : /^daily-(\d{4}-\d{2}-\d{2})$/.exec(p || "")?.[1] ?? null);
+  function beginDaily(key) {
+    const d = S.mlDaily(key);
+    if (!d) { showPicker(); return; }
+    const sv = loadSave("dsave");
+    begin({ scenario: d.scenario, seed: d.seed, home: null, daily: d }, sv && sv.state.daily === key ? sv : null);
+  }
   function newSeed() { return 1 + Math.floor(Math.random() * 99999); }
-  function begin({ scenario, seed, home }, saved = null) {
+  function begin({ scenario, seed, home, daily = null }, saved = null) {
     const env = getEnv(scenario, home);
     game.env = env;
-    game.state = saved?.state || S.newGame(env, { seed });
+    game.state = saved?.state || (daily ? S.newDailyGame(env, daily) : S.newGame(env, { seed }));
     game.log = saved ? saved.log : [];
     game.online = { ...game.online, status: "idle", error: null, result: null, board: null };
     game.sel = { start: null, end: null, hover: null, plan: null };
@@ -99,7 +109,7 @@ export async function start(ctx) {
     game.ui.coach = game.ui.screen === "game" && step < COACH_STEPS ? step : null;
     game.ui.help = game.ui.screen === "game" && game.ui.coach == null && !ctx.storage.get("seenHow", false);
     view.reset();
-    ctx.setParam(formatParam({ scenario, seed: game.state.seed, home: env.home?.id }));
+    ctx.setParam(game.state.daily ? dailyParam(game.state.daily) : formatParam({ scenario, seed: game.state.seed, home: env.home?.id }));
     save();
     refresh();
     frame();
@@ -112,7 +122,7 @@ export async function start(ctx) {
   }
   function save() {
     if (game.vs) { saveVs(); return; } // a versus game never touches the solo save
-    if (game.state) ctx.storage.set("save", packSave(game.state, game.log));
+    if (game.state) ctx.storage.set(game.state.daily ? "dsave" : "save", packSave(game.state, game.log));
   }
   function showPicker() {
     game.ui.screen = "picker";
@@ -128,8 +138,16 @@ export async function start(ctx) {
       defaults: { scenario: last.scenario || "texas", home: last.home || "19100", seed: newSeed() },
       online: game.online.avail,
       vs: vsPicker(),
+      daily: dailyCard(),
     });
     view.redraw();
+  }
+
+  function dailyCard() {
+    const d = S.mlDaily(todayKey());
+    const sv = loadSave("dsave")?.state;
+    const st = sv && sv.daily === d.key ? (sv.over ? "done" : `${sv.year}`) : null;
+    return { key: d.key, name: S.scenarioById(d.scenario).name, seed: d.seed, years: d.years, status: st };
   }
 
   function refresh() {
@@ -137,7 +155,7 @@ export async function start(ctx) {
     if (!game.state) return;
     game.ev = S.evaluate(game.env, game.state);
     if (game.vs && game.ui.screen === "end") body.innerHTML = vsEndHtml(model());
-    else if (game.ui.screen === "end") body.innerHTML = endHtml(model(), ctx.storage.get(`best:${game.env.scenario.id}`, null), boardModel());
+    else if (game.ui.screen === "end") body.innerHTML = endHtml(model(), ctx.storage.get(game.state.daily ? "best:daily" : `best:${game.env.scenario.id}`, null), boardModel());
     else {
       const scroll = body.scrollTop;
       body.innerHTML = gameHtml(model());
@@ -204,7 +222,7 @@ export async function start(ctx) {
     if (game.state.over) {
       game.ui.screen = "end";
       const sum = S.summary(game.env, game.state);
-      const key = `best:${game.env.scenario.id}`;
+      const key = game.state.daily ? "best:daily" : `best:${game.env.scenario.id}`;
       const best = ctx.storage.get(key, null);
       if (best == null || sum.score > best) ctx.storage.set(key, sum.score);
     }
@@ -637,6 +655,7 @@ export async function start(ctx) {
       case "help": toggleHelp(); break;
       case "new": showPicker(); break;
       case "again": begin({ scenario: game.env.scenario.id, seed: newSeed(), home: game.env.home?.id }); break;
+      case "daily": beginDaily(todayKey()); break;
       case "share": {
         const txt = `${shareText(model())}\n${location.href}`;
         navigator.clipboard?.writeText(txt).then(() => ctx.toast("Result copied"), () => ctx.toast("Could not copy"));
@@ -746,7 +765,7 @@ export async function start(ctx) {
   function boardModel() {
     if (!game.online.avail || !game.state?.over) return null;
     const o = game.online;
-    return { ...o, scenario: game.env.scenario, hasLog: Array.isArray(game.log), player: net.player(), cityName };
+    return { ...o, scenario: game.env.scenario, daily: game.state.daily || null, hasLog: Array.isArray(game.log), player: net.player(), cityName };
   }
   async function submitRun() {
     const o = game.online;
@@ -770,13 +789,14 @@ export async function start(ctx) {
     }
     // replay locally first: a log that does not reproduce this game would only be refused by the server
     const run = { scenario: env.scenario.id, seed: state.seed, home: env.scenario.id === "sandbox" ? env.home?.id ?? null : null, log };
+    if (state.daily) run.daily = state.daily;
     const local = verifyRun(data, run);
     if (!local.ok || local.hash !== S.stateHash(state)) {
       return failed(`This game's move log does not replay${local.ok ? " to the same result" : `: ${local.error}`}, so it can't be submitted.`);
     }
-    const r = await net.post("/api/ml/run", run);
+    const r = state.daily ? await net.post("/api/ml/daily", { key: state.daily, log }) : await net.post("/api/ml/run", run);
     if (!r.ok) return failed(`The server refused the run: ${r.error}`);
-    const b = await net.get(`/api/ml/board/${encodeURIComponent(env.scenario.id)}?limit=10`);
+    const b = await net.get(state.daily ? `/api/ml/daily/${state.daily}?limit=10` : `/api/ml/board/${encodeURIComponent(env.scenario.id)}?limit=10`);
     if (game.state !== state) return;
     o.status = "done";
     o.result = r.data;
@@ -825,7 +845,9 @@ export async function start(ctx) {
   const sv = svAll?.state;
   const wantAi = parseAi(ctx.param);
   const wantRoom = /^vs-([A-Za-z0-9]{6})$/.exec(ctx.param || "")?.[1]?.toUpperCase();
+  const wantDaily = parseDaily(ctx.param);
   if (wantRoom) vsJoin(wantRoom);
+  else if (wantDaily) beginDaily(wantDaily);
   else if (wantAi) {
     const vsv = loadVsSave();
     const same = vsv && aiParam({ scenario: vsv.scenario, home: vsv.home, seed: vsv.init.seed, bots: vsv.init.players.length - 1, years: vsv.init.years }) === aiParam(wantAi);
@@ -851,7 +873,8 @@ export async function start(ctx) {
   });
 
   return {
-    param: () => (game.vs ? game.vs.param : game.state && game.ui.screen !== "picker" ? formatParam({ scenario: game.env.scenario.id, seed: game.state.seed, home: game.env.home?.id }) : null),
+    param: () => (game.vs ? game.vs.param : game.state && game.ui.screen !== "picker"
+      ? (game.state.daily ? dailyParam(game.state.daily) : formatParam({ scenario: game.env.scenario.id, seed: game.state.seed, home: game.env.home?.id })) : null),
     onEscape() {
       if (game.ui.help) { toggleHelp(false); return true; }
       if (game.sel.start != null || game.ui.link || game.ui.highlight) {

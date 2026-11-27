@@ -145,6 +145,11 @@ replays every submitted run with the same `sim/` code, so scores can't be typed 
 - **Google:** built and tested, off until a Google OAuth client id and secret are set as Worker secrets. Apple (needs
   a developer enrollment) and email links (need a sending domain) are not built.
 
+**Three dailies (2026-11-27):** every game now has a daily with a server-verified board. Which Metro? (five puzzles),
+**Founders daily** (one map for everyone, 30 turns, first finished game counts) and **Mainline daily** (the date
+picks the scenario and seed, 10 years). The account panel shows your record: days played, best, average and streak
+for each daily, and your Mainline ranks.
+
 The static site stays static. Multiplayer is added as a small backend next to it.
 
 - **Hosting:** Cloudflare Workers + Durable Objects (one object per game room) + D1 for accounts and leaderboards.

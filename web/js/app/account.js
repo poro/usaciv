@@ -65,8 +65,8 @@ export function initAccount({ toast } = {}) {
     const st = state.stats;
     if (!st) return "";
     const pct = (u) => `${u >= 0 ? "+" : ""}${(u * 100).toFixed(1)}%`;
-    const dailyRow = (label, d, unit, href) => d.played
-      ? `<tr><th scope="row"><a href="${href}">${label}</a></th><td>${d.played}</td><td>${d.best}${unit}</td><td>${d.avg}${unit}</td><td>${d.streak ? `${d.streak} day${d.streak === 1 ? "" : "s"}` : "–"}</td></tr>`
+    const dailyRow = (label, d, unit, href, f = (x) => `${x}${unit}`) => d?.played
+      ? `<tr><th scope="row"><a href="${href}">${label}</a></th><td>${d.played}</td><td>${f(d.best)}</td><td>${f(d.avg)}</td><td>${d.streak ? `${d.streak} day${d.streak === 1 ? "" : "s"}` : "–"}</td></tr>`
       : `<tr><th scope="row"><a href="${href}">${label}</a></th><td colspan="4" class="g-note">not played yet</td></tr>`;
     const ml = st.ml.map((r) => `<li><b>${esc(scenarioById(r.scenario)?.name || r.scenario)}</b> ${pct(r.uplift)} GDP · #${r.rank} of ${r.total}</li>`).join("");
     return `
@@ -74,6 +74,7 @@ export function initAccount({ toast } = {}) {
       <table class="acct-stats"><thead><tr><th></th><th>Days</th><th>Best</th><th>Average</th><th>Streak</th></tr></thead><tbody>
         ${dailyRow("Which Metro?", st.wm, "", "#play=whichMetro")}
         ${dailyRow("Founders daily", st.fd, "", "#play=founders~daily")}
+        ${dailyRow("Mainline daily", st.md, "", "#play=mainline~daily", (bp) => `${bp >= 0 ? "+" : ""}${(bp / 100).toFixed(2)}%`)}
       </tbody></table>
       ${ml ? `<p class="g-note">Mainline bests:</p><ul class="acct-ml">${ml}</ul>` : `<p class="g-note">No Mainline runs on the boards yet.</p>`}`;
   }

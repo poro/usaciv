@@ -34,7 +34,7 @@ worker/auth.js         login: passkeys, device codes, Google (off until configur
 worker/webauthn.js     passkey verification (CBOR/COSE parsing, ES256/RS256 with WebCrypto); pure, no npm
 worker/rules.js        pure rules (names, step checks + replay, room codes, places); tested by tests/js/worker.test.mjs
 worker/blocklist.js    the short name blocklist
-migrations/0001_init.sql, 0002_login.sql, 0003_founders_daily.sql
+migrations/0001_init.sql … 0004_mainline_daily.sql
 web/js/games/shared/net.js   the browser client (below)
 web/js/app/account.js        the top-bar account button and panel
 ```
@@ -139,6 +139,18 @@ per IP per hour. Over the limit → 429 with `Retry-After`. A daily resubmission
 |---|---|---|
 | `POST /api/fd/daily` | ✓ | `{key, log: [action]}` → `{score, towns, rank, total}` (`stored: true` on a resubmission). Counts as a write |
 | `GET /api/fd/daily/:key` | (✓) | `?limit=20` → `{key, total, top: [{rank, name, score, towns}], you: {rank, score, towns} \| null}` |
+
+### Mainline daily
+
+- One challenge a day: the date (UTC) picks the scenario (Texas Triangle → Rust to Rail → Northeast Corridor, rotating)
+  and the seed (`web/js/games/mainline/sim/daily.js`). The game runs **10 years** (2026–2035); the state carries
+  `daily` and `end`. `#play=mainline~daily` opens today's; it has its own save slot (`dsave`), so it never replaces
+  a solo game.
+- `POST /api/ml/daily {key, log}`: the server derives scenario and seed from `key` and replays with
+  `verifyRun(data, {scenario, seed, log, daily: key})` (refused if they don't match the day). First finished run per
+  player per day counts. → `{uplift, beat, rank, total, best, improved, scenario, seed}` (`stored: true` on a
+  resubmission). `GET /api/ml/daily/:key` → `{key, scenario, seed, total, top: [{rank, name, uplift, …}], you}`.
+- Stats report it as `md` (best and average in basis points of uplift).
 
 ## Mainline versus (real time)
 

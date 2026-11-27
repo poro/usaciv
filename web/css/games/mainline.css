@@ -210,3 +210,5 @@
 .ml-kind.power { background: rgba(255,210,74,.2); color: #ffe7a0; }
 .ml-kind.talent { background: rgba(111,227,255,.18); color: #c4f3ff; }
 .ml-util-h { margin: 8px 0 4px; font-family: var(--serif); color: var(--gold); font-size: 13px; display: flex; justify-content: space-between; }
+.ml-daily-btn { margin: 0 0 8px; border-color: #6fe3ff; }
+.ml-daily-btn b { color: #fff6dc; }
