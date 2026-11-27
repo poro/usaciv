@@ -29,12 +29,13 @@ worker/wm.js           Which Metro?: daily submit/board, race room create
 worker/race.js         export class RaceRoom (Durable Object)
 worker/ml.js           Mainline: submit/board (uses web/js/games/mainline/sim/verify.js)
 worker/vs.js           Mainline versus: room create/info and export class VersusRoom (Durable Object)
+worker/pp.js           Pinpoint daily: rounds rebuilt from the date, guesses scored on the server
 worker/fd.js           Founders daily: submit (replayed with sim/daily.js) and board
 worker/auth.js         login: passkeys, device codes, Google (off until configured), sign-out, merge, delete
 worker/webauthn.js     passkey verification (CBOR/COSE parsing, ES256/RS256 with WebCrypto); pure, no npm
 worker/rules.js        pure rules (names, step checks + replay, room codes, places); tested by tests/js/worker.test.mjs
 worker/blocklist.js    the short name blocklist
-migrations/0001_init.sql … 0004_mainline_daily.sql
+migrations/0001_init.sql … 0005_pinpoint_daily.sql
 web/js/games/shared/net.js   the browser client (below)
 web/js/app/account.js        the top-bar account button and panel
 ```
@@ -151,6 +152,15 @@ per IP per hour. Over the limit → 429 with `Retry-After`. A daily resubmission
   player per day counts. → `{uplift, beat, rank, total, best, improved, scenario, seed}` (`stored: true` on a
   resubmission). `GET /api/ml/daily/:key` → `{key, scenario, seed, total, top: [{rank, name, uplift, …}], you}`.
 - Stats report it as `md` (best and average in basis points of uplift).
+
+### Pinpoint daily
+
+- `web/js/games/pinpoint/sim/rounds.js` builds the place pools from cities, wonders, infrastructure and resources and
+  picks the day's eight rounds from `pinpoint:<YYYY-MM-DD>` (UTC). The Worker (`worker/pp.js`) loads the same files
+  once per isolate, rebuilds the rounds from the key and scores the guesses (`scoreGame`).
+- `POST /api/pp/daily {key, guesses: [cell × 8]}` → `{score, rank, total}` (`stored: true` on a resubmission; the
+  first finished game counts). `GET /api/pp/daily/:key` → `{key, total, top: [{rank, name, score}], you}`.
+- Stats report it as `pp`; merge and delete include `pp_daily` (migration 0005).
 
 ## Mainline versus (real time)
 

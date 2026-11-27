@@ -13,6 +13,15 @@ export const GAMES = [
     load: () => import("./whichMetro/index.js"),
   },
   {
+    id: "pinpoint",
+    title: "Pinpoint",
+    tagline: "Eight real places a day: metros, parks, ports, dams. Click where each one is; the closer, the more points.",
+    players: "Single player · daily",
+    minutes: "3 min",
+    icon: "📍",
+    load: () => import("./pinpoint/index.js"),
+  },
+  {
     id: "mainline",
     title: "Mainline",
     tagline: "Lay rail across the real map from 2026 to 2050. Real freight is your demand, real disaster risk your enemy.",

@@ -73,6 +73,7 @@ export function initAccount({ toast } = {}) {
       <h3>Your record</h3>
       <table class="acct-stats"><thead><tr><th></th><th>Days</th><th>Best</th><th>Average</th><th>Streak</th></tr></thead><tbody>
         ${dailyRow("Which Metro?", st.wm, "", "#play=whichMetro")}
+        ${dailyRow("Pinpoint", st.pp, "", "#play=pinpoint")}
         ${dailyRow("Founders daily", st.fd, "", "#play=founders~daily")}
         ${dailyRow("Mainline daily", st.md, "", "#play=mainline~daily", (bp) => `${bp >= 0 ? "+" : ""}${(bp / 100).toFixed(2)}%`)}
       </tbody></table>

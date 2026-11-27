@@ -8,6 +8,7 @@ the map, lenses, City View and Advisors. On top of it sit **game modes** that pl
 |---|---|---|---|
 | **Explore** | The original data map | n/a | n/a |
 | **Which Metro?** | A daily data puzzle: guess the metro from its workforce, industries and yields | Single player, daily seed | Shared daily leaderboard, head-to-head races |
+| **Pinpoint** | Eight real places a day (metros, parks, universities, airports, ports, plants): click where each one is | Single player, daily seed + practice; daily board | Head-to-head races |
 | **Mainline** | Lay rail across the real map, 2026→2050. Real freight is demand and real disaster risk is the enemy | Single player vs. "baseline America" | AI rival companies; online versus; co-op with one region each |
 | **Founders** | An empty America with real terrain and resources: found cities, grow, compare with the real country | Single player | Hotseat, then online 2–4 players |
 
@@ -83,6 +84,18 @@ labels the answer and each wrong guess on the map.
 - Found cities, claim hexes, grow population, build simple improvements. A fixed number of turns.
 - No combat in v0.1. The end screen compares your settlement pattern with where Americans actually live (overlap
   with real metros, population, output).
+
+## New mode: Pinpoint (2026-11-27)
+
+- `web/js/games/pinpoint/`: a geography game on the real map. Each UTC day brings eight places for everyone, one from
+  each pool: a big, a mid-size and a small metro (Census), a national park or landmark and a research university
+  (wonders.json), an airport (FAA boardings), a port (USACE tonnage) and a big power plant or dam (EIA-860M).
+- Click a hex: 1,000 points within one hex (25 km), one point less per km beyond, 0 from about 1,025 km. The reveal
+  draws your guess, the answer and the distance; the end screen maps all eight and gives a share grid (🟩🟨🟧🟥).
+- City banners, tooltips, resource icons and map layers are hidden while you play. Practice rounds by seed
+  (`#play=pinpoint~p-<seed>`). Today's game resumes after a reload.
+- Board: the server rebuilds the day's rounds from the same data and scores the eight guessed hexes itself
+  (`/api/pp/daily`, docs/MULTIPLAYER.md).
 
 ## Phase 2: polish (v0.2)
 
