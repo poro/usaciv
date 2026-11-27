@@ -214,9 +214,40 @@ const foreignCache = new WeakMap();
  * founded, name}]}]: every nation's towns claim together, ordered by founding turn and, within a turn, by that turn's
  * seat priority (claimRank). Land a rival holds is 0 here (not yours) and its seat + 1 in foreignOwners().
  */
+// Claims depend only on the towns (id, cell, radius, founding turn), the rivals' towns and the seat, not on the
+// rest of the state. Every action makes a new state object, so besides the per-object cache the maps are shared
+// between states with the same towns (a small cache per env, by a signature of exactly those fields). The arrays are
+// read-only for every caller.
+const sigCache = new WeakMap(); // env → Map<signature, {o, f}>
+const SIG_MAX = 64;
+function claimSig(state) {
+  let k = `${state.seat ?? ""}/${state.nations ?? ""}|`;
+  for (const t of state.towns) k += `${t.id},${t.cell},${t.radius},${t.founded};`;
+  for (const r of state.rivals || []) {
+    k += `|${r.seat}:`;
+    for (const t of r.towns) k += `${t.cell},${t.radius},${t.founded};`;
+  }
+  return k;
+}
 export function owners(env, state) {
   let o = claimCache.get(state);
   if (o) return o;
+  let byEnv = sigCache.get(env);
+  if (!byEnv) sigCache.set(env, (byEnv = new Map()));
+  const sig = claimSig(state);
+  const hit = byEnv.get(sig);
+  if (hit) {
+    claimCache.set(state, hit.o);
+    if (hit.f) foreignCache.set(state, hit.f);
+    return hit.o;
+  }
+  o = computeOwners(env, state);
+  if (byEnv.size >= SIG_MAX) byEnv.delete(byEnv.keys().next().value);
+  byEnv.set(sig, { o, f: foreignCache.get(state) || null });
+  return o;
+}
+function computeOwners(env, state) {
+  let o;
   const { T, map } = env;
   o = new Int32Array(T.size);
   if (!state.rivals?.length) {
