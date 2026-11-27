@@ -5,6 +5,7 @@
 // Saves (ctx.storage): "d:<key>" = today's order, "stats" = {played, best, last}. Online: the day's board
 // (docs/MULTIPLAYER.md "Road Trip daily"); the server rebuilds the trip and scores the order.
 import { loadCss } from "../shared/css.js";
+import { fitVisible } from "../shared/frame.js";
 import { net } from "../shared/net.js";
 import { esc } from "../../format.js";
 import * as T from "./sim/trip.js";
@@ -50,7 +51,7 @@ export async function start(ctx) {
   function frame() {
     const ms = [g.trip.start, ...g.trip.stops];
     const pad = 160;
-    if (app.fitBounds) app.fitBounds(Math.min(...ms.map((m) => m.x)) - pad, Math.min(...ms.map((m) => m.y)) - pad, Math.max(...ms.map((m) => m.x)) + pad, Math.max(...ms.map((m) => m.y)) + pad, { maxScale: 1.2 });
+    fitVisible(app, body, Math.min(...ms.map((m) => m.x)) - pad, Math.min(...ms.map((m) => m.y)) - pad, Math.max(...ms.map((m) => m.x)) + pad, Math.max(...ms.map((m) => m.y)) + pad, { maxScale: 1.2 });
   }
 
   function pick(id) {

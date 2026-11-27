@@ -7,6 +7,7 @@
 // Saves (ctx.storage): "d:<key>" = today's guesses, "stats" = {played, best, streak, last, total}. Online: the day's
 // board (docs/MULTIPLAYER.md "Pinpoint daily"); the server rebuilds the rounds from the date and scores the guesses.
 import { loadCss } from "../shared/css.js";
+import { fitVisible } from "../shared/frame.js";
 import { net } from "../shared/net.js";
 import { esc } from "../../format.js";
 import * as P from "./sim/rounds.js";
@@ -33,7 +34,7 @@ export async function start(ctx) {
   // The whole country inside the part of the map the dock leaves visible (app.home() centres on the full canvas).
   const all = Object.values(pool).flat();
   const usBox = { x0: Math.min(...all.map((p) => p.x)), x1: Math.max(...all.map((p) => p.x)), y0: Math.min(...all.map((p) => p.y)), y1: Math.max(...all.map((p) => p.y)) };
-  const frameUS = (ms) => app.fitBounds ? app.fitBounds(usBox.x0 - 60, usBox.y0 - 60, usBox.x1 + 60, usBox.y1 + 60, { ms }) : app.home?.();
+  const frameUS = (ms) => app.fitBounds ? fitVisible(app, body, usBox.x0 - 60, usBox.y0 - 60, usBox.x1 + 60, usBox.y1 + 60, { ms }) : app.home?.();
 
   // --- hide what names places (like Founders) ------------------------------------------------------------------
   app.setCitiesHidden(true);
@@ -97,7 +98,7 @@ export async function start(ctx) {
     if (p == null || c == null || !app.fitBounds) return;
     const pad = 120;
     const xs = [p.x, grid.cx(c)], ys = [p.y, grid.cy(c)];
-    app.fitBounds(Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad, { maxScale: 2 });
+    fitVisible(app, body, Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad, { maxScale: 2 });
   }
   function finish({ quiet = false } = {}) {
     g.i = g.rounds.length;

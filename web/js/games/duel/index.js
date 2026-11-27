@@ -5,6 +5,7 @@
 // Saves (ctx.storage): "d:<key>" = today's answers, "stats" = {played, best, last, streak}, "pbest" = best practice.
 // Online: the day's board (docs/MULTIPLAYER.md "Metro Duel daily"); the server replays the answers.
 import { loadCss } from "../shared/css.js";
+import { fitVisible } from "../shared/frame.js";
 import { net } from "../shared/net.js";
 import { esc } from "../../format.js";
 import * as D from "./sim/duel.js";
@@ -103,7 +104,7 @@ export async function start(ctx) {
     const h = { cities: new Set([a.id, b.id]), cells: new Set([...(a.footprint || [a.cell]), ...(b.footprint || [b.cell])]), color: HL, dimOthers: true };
     app.setHighlight?.(h);
     const bb = app.highlightBounds?.(h);
-    if (bb && app.fitBounds) app.fitBounds(bb.x0 - 200, bb.y0 - 200, bb.x1 + 200, bb.y1 + 200, { maxScale: 0.9 });
+    if (bb) fitVisible(app, body, bb.x0 - 200, bb.y0 - 200, bb.x1 + 200, bb.y1 + 200, { maxScale: 0.9 });
   }
 
   // --- online board --------------------------------------------------------------------------------------------
