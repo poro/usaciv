@@ -10,6 +10,7 @@ const BOARDS = {
   pinpoint: ["pp_daily", "score"],
   duel: ["duel_daily", "streak"],
   trip: ["trip_daily", "score"],
+  lens: ["lens_daily", "score"],
   founders: ["fd_daily", "score"],
   mainline: ["ml_daily", "uplift"],
 };

@@ -91,7 +91,7 @@ test("GET /api/today: every daily's player count and, signed in, your rank", asy
   const ann = (await call("POST", "/api/player", { name: "Ann" })).data;
   await call("POST", "/api/duel/daily", { key, answers: [!seq[0].higher] }, ann.token);
   const anon = (await call("GET", "/api/today")).data;
-  assert.deepEqual(Object.keys(anon.games).sort(), ["duel", "founders", "mainline", "pinpoint", "trip", "whichMetro"]);
+  assert.deepEqual(Object.keys(anon.games).sort(), ["duel", "founders", "lens", "mainline", "pinpoint", "trip", "whichMetro"]);
   assert.equal(anon.games.duel.total, 1);
   assert.equal(anon.games.duel.you, null);
   const mine = (await call("GET", `/api/today?local=${key}`, undefined, ann.token)).data;
@@ -136,4 +136,35 @@ test("Road Trip: trips, best loop, scoring and the daily endpoint", async () => 
   assert.equal(r.rank, 1);
   assert.equal((await call("GET", `/api/trip/daily/${key}`)).data.top[0].name, "Ann");
   assert.equal((await call("GET", "/api/today", undefined, ann.token)).data.games.trip.you.value, 1000);
+});
+
+test("Lens Detective: six rounds, decoys, scoring and the daily endpoint", async () => {
+  const Lm = await import("../../web/js/games/lens/sim/lens.js");
+  const lensFile = JSON.parse(readFileSync(dataUrl("lenses")));
+  const lpool = Lm.lensPool(lensFile);
+  assert.ok(lpool.length >= 12 && !lpool.some((l) => l.id === "faith_tradition"));
+  const r = Lm.lensRounds(lpool, "lens:2026-11-27");
+  assert.deepEqual(Lm.lensRounds(lpool, "lens:2026-11-27"), r);
+  assert.equal(r.length, Lm.ROUNDS);
+  assert.equal(new Set(r.map((x) => x.answer)).size, Lm.ROUNDS);
+  for (const x of r) { assert.equal(x.options.length, Lm.CHOICES); assert.ok(x.options.includes(x.answer)); assert.equal(new Set(x.options).size, Lm.CHOICES); }
+  assert.equal(Lm.scoreLens(r, r.map((x) => x.answer)).score, 6);
+  assert.ok(Lm.scoreLens(r, r.map(() => "nope")).error);
+
+  const assets = { fetch: async (req) => new Response(readFileSync(dataUrl(new URL(req.url).pathname.match(/\/data\/(\w+)\.json/)[1]))) };
+  const wenv = { DB: makeD1(), ASSETS: assets, IP_SALT: "t" };
+  const call = async (method, path, body, token) => {
+    const res = await worker.fetch(new Request(`https://usaciv.test${path}`, {
+      method, headers: { "Content-Type": "application/json", Origin: "https://usaciv.test", "CF-Connecting-IP": "1.2.3.4", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }), wenv);
+    return { status: res.status, data: await res.json() };
+  };
+  const key = utcToday();
+  const day = Lm.lensRounds(lpool, Lm.dailySeed(key));
+  const ann = (await call("POST", "/api/player", { name: "Ann" })).data;
+  const picks = day.map((x, i) => (i === 2 ? x.options.find((o) => o !== x.answer) : x.answer));
+  assert.deepEqual((await call("POST", "/api/lens/daily", { key, picks }, ann.token)).data, { score: 5, rank: 1, total: 1 });
+  assert.equal((await call("GET", `/api/lens/daily/${key}`)).data.top[0].score, 5);
+  assert.equal((await call("GET", "/api/account/stats", undefined, ann.token)).data.ld.best, 5);
 });

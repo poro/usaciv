@@ -11,6 +11,7 @@ the map, lenses, City View and Advisors. On top of it sit **game modes** that pl
 | **Pinpoint** | Eight real places a day (metros, parks, universities, airports, ports, plants): click where each one is | Single player, daily seed + practice; daily board | Head-to-head races |
 | **Metro Duel** | Higher or lower on real metro statistics; keep the streak alive | Single player, daily run of 30 + endless practice; daily board | Head-to-head |
 | **Road Trip** | Visit six real metros and come home by the shortest loop | Single player, daily trip + practice; daily board | Head-to-head |
+| **Lens Detective** | Name the hidden data lens colouring the map, from four choices | Single player, daily 6 + practice; daily board | |
 | **Mainline** | Lay rail across the real map, 2026→2050. Real freight is demand and real disaster risk is the enemy | Single player vs. "baseline America" | AI rival companies; online versus; co-op with one region each |
 | **Founders** | An empty America with real terrain and resources: found cities, grow, compare with the real country | Single player | Hotseat, then online 2–4 players |
 
@@ -117,6 +118,13 @@ labels the answer and each wrong guess on the map.
 - One trip a day for everyone (resumes after a reload), practice trips by seed; the server rebuilds the trip and scores
   the order (`/api/trip/daily`).
 - **Play menu:** every daily card now shows today's status (`/api/today`): how many played, and your score and rank.
+
+## New mode: Lens Detective (2026-11-27)
+
+- `web/js/games/lens/`: each round colours the map by one of the 18 numeric data lenses with its name, legend, lens
+  dock, tooltips and URL hash hidden (`app.setLensSecret`); pick it from four choices (one decoy usually from the same
+  family). Six rounds a day for everyone, practice by seed, keys 1–4; the server rebuilds the rounds from
+  lenses.json and scores the picks (`/api/lens/daily`). It doubles as a tour of what the lenses show.
 
 ## Races for the short games (2026-11-27)
 

@@ -1,0 +1,27 @@
+/* Lens Detective (web/js/games/lens) */
+body.ld-hide-lens #lens-area, body.ld-hide-lens #legend, body.ld-hide-lens #lens-picker { display: none !important; }
+.ld-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ld-dots { display: flex; gap: 4px; }
+.ld-dots i { width: 16px; height: 16px; border-radius: 3px; border: 1px solid rgba(201,164,92,.5); }
+.ld-dots i.cur { border-color: var(--gold-bright); box-shadow: 0 0 0 1px var(--gold-bright); }
+.ld-dots i.ok { background: #4caf63; } .ld-dots i.bad { background: #d24c3f; }
+.ld-q { font-size: 14px; line-height: 1.45; }
+.ld-opts { display: grid; gap: 6px; margin: 8px 0; }
+.ld-opt { justify-content: flex-start; padding: 9px 12px; font-size: 14px; }
+.ld-opt.right { border-color: #6fd68a; background: rgba(111,214,138,.18); opacity: 1; }
+.ld-opt.wrong { border-color: #ff7a6b; background: rgba(255,122,107,.18); opacity: 1; }
+.ld-opt.dim { opacity: .45; }
+.ld-verdict.ok { color: #8fe3a2; } .ld-verdict.bad { color: #ff9c8a; }
+.ld-next { width: 100%; justify-content: center; margin-top: 6px; }
+.ld-final { font: 34px/1 var(--serif); color: var(--gold-bright); margin: 6px 0; }
+.ld-final small { font-size: 14px; color: var(--ink-dim); }
+.ld-list { list-style: none; padding: 0; margin: 6px 0 10px; display: grid; gap: 3px; font-size: 13px; }
+.ld-list li.ok { color: #c9f0d2; } .ld-list li.bad { color: #ffd0c8; }
+.ld-top { list-style: none; margin: 6px 0 4px; padding: 0; display: grid; gap: 2px; }
+.ld-top li { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; padding: 2px 4px; }
+.ld-top .rk { color: var(--ink-dim); text-align: right; } .ld-top .sc { font-family: var(--serif); color: var(--gold-bright); }
+.ld-err { color: #ff9c8a; }
+.ld-nick { display: grid; gap: 3px; font-size: 12px; color: var(--ink-dim); }
+.ld-nick input { font: inherit; padding: 4px 6px; background: #0d1520; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; }
+.ld-how { margin-top: 14px; font-size: 12.5px; color: var(--ink-dim); }
+.ld-how summary { cursor: pointer; }

@@ -40,6 +40,15 @@ export const GAMES = [
     load: () => import("./trip/index.js"),
   },
   {
+    id: "lens",
+    title: "Lens Detective",
+    tagline: "The map is coloured by a hidden data lens (income, degrees, broadband, faith…). Which one is it?",
+    players: "Single player · daily",
+    minutes: "2 min",
+    icon: "🔎",
+    load: () => import("./lens/index.js"),
+  },
+  {
     id: "mainline",
     title: "Mainline",
     tagline: "Lay rail across the real map from 2026 to 2050. Real freight is your demand, real disaster risk your enemy.",

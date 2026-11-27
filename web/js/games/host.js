@@ -53,7 +53,7 @@ export async function install(app) {
     GAMES.map(card).join("");
   const closeMenu = () => { menu.hidden = true; };
   // Today's boards on the cards (GET /api/today): how many played each daily and, signed in, your rank.
-  const FMT = { whichMetro: (v) => `${v} pts`, pinpoint: (v) => `${Number(v).toLocaleString("en-US")} pts`, duel: (v) => `streak ${v}`, trip: (v) => `${v}/1000`,
+  const FMT = { whichMetro: (v) => `${v} pts`, pinpoint: (v) => `${Number(v).toLocaleString("en-US")} pts`, duel: (v) => `streak ${v}`, trip: (v) => `${v}/1000`, lens: (v) => `${v}/6`,
     founders: (v) => `${Number(v).toLocaleString("en-US")} pts`, mainline: (v) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(2)}%` };
   let dayText = "";
   async function decorateToday() {

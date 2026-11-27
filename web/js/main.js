@@ -616,7 +616,7 @@ async function main() {
           state: stateHashRef && stateHashRef.idx === state.selectedState ? stateHashRef.raw : w.raw.states[state.selectedState]?.fips,
         } : {};
       return {
-        lens: state.lens?.id || null,
+        lens: state.lensSecret ? null : state.lens?.id || null, // a guessing game may keep its lens out of the URL
         ...sel,
         // at = [x km, y km, log2(scale / home-fit scale)]; during a flight, where it will land.
         at: userMoved ? (cam.flight ? [cam.flight.x1, cam.flight.y1, Math.log2(cam.flight.s1 / fitScale())]
@@ -1216,6 +1216,8 @@ async function main() {
     setHighlight(h) { state.highlight = h || null; requestDraw(); },
     // Hide every city banner and every hover tooltip (they name places), e.g. while a guessing game is open.
     setCitiesHidden(on) { state.hideCities = !!on; hideTooltip(); requestDraw(); },
+    // Keep the current lens out of the URL hash (Lens Detective: the hash would name the answer).
+    setLensSecret(on) { state.lensSecret = !!on; },
     highlightBounds: (h = state.highlight) => highlightBounds(w, h),
     setResourceFilter(f) { state.resourceFilter = f || null; requestDraw(); },
     setShowResources(on) {

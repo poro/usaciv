@@ -39,7 +39,7 @@ worker/auth.js         login: passkeys, device codes, Google (off until configur
 worker/webauthn.js     passkey verification (CBOR/COSE parsing, ES256/RS256 with WebCrypto); pure, no npm
 worker/rules.js        pure rules (names, step checks + replay, room codes, places); tested by tests/js/worker.test.mjs
 worker/blocklist.js    the short name blocklist
-migrations/0001_init.sql … 0007_trip_daily.sql
+migrations/0001_init.sql … 0008_lens_daily.sql
 web/js/games/shared/net.js   the browser client (below)
 web/js/app/account.js        the top-bar account button and panel
 ```
@@ -195,6 +195,13 @@ per IP per hour. Over the limit → 429 with `Retry-After`. A daily resubmission
   (`worker/racegames.js`) and places players by score, then finish time.
 - Browser: `web/js/games/shared/race.js` (`makeRace`): create/join by `#play=<game>~race-<CODE>`, lobby with the
   link and the host's Start button, live standings at the top of the game's panel.
+
+### Lens Detective daily
+
+- `web/js/games/lens/sim/lens.js` builds six rounds from `lens:<YYYY-MM-DD>` (UTC) over lenses.json's numeric lenses;
+  `worker/lens.js` rebuilds them and scores the picks. `POST /api/lens/daily {key, picks: [lensId × 6]}` → `{score,
+  rank, total}`; `GET /api/lens/daily/:key`. Stats `ld`; merge (open days excepted) and delete include `lens_daily`
+  (migration 0008).
 
 ## Mainline versus (real time)
 
