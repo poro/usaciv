@@ -31,6 +31,15 @@ export const GAMES = [
     load: () => import("./duel/index.js"),
   },
   {
+    id: "trip",
+    title: "Road Trip",
+    tagline: "Six real metros, one loop home. Pick the order; the shorter your trip against the best one, the higher the score.",
+    players: "Single player · daily",
+    minutes: "2 min",
+    icon: "🚗",
+    load: () => import("./trip/index.js"),
+  },
+  {
     id: "mainline",
     title: "Mainline",
     tagline: "Lay rail across the real map from 2026 to 2050. Real freight is your demand, real disaster risk your enemy.",

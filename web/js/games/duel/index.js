@@ -161,6 +161,7 @@ export async function start(ctx) {
 
   function refresh() {
     if (!g) return;
+    app.requestDraw?.(); // the map overlays follow the game state
     const head = `<div class="dl-head"><div class="g-stat"><b>${streak()}</b><span>streak</span></div>
       <span class="g-note">${g.mode === "daily" ? `Daily ${esc(g.key)} · ${g.answers.length}/${g.seq.length}` : `Practice · best ${ctx.storage.get("pbest", 0)}`}</span></div>`;
     if (g.over && g.reveal < 0) {

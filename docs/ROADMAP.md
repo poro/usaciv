@@ -10,6 +10,7 @@ the map, lenses, City View and Advisors. On top of it sit **game modes** that pl
 | **Which Metro?** | A daily data puzzle: guess the metro from its workforce, industries and yields | Single player, daily seed | Shared daily leaderboard, head-to-head races |
 | **Pinpoint** | Eight real places a day (metros, parks, universities, airports, ports, plants): click where each one is | Single player, daily seed + practice; daily board | Head-to-head races |
 | **Metro Duel** | Higher or lower on real metro statistics; keep the streak alive | Single player, daily run of 30 + endless practice; daily board | Head-to-head |
+| **Road Trip** | Visit six real metros and come home by the shortest loop | Single player, daily trip + practice; daily board | Head-to-head |
 | **Mainline** | Lay rail across the real map, 2026→2050. Real freight is demand and real disaster risk is the enemy | Single player vs. "baseline America" | AI rival companies; online versus; co-op with one region each |
 | **Founders** | An empty America with real terrain and resources: found cities, grow, compare with the real country | Single player | Hotseat, then online 2–4 players |
 
@@ -107,6 +108,15 @@ labels the answer and each wrong guess on the map.
   city banners are hidden because they show population.
 - Today's run is 30 duels, the same for everyone (resumes after a reload); practice runs are endless. Board: the
   server rebuilds the day's duels and counts the streak (`/api/duel/daily`).
+
+## New mode: Road Trip (2026-11-27)
+
+- `web/js/games/trip/`: a start metro and six others within 900 km. Click the stops in the order you would drive;
+  the loop closes back home. The best loop is found exactly (all 720 orders); score = 1000 × (best ÷ yours)⁴, so a
+  loop 10% longer than the best scores 683. The end screen draws your route and the best one.
+- One trip a day for everyone (resumes after a reload), practice trips by seed; the server rebuilds the trip and scores
+  the order (`/api/trip/daily`).
+- **Play menu:** every daily card now shows today's status (`/api/today`): how many played, and your score and rank.
 
 ## Phase 2: polish (v0.2)
 

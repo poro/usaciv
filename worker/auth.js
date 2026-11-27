@@ -68,7 +68,8 @@ export async function mergeInto(env, from, to) {
   if (await isSecured(env, from)) return null;
   const counts = await env.DB.prepare(
     `SELECT (SELECT COUNT(*) FROM wm_daily WHERE player = ?1) + (SELECT COUNT(*) FROM fd_daily WHERE player = ?1)
-         + (SELECT COUNT(*) FROM pp_daily WHERE player = ?1) + (SELECT COUNT(*) FROM duel_daily WHERE player = ?1) AS daily,
+         + (SELECT COUNT(*) FROM pp_daily WHERE player = ?1) + (SELECT COUNT(*) FROM duel_daily WHERE player = ?1)
+         + (SELECT COUNT(*) FROM trip_daily WHERE player = ?1) AS daily,
        (SELECT COUNT(*) FROM ml_runs WHERE player = ?1) + (SELECT COUNT(*) FROM ml_daily WHERE player = ?1) AS runs`,
   ).bind(from).first();
   await env.DB.batch([
@@ -79,6 +80,10 @@ export async function mergeInto(env, from, to) {
     env.DB.prepare(
       `INSERT OR IGNORE INTO fd_daily (player, key, score, towns, log_json, created)
        SELECT ?2, key, score, towns, log_json, created FROM fd_daily WHERE player = ?1`,
+    ).bind(from, to),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO trip_daily (player, key, score, km, order_json, created)
+       SELECT ?2, key, score, km, order_json, created FROM trip_daily WHERE player = ?1`,
     ).bind(from, to),
     env.DB.prepare(
       `INSERT OR IGNORE INTO duel_daily (player, key, streak, answers_json, created)
@@ -111,6 +116,7 @@ function deleteStatements(env, id) {
     "DELETE FROM ml_daily WHERE player = ?",
     "DELETE FROM pp_daily WHERE player = ?",
     "DELETE FROM duel_daily WHERE player = ?",
+    "DELETE FROM trip_daily WHERE player = ?",
     "DELETE FROM ml_runs WHERE player = ?",
     "DELETE FROM sessions WHERE player = ?",
     "DELETE FROM passkeys WHERE player = ?",

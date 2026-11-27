@@ -9,6 +9,7 @@ const BOARDS = {
   whichMetro: ["wm_daily", "score"],
   pinpoint: ["pp_daily", "score"],
   duel: ["duel_daily", "streak"],
+  trip: ["trip_daily", "score"],
   founders: ["fd_daily", "score"],
   mainline: ["ml_daily", "uplift"],
 };

@@ -1,0 +1,21 @@
+/* Road Trip (web/js/games/trip) */
+.tr-q { font-size: 13.5px; line-height: 1.45; }
+.tr-stops { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 4px; }
+.tr-stops li { display: flex; gap: 8px; align-items: center; padding: 5px 8px; border: 1px solid rgba(201,164,92,.3); border-radius: 4px; font-size: 13px; }
+.tr-stops li.on { border-color: #ffb347; background: rgba(255,179,71,.1); }
+.tr-stops .n { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: rgba(255,255,255,.08); }
+.tr-stops li.on .n { background: #ffb347; color: #1a1206; font-weight: 700; }
+.tr-km { font-size: 13px; }
+.tr-final { font: 34px/1 var(--serif); color: var(--gold-bright); margin: 6px 0; }
+.tr-final small { font-size: 14px; color: var(--ink-dim); }
+.tr .ok { color: #8fe3a2; }
+.tr-order { font-size: 12.5px; margin: 4px 0 10px; padding-left: 22px; color: var(--ink-dim); }
+.tr-top { list-style: none; margin: 6px 0 4px; padding: 0; display: grid; gap: 2px; }
+.tr-top li { display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; padding: 2px 4px; }
+.tr-top .rk { color: var(--ink-dim); text-align: right; }
+.tr-top .sc { font-family: var(--serif); color: var(--gold-bright); }
+.tr-err { color: #ff9c8a; }
+.tr-nick { display: grid; gap: 3px; font-size: 12px; color: var(--ink-dim); }
+.tr-nick input { font: inherit; padding: 4px 6px; background: #0d1520; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; }
+.tr-how { margin-top: 14px; font-size: 12.5px; color: var(--ink-dim); }
+.tr-how summary { cursor: pointer; }

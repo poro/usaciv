@@ -91,11 +91,49 @@ test("GET /api/today: every daily's player count and, signed in, your rank", asy
   const ann = (await call("POST", "/api/player", { name: "Ann" })).data;
   await call("POST", "/api/duel/daily", { key, answers: [!seq[0].higher] }, ann.token);
   const anon = (await call("GET", "/api/today")).data;
-  assert.deepEqual(Object.keys(anon.games).sort(), ["duel", "founders", "mainline", "pinpoint", "whichMetro"]);
+  assert.deepEqual(Object.keys(anon.games).sort(), ["duel", "founders", "mainline", "pinpoint", "trip", "whichMetro"]);
   assert.equal(anon.games.duel.total, 1);
   assert.equal(anon.games.duel.you, null);
   const mine = (await call("GET", `/api/today?local=${key}`, undefined, ann.token)).data;
   assert.deepEqual(mine.games.duel.you, { value: 0, rank: 1 });
   assert.equal(mine.games.pinpoint.you, null);
   assert.equal((await call("GET", "/api/today?local=1999-01-01")).data.local, key, "an out-of-window local date falls back to UTC");
+});
+
+test("Road Trip: trips, best loop, scoring and the daily endpoint", async () => {
+  const T = await import("../../web/js/games/trip/sim/trip.js");
+  const tpool = T.tripPool(cities);
+  const t = T.tripFor(tpool, "trip:2026-11-27");
+  assert.deepEqual(T.tripFor(tpool, "trip:2026-11-27"), t);
+  assert.equal(t.stops.length, T.STOPS);
+  for (const s of t.stops) assert.ok(T.km(s, t.start) <= T.RADIUS_KM);
+  const best = T.scoreTrip(t, t.best.order);
+  assert.equal(best.points, 1000);
+  assert.equal(best.km, best.best);
+  const rev = T.scoreTrip(t, [...t.best.order].reverse());
+  assert.equal(rev.points, 1000, "the reverse loop is just as short");
+  assert.ok(T.scoreTrip(t, t.best.order.slice(1)).error);
+  assert.ok(T.scoreTrip(t, [...t.best.order.slice(1), t.best.order[1]]).error);
+  // every order scores ≤ 1000
+  const worst = T.scoreTrip(t, [t.best.order[0], t.best.order[3], t.best.order[1], t.best.order[4], t.best.order[2], t.best.order[5]]);
+  assert.ok(worst.points <= 1000 && worst.km >= best.km);
+
+  const assets = { fetch: async (req) => new Response(readFileSync(dataUrl(new URL(req.url).pathname.match(/\/data\/(\w+)\.json/)[1]))) };
+  const wenv = { DB: makeD1(), ASSETS: assets, IP_SALT: "t" };
+  const call = async (method, path, body, token) => {
+    const res = await worker.fetch(new Request(`https://usaciv.test${path}`, {
+      method, headers: { "Content-Type": "application/json", Origin: "https://usaciv.test", "CF-Connecting-IP": "1.2.3.4", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }), wenv);
+    return { status: res.status, data: await res.json() };
+  };
+  const key = utcToday();
+  const day = T.tripFor(tpool, T.dailySeed(key));
+  const ann = (await call("POST", "/api/player", { name: "Ann" })).data;
+  assert.equal((await call("POST", "/api/trip/daily", { key, order: day.best.order.slice(2) }, ann.token)).status, 400);
+  const r = (await call("POST", "/api/trip/daily", { key, order: day.best.order }, ann.token)).data;
+  assert.equal(r.score, 1000);
+  assert.equal(r.rank, 1);
+  assert.equal((await call("GET", `/api/trip/daily/${key}`)).data.top[0].name, "Ann");
+  assert.equal((await call("GET", "/api/today", undefined, ann.token)).data.games.trip.you.value, 1000);
 });

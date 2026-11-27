@@ -29,6 +29,8 @@ worker/wm.js           Which Metro?: daily submit/board, race room create
 worker/race.js         export class RaceRoom (Durable Object)
 worker/ml.js           Mainline: submit/board (uses web/js/games/mainline/sim/verify.js)
 worker/vs.js           Mainline versus: room create/info and export class VersusRoom (Durable Object)
+worker/trip.js         Road Trip daily: trip rebuilt from the date, order scored on the server
+worker/today.js        GET /api/today: every daily board at a glance
 worker/duel.js         Metro Duel daily: duels rebuilt from the date, streak counted on the server
 worker/pp.js           Pinpoint daily: rounds rebuilt from the date, guesses scored on the server
 worker/fd.js           Founders daily: submit (replayed with sim/daily.js) and board
@@ -36,7 +38,7 @@ worker/auth.js         login: passkeys, device codes, Google (off until configur
 worker/webauthn.js     passkey verification (CBOR/COSE parsing, ES256/RS256 with WebCrypto); pure, no npm
 worker/rules.js        pure rules (names, step checks + replay, room codes, places); tested by tests/js/worker.test.mjs
 worker/blocklist.js    the short name blocklist
-migrations/0001_init.sql … 0006_duel_daily.sql
+migrations/0001_init.sql … 0007_trip_daily.sql
 web/js/games/shared/net.js   the browser client (below)
 web/js/app/account.js        the top-bar account button and panel
 ```
@@ -171,6 +173,14 @@ per IP per hour. Over the limit → 429 with `Retry-After`. A daily resubmission
 - `POST /api/duel/daily {key, answers: [bool]}`: only a finished run (it ends on a wrong answer or after all 30) →
   `{streak, rank, total}` (`stored: true` on a resubmission). `GET /api/duel/daily/:key` → `{key, total, top: [{rank,
   name, streak}], you}`. Stats `dl`; merge and delete include `duel_daily` (migration 0006).
+
+### Road Trip daily
+
+- `web/js/games/trip/sim/trip.js` builds the day's trip from `trip:<YYYY-MM-DD>` (UTC) over the 150 largest metros and
+  finds the best loop exactly. `worker/trip.js` rebuilds it and scores the order (`scoreTrip`).
+- `POST /api/trip/daily {key, order: [six metro ids]}` → `{score, km, best, rank, total}` (`stored: true` on a
+  resubmission). `GET /api/trip/daily/:key` → `{key, total, top: [{rank, name, score, km}], you}`. Stats `tr`; merge
+  and delete include `trip_daily` (migration 0007).
 
 ## Mainline versus (real time)
 

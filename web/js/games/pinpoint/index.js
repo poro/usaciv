@@ -247,6 +247,7 @@ export async function start(ctx) {
 
   function refresh() {
     if (!g) return;
+    app.requestDraw?.(); // the map overlays follow the game state
     const tot = total();
     const head = `<div class="pp-top-row"><div class="g-stat"><b>${tot.toLocaleString("en-US")}</b><span>points</span></div>
       <div class="pp-dots">${g.rounds.map((_, i) => `<i class="${i < g.results.length ? `s${P.square(g.results[i].points) === "🟩" ? 4 : P.square(g.results[i].points) === "🟨" ? 3 : P.square(g.results[i].points) === "🟧" ? 2 : 1}` : i === g.i ? "cur" : ""}"></i>`).join("")}</div>
