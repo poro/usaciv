@@ -136,6 +136,8 @@ labels the answer and each wrong guess on the map.
   apart, so there is one right order. 10 points for each of the 10 pairs in the right order; five rounds a day
   (500 max), practice by seed, races. The server rebuilds the rounds and scores the orders (`/api/rank/daily`).
 - Duel and Ranking hide the lens bar while they run: a population or income lens would give the answer away.
+- **Play menu groups (2026-11-27):** Explore, then the seven daily puzzles in a compact two-column grid, then the two
+  strategy games (registry `group`).
 - **Next daily:** every short daily's end screen links to the next one you haven't finished today
   (`shared/nextdaily.js`), so the day's games run one after another.
 

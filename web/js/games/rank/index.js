@@ -38,21 +38,29 @@ export async function start(ctx) {
       const r = cur();
       const s = R.statById(r.stat);
       c.font = "600 13px system-ui, sans-serif";
-      r.ids.forEach((id, i) => {
+      // Lay the labels out first, nudging any that would cover another one upward, then draw them.
+      const placedBoxes = [];
+      const labels = r.ids.map((id, i) => {
         const m = byId.get(id);
         const [sx, sy] = cam.toScreen(m.x, m.y);
         const placed = g.pending.indexOf(id);
         const truth = r.order.indexOf(id);
         const text = shown() ? `${truth + 1}. ${m.name} · ${s.fmt(s.value(m))}` : `${LETTERS[i]} · ${m.name}${placed >= 0 ? `  #${placed + 1}` : ""}`;
         const w = c.measureText(text).width + 14;
-        const x = Math.min(cam.w - w - 6, Math.max(6, sx - w / 2)), y = sy - 34;
-        const ok = shown() && g.orders[g.showing][truth] === id;
+        return { id, text, w, x: Math.min(cam.w - w - 6, Math.max(6, sx - w / 2)), y: sy - 34, placed, truth };
+      }).sort((a, b) => b.y - a.y);
+      for (const L of labels) {
+        for (let k = 0; k < 8 && placedBoxes.some((b) => L.x < b.x + b.w + 4 && b.x < L.x + L.w + 4 && L.y < b.y + 26 && b.y < L.y + 26); k++) L.y -= 26;
+        placedBoxes.push(L);
+      }
+      for (const L of labels) {
+        const ok = shown() && g.orders[g.showing][L.truth] === L.id;
         c.fillStyle = "rgba(14,18,24,.92)";
-        c.strokeStyle = shown() ? (ok ? "#6fd68a" : "#ff9c8a") : placed >= 0 ? "#ecd08e" : HL;
+        c.strokeStyle = shown() ? (ok ? "#6fd68a" : "#ff9c8a") : L.placed >= 0 ? "#ecd08e" : HL;
         c.lineWidth = 1.5;
-        c.beginPath(); c.roundRect ? c.roundRect(x, y, w, 22, 5) : c.rect(x, y, w, 22); c.fill(); c.stroke();
-        c.fillStyle = "#fff6dc"; c.fillText(text, x + 7, y + 15);
-      });
+        c.beginPath(); c.roundRect ? c.roundRect(L.x, L.y, L.w, 22, 5) : c.rect(L.x, L.y, L.w, 22); c.fill(); c.stroke();
+        c.fillStyle = "#fff6dc"; c.fillText(L.text, L.x + 7, L.y + 15);
+      }
     },
   });
 

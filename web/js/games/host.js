@@ -49,8 +49,10 @@ export async function install(app) {
       <span class="games-txt"><b>${esc(g.title)}</b><span>${esc(g.tagline)}</span>
       <small class="muted">${esc(g.players)}${g.minutes ? ` · ${esc(g.minutes)}` : ""}</small>
       ${g.id ? `<small class="games-today" hidden></small>` : ""}</span></button>`;
+  const group = (id) => GAMES.filter((g) => (g.group || "strategy") === id).map(card).join("");
   list.innerHTML = card({ id: "", title: "Explore", tagline: "The data map: lenses, City View and Advisors.", players: "No goal, just browse", icon: "🗺️" }) +
-    GAMES.map(card).join("");
+    `<h3 class="games-group">Daily puzzles <small class="muted">2–3 minutes, the same for everyone each day</small></h3><div class="games-grid">${group("daily")}</div>` +
+    `<h3 class="games-group">Strategy games <small class="muted">20–40 minutes, solo or with friends</small></h3>${group("strategy")}`;
   const closeMenu = () => { menu.hidden = true; };
   // Today's boards on the cards (GET /api/today): how many played each daily and, signed in, your rank.
   const FMT = { whichMetro: (v) => `${v} pts`, pinpoint: (v) => `${Number(v).toLocaleString("en-US")} pts`, duel: (v) => `streak ${v}`, trip: (v) => `${v}/1000`, lens: (v) => `${v}/6`, rank: (v) => `${v}/500`, shapes: (v) => `${v}/8`,
