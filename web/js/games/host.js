@@ -40,7 +40,8 @@ export async function install(app) {
     <button class="close icon-btn" data-close aria-label="Close">✕</button>
     <h2 id="games-title">Play</h2>
     <p class="muted games-sub">The real United States, built from public data, as a board to play on. Pick a mode.</p>
-    <div class="games-list"></div></div>`;
+    <div class="games-list"></div>
+    <div class="games-day" hidden><button class="g-btn" data-act="copy-day">📋 Copy my day</button><span class="g-note"></span></div></div>`;
   document.body.appendChild(menu);
   const list = menu.querySelector(".games-list");
   const card = (g) => `<button class="games-item" data-game="${esc(g.id)}">
@@ -54,10 +55,16 @@ export async function install(app) {
   // Today's boards on the cards (GET /api/today): how many played each daily and, signed in, your rank.
   const FMT = { whichMetro: (v) => `${v} pts`, pinpoint: (v) => `${Number(v).toLocaleString("en-US")} pts`, duel: (v) => `streak ${v}`, trip: (v) => `${v}/1000`,
     founders: (v) => `${Number(v).toLocaleString("en-US")} pts`, mainline: (v) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(2)}%` };
+  let dayText = "";
   async function decorateToday() {
     if (!(await net.available())) return;
     const r = await net.get(`/api/today?local=${encodeURIComponent(todayKey())}`);
     if (!r.ok || menu.hidden) return;
+    const done = GAMES.filter((g) => r.data.games?.[g.id]?.you);
+    const box = menu.querySelector(".games-day");
+    dayText = done.length ? `usaciv ${r.data.utc}\n${done.map((g) => `${g.icon} ${g.title}: ${FMT[g.id]?.(r.data.games[g.id].you.value) ?? r.data.games[g.id].you.value} (#${r.data.games[g.id].you.rank})`).join("\n")}\n${location.origin}${location.pathname}` : "";
+    box.hidden = !done.length;
+    box.querySelector(".g-note").textContent = done.length ? `${done.length} of ${Object.keys(r.data.games).length} dailies done today` : "";
     for (const [id, g] of Object.entries(r.data.games || {})) {
       const el = list.querySelector(`.games-item[data-game="${id}"] .games-today`);
       if (!el) continue;
@@ -75,6 +82,10 @@ export async function install(app) {
   };
   menu.addEventListener("click", (e) => {
     if (e.target === menu || e.target.closest("[data-close]")) return closeMenu();
+    if (e.target.closest('[data-act="copy-day"]')) {
+      navigator.clipboard?.writeText(dayText).then(() => app.ui.toast?.("Today's results copied"), () => app.ui.toast?.("Could not copy"));
+      return;
+    }
     const b = e.target.closest(".games-item");
     if (!b) return;
     closeMenu();

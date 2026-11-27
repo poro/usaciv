@@ -50,3 +50,4 @@
 .race-nick { display: grid; gap: 3px; font-size: 12px; color: var(--ink-dim); }
 .race-nick input { font: inherit; padding: 4px 6px; background: #0d1520; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; }
 .race-err { color: #ff9c8a; }
+.games-day { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
