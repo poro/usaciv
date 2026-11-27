@@ -1,0 +1,17 @@
+import { readFileSync } from "node:fs";
+const R0 = new URL("../../", import.meta.url).pathname;
+const B = process.env.USACIV_URL || "https://usaciv.mark-ollila.workers.dev";
+const S = await import(R0 + "web/js/games/mainline/sim/index.js");
+const { REQUIRED_DATA } = await import(R0 + "web/js/games/mainline/sim/verify.js");
+const data = Object.fromEntries(REQUIRED_DATA.map((n) => [n, JSON.parse(readFileSync(R0 + `web/data/${n}.json`))]));
+const e = S.makeEnv(data, "texas");
+let s = S.newGame(e, { seed: 7 }); const log = [];
+const c = e.utility.power[0];
+const a = { type: "line", net: "power", path: S.planLine(e, s, "power", c.cell, e.cities[e.cityIdx.get(c.city)].cell).path };
+s = S.apply(e, s, a); log.push(a);
+while (!s.over) s = S.greedyTurn(e, s, { log });
+const call = async (m, p, body, token) => { const r = await fetch(B + p, { method: m, headers: { Origin: B, "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined }); return { s: r.status, d: await r.json().catch(() => null) }; };
+const me = (await call("POST", "/api/player", { name: "Smoke Test" })).d;
+console.log("local uplift", S.summary(e, s).uplift, "lines", Object.keys(s.lines).length);
+console.log("submit", JSON.stringify(await call("POST", "/api/ml/run", { scenario: "texas", seed: 7, home: null, log }, me.token)));
+console.log("delete", JSON.stringify(await call("DELETE", "/api/account", { confirm: "Smoke Test" }, me.token)));

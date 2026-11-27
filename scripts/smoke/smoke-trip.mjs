@@ -1,0 +1,16 @@
+import { readFileSync } from "node:fs";
+const R0 = new URL("../../", import.meta.url).pathname;
+const B = process.env.USACIV_URL || "https://usaciv.mark-ollila.workers.dev";
+const T = await import(R0 + "web/js/games/trip/sim/trip.js");
+const pool = T.tripPool(JSON.parse(readFileSync(R0 + "web/data/cities.json")));
+const key = new Date().toISOString().slice(0, 10);
+const t = T.tripFor(pool, T.dailySeed(key));
+const order = t.stops.map((s) => s.id);
+const local = T.scoreTrip(t, order);
+const call = async (m, p, body, token) => { const r = await fetch(B + p, { method: m, headers: { Origin: B, "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined }); return { s: r.status, d: await r.json().catch(() => null) }; };
+await new Promise((r) => setTimeout(r, 4000));
+const me = (await call("POST", "/api/player", { name: "Smoke Test" })).d;
+console.log("local", JSON.stringify(local), "server", JSON.stringify(await call("POST", "/api/trip/daily", { key, order }, me.token)));
+console.log("today.trip", JSON.stringify((await call("GET", "/api/today", undefined, me.token)).d.games.trip));
+console.log("delete", JSON.stringify(await call("DELETE", "/api/account", { confirm: "Smoke Test" }, me.token)));
+console.log("board", JSON.stringify((await call("GET", `/api/trip/daily/${key}`)).d));

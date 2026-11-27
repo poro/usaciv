@@ -1,0 +1,16 @@
+import { readFileSync } from "node:fs";
+const R0 = new URL("../../", import.meta.url).pathname;
+const B = process.env.USACIV_URL || "https://usaciv.mark-ollila.workers.dev";
+const P = await import(R0 + "web/js/games/pinpoint/sim/rounds.js");
+const { makeHexMap } = await import(R0 + "web/js/games/shared/hexmap.js");
+const D = (n) => JSON.parse(readFileSync(R0 + `web/data/${n}.json`));
+const grid = makeHexMap(D("world")).grid;
+const pool = P.buildPool({ cities: D("cities"), resources: D("resources"), wonders: D("wonders"), infrastructure: D("infrastructure") }, grid);
+const key = new Date().toISOString().slice(0, 10);
+const guesses = P.dailyRounds(pool, key).map((p, i) => p.cell + i);
+const local = P.scoreGame(grid, P.dailyRounds(pool, key), guesses).total;
+const call = async (m, p, body, token) => { const r = await fetch(B + p, { method: m, headers: { Origin: B, "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined }); return { s: r.status, d: await r.json().catch(() => null) }; };
+const me = (await call("POST", "/api/player", { name: "Smoke Test" })).d;
+console.log("local", local, "server", JSON.stringify(await call("POST", "/api/pp/daily", { key, guesses }, me.token)));
+console.log("delete", JSON.stringify(await call("DELETE", "/api/account", { confirm: "Smoke Test" }, me.token)));
+console.log("board", JSON.stringify((await call("GET", `/api/pp/daily/${key}`)).d));

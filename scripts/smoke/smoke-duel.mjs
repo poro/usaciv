@@ -1,0 +1,15 @@
+import { readFileSync } from "node:fs";
+const R0 = new URL("../../", import.meta.url).pathname;
+const B = process.env.USACIV_URL || "https://usaciv.mark-ollila.workers.dev";
+const D = await import(R0 + "web/js/games/duel/sim/duel.js");
+const pool = D.duelPool(JSON.parse(readFileSync(R0 + "web/data/cities.json")));
+const key = new Date().toISOString().slice(0, 10);
+const seq = D.duelSequence(pool, D.dailySeed(key));
+const answers = [...seq.slice(0, 6).map((d) => d.higher), !seq[6].higher];
+const call = async (m, p, body, token) => { const r = await fetch(B + p, { method: m, headers: { Origin: B, "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined }); return { s: r.status, d: await r.json().catch(() => null) }; };
+await new Promise((r) => setTimeout(r, 4000));
+const me = (await call("POST", "/api/player", { name: "Smoke Test" })).d;
+console.log("expect 6, server", JSON.stringify(await call("POST", "/api/duel/daily", { key, answers }, me.token)));
+console.log("registry has duel+pinpoint:", (await (await fetch(B + "/js/games/registry.js")).text()).match(/id: "(duel|pinpoint)"/g));
+console.log("delete", JSON.stringify(await call("DELETE", "/api/account", { confirm: "Smoke Test" }, me.token)));
+console.log("board", JSON.stringify((await call("GET", `/api/duel/daily/${key}`)).d));

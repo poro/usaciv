@@ -1,0 +1,13 @@
+import { readFileSync } from "node:fs";
+const R0 = new URL("../../", import.meta.url).pathname;
+const B = process.env.USACIV_URL || "https://usaciv.mark-ollila.workers.dev";
+const L = await import(R0 + "web/js/games/lens/sim/lens.js");
+const pool = L.lensPool(JSON.parse(readFileSync(R0 + "web/data/lenses.json")));
+const key = new Date().toISOString().slice(0, 10);
+const picks = L.lensRounds(pool, L.dailySeed(key)).map((r) => r.answer);
+const call = async (m, p, body, token) => { const r = await fetch(B + p, { method: m, headers: { Origin: B, "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined }); return { s: r.status, d: await r.json().catch(() => null) }; };
+await new Promise((r) => setTimeout(r, 8000));
+const me = (await call("POST", "/api/player", { name: "Smoke Test" })).d;
+console.log("expect 6:", JSON.stringify(await call("POST", "/api/lens/daily", { key, picks }, me.token)));
+console.log("today.lens", JSON.stringify((await call("GET", "/api/today", undefined, me.token)).d.games.lens));
+console.log("delete", JSON.stringify(await call("DELETE", "/api/account", { confirm: "Smoke Test" }, me.token)));
