@@ -9,6 +9,7 @@
 //   improvements: {cell: type},
 //   links: [{id, a, b, kind: "road" | "rail", path: [cell]}],
 //   starts: [{cell, label}], log: [{turn, kind, text}], nextId, stats: {built, events}
+//   multiplayer only (match.js; absent solo): seat, nations, rivals: [{seat, towns: [{id, cell, radius, founded, name}]}]
 // }
 import { makeHexMap } from "../../shared/hexmap.js";
 import { makeRng } from "../../shared/rng.js";
@@ -204,22 +205,51 @@ export function describeSite(T, c) {
 // --- ownership and output ------------------------------------------------------------------------------------------
 
 const claimCache = new WeakMap();
+const foreignCache = new WeakMap();
 /**
- * owners(env, state) → Int32Array: town id owning each cell, 0 = none. Towns claim in founding order: every US land
- * cell within its radius that no earlier town holds.
+ * owners(env, state) → Int32Array: town id owning each cell, 0 = none (or a rival's). Towns claim in founding order:
+ * every US land cell within its radius that no earlier town holds.
+ *
+ * Multiplayer (match.js) adds state.seat, state.nations and state.rivals = [{seat, towns: [{id, cell, radius,
+ * founded, name}]}]: every nation's towns claim together, ordered by founding turn and, within a turn, by that turn's
+ * seat priority (claimRank). Land a rival holds is 0 here (not yours) and its seat + 1 in foreignOwners().
  */
 export function owners(env, state) {
   let o = claimCache.get(state);
   if (o) return o;
   const { T, map } = env;
   o = new Int32Array(T.size);
-  for (const t of state.towns) o[t.cell] = t.id; // centres first, so a town always owns its own hex
-  for (const t of state.towns) {
-    for (const c of map.within(t.cell, t.radius)) if (T.land[c] && !o[c]) o[c] = t.id;
+  if (!state.rivals?.length) {
+    for (const t of state.towns) o[t.cell] = t.id; // centres first, so a town always owns its own hex
+    for (const t of state.towns) {
+      for (const c of map.within(t.cell, t.radius)) if (T.land[c] && !o[c]) o[c] = t.id;
+    }
+    claimCache.set(state, o);
+    return o;
   }
+  // multiplayer: rival claims are written as −(seat + 1), then split off into foreignOwners
+  const all = [];
+  state.towns.forEach((t, k) => all.push({ t, mark: t.id, rank: claimRank(state, t.founded, state.seat), k }));
+  for (const r of state.rivals) r.towns.forEach((t, k) => all.push({ t, mark: -(r.seat + 1), rank: claimRank(state, t.founded, r.seat), k }));
+  all.sort((a, b) => a.rank - b.rank || a.k - b.k);
+  for (const x of all) if (!o[x.t.cell]) o[x.t.cell] = x.mark;
+  for (const x of all) for (const c of map.within(x.t.cell, x.t.radius)) if (T.land[c] && !o[c]) o[c] = x.mark;
+  const f = new Int8Array(T.size);
+  for (let i = 0; i < o.length; i++) if (o[i] < 0) { f[i] = -o[i]; o[i] = 0; }
   claimCache.set(state, o);
+  foreignCache.set(state, f);
   return o;
 }
+/** Multiplayer: seat + 1 of the rival holding each cell (0 = nobody, or you). All zeros in a solo game. */
+export function foreignOwners(env, state) {
+  owners(env, state);
+  return foreignCache.get(state) || new Int8Array(env.T.size);
+}
+/** Claim order of a town founded on `turn` by `seat`: earlier turns first; within a turn the seats take turns going first. */
+export const claimRank = (state, turn, seat) => {
+  const n = state.nations || 1;
+  return turn * 8 + ((((seat - turn) % n) + n) % n);
+};
 
 export const townById = (state, id) => state.towns.find((t) => t.id === id) || null;
 export const townAt = (state, cell) => state.towns.find((t) => t.cell === cell) || null;
@@ -319,6 +349,12 @@ export function foundBlocker(env, state, cell) {
   for (const t of state.towns) {
     if (map.dist(t.cell, cell) < RULES.minTownDist) return `Too close to ${t.name} (towns must be ${RULES.minTownDist}+ hexes apart)`;
   }
+  if (state.rivals?.length) {
+    for (const r of state.rivals) for (const t of r.towns) {
+      if (map.dist(t.cell, cell) < RULES.minTownDist) return `Too close to ${t.name}, a rival town (towns must be ${RULES.minTownDist}+ hexes apart)`;
+    }
+    if (foreignOwners(env, state)[cell]) return "A rival nation holds this land";
+  }
   return null;
 }
 
@@ -332,6 +368,7 @@ const SUF2 = ["Landing", "Crossing", "Hollow", "Bend", "Falls", "Springs", "Poin
 export function townName(env, state, cell, rng) {
   const { T } = env;
   const used = new Set(state.towns.map((t) => t.name));
+  for (const r of state.rivals || []) for (const t of r.towns) used.add(t.name); // multiplayer: no name twice on the map
   for (let k = 0; k < 40; k++) {
     let n;
     const r = rng.next();

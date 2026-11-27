@@ -15,7 +15,7 @@ import { drawRivers, strokeSegs } from "../../render/art/water.js";
 import { metroSpill } from "../../render/art/city.js";
 import { drawTerrainGlyphs, GLYPHS_MIN_RPX } from "../../render/art/terrain.js";
 import { esc } from "../../format.js";
-import { baseYields, explainHex, hexYield, IMPROVEMENTS, owners, townAt, landPath, foundBlocker, RULES, townOutput, RELIEF_NAME } from "./sim/index.js";
+import { baseYields, explainHex, hexYield, IMPROVEMENTS, owners, foreignOwners, townAt, landPath, foundBlocker, RULES, townOutput, RELIEF_NAME } from "./sim/index.js";
 import { moveCost } from "./sim/yields.js";
 
 export const COLORS = {
@@ -29,6 +29,18 @@ export const COLORS = {
   materials: "#d08a3a",
   trade: "#f0c94a",
 };
+
+/** Multiplayer nation styles by seat (seat 0 = the solo colours). match.js NATION_COLORS = the borders. */
+export const NATIONS = [
+  { border: COLORS.border, flag: COLORS.flag, land: COLORS.land },
+  { border: "#f3d27a", flag: "#d9a93a", land: [232, 196, 106] },
+  { border: "#ff8f8f", flag: "#d9534f", land: [239, 107, 107] },
+  { border: "#d9a6ff", flag: "#a259e0", land: [199, 125, 255] },
+];
+/** Your nation's style: your seat's in a match, else the solo colours. */
+export const styleOf = (model) => NATIONS[model.mp?.me ?? 0] || NATIONS[0];
+/** Rival nations in a match: [{p, name, state}] (live states, so this turn's new towns show at once). */
+const rivalsOf = (model) => (model.mp?.m ? model.mp.m.players.map((pl, p) => ({ p, name: pl.name, state: pl.state })).filter((r) => r.p !== model.mp.me) : []);
 
 const PCT_COVER = { forest: 1, crop: 7, pasture: 6, grass: 5, shrub: 4, wetland: 8 };
 
@@ -237,10 +249,72 @@ export function prepareLand(env, state) {
   return { cells, edges, own };
 }
 
+/** Multiplayer: rival territory (from your state's view of the rivals) as [{p, cells, edges}], cached per version. */
+let rivalGeo = null, rivalKey = "";
+function rivalLand(model) {
+  const key = `${model.ver}:${model.mp?.me}`;
+  if (key === rivalKey && rivalGeo) return rivalGeo;
+  rivalKey = key;
+  const { env, state } = model;
+  const grid = env.map.grid;
+  const f = foreignOwners(env, state);
+  const by = new Map();
+  for (const c of env.T.landCells) {
+    const k = f[c];
+    if (!k) continue;
+    if (!by.has(k)) by.set(k, { p: k - 1, cells: [], edges: [] });
+    const g = by.get(k);
+    g.cells.push(c);
+    for (let d = 0; d < 6; d++) {
+      const n = grid.neighbour(c, d);
+      if (n >= 0 && f[n] === k) continue;
+      const a = grid.corners[d % 6], b = grid.corners[(d + 1) % 6];
+      const x = grid.cx(c), y = grid.cy(c);
+      g.edges.push(x + a[0], y + a[1], x + b[0], y + b[1]);
+    }
+  }
+  rivalGeo = [...by.values()];
+  return rivalGeo;
+}
+
+export function rivalsLayer(model) {
+  return {
+    id: "rivals", z: 61.5, snapshot: true,
+    sig: () => `r${model.ver}:${model.mp?.me ?? ""}`,
+    visible: () => !!model.mp?.m && !!model.state && model.state.phase !== "setup",
+    draw(ctx, vp, w, o) {
+      const { grid } = w;
+      const R = grid.R, s = o.s, m = R * 2;
+      for (const g of rivalLand(model)) {
+        const st = NATIONS[g.p] || NATIONS[1];
+        ctx.beginPath();
+        for (const c of g.cells) if (inVp(vp, grid.cx(c), grid.cy(c), m)) hexPath(ctx, grid, c, (R + 0.6 / s) / R);
+        ctx.fillStyle = css(st.land, 0.14);
+        ctx.fill();
+        const p = new Path2D();
+        const e = g.edges;
+        for (let k = 0; k < e.length; k += 4) {
+          if (!inVp(vp, e[k], e[k + 1], m)) continue;
+          p.moveTo(e[k], e[k + 1]);
+          p.lineTo(e[k + 2], e[k + 3]);
+        }
+        ctx.lineCap = "round";
+        ctx.strokeStyle = COLORS.borderDark;
+        ctx.lineWidth = Math.max(2.2, o.Rpx * 0.13) / s;
+        ctx.stroke(p);
+        ctx.strokeStyle = st.border;
+        ctx.lineWidth = Math.max(1.1, o.Rpx * 0.065) / s;
+        ctx.stroke(p);
+      }
+      for (const r of rivalsOf(model)) for (const l of r.state.links) drawLink(ctx, grid, l, o);
+    },
+  };
+}
+
 export function landLayer(model) {
   return {
     id: "land", z: 62, snapshot: true,
-    sig: () => `l${model.ver}`,
+    sig: () => `l${model.ver}:${model.mp?.me ?? ""}`,
     visible: () => !!model.state && model.state.phase !== "setup",
     draw(ctx, vp, w, o) {
       const { env, state } = model;
@@ -252,7 +326,8 @@ export function landLayer(model) {
       // Territory tint.
       ctx.beginPath();
       for (const c of geo.cells) if (inVp(vp, grid.cx(c), grid.cy(c), m)) hexPath(ctx, grid, c, (R + 0.6 / s) / R);
-      ctx.fillStyle = css(COLORS.land, 0.17);
+      const st = styleOf(model);
+      ctx.fillStyle = css(st.land, 0.17);
       ctx.fill();
       // Border: a dark under-line then the bright line; inner edges between two of your towns are thin.
       const outer = new Path2D(), inner = new Path2D();
@@ -267,7 +342,7 @@ export function landLayer(model) {
       ctx.strokeStyle = COLORS.borderDark;
       ctx.lineWidth = Math.max(2.6, o.Rpx * 0.16) / s;
       ctx.stroke(outer);
-      ctx.strokeStyle = COLORS.border;
+      ctx.strokeStyle = st.border;
       ctx.lineWidth = Math.max(1.3, o.Rpx * 0.08) / s;
       ctx.stroke(outer);
       ctx.setLineDash([3 / s, 3 / s]);
@@ -430,17 +505,30 @@ export function yieldsLayer(model) {
 export function townsLayer(model) {
   return {
     id: "towns", z: 66, snapshot: true,
-    sig: () => `t${model.ver}`,
+    sig: () => `t${model.ver}:${model.mp?.me ?? ""}`,
     visible: () => !!model.state,
     draw(ctx, vp, w, o) {
       const { state } = model;
       const { grid } = w;
       const R = grid.R, s = o.s;
       const m = 3 * R;
+      const mine = styleOf(model);
+      const rivals = rivalsOf(model);
+      for (const r of rivals) {
+        const st = NATIONS[r.p] || NATIONS[1];
+        for (const t of r.state.towns) {
+          const x = grid.cx(t.cell), y = grid.cy(t.cell);
+          if (inVp(vp, x, y, m)) drawTown(ctx, x, y, R, t.pop, s, o.Rpx, t.cell, st.flag);
+        }
+        for (const p of r.state.parties) {
+          const x = grid.cx(p.cell), y = grid.cy(p.cell);
+          if (inVp(vp, x, y, m)) drawParty(ctx, x, y, R, s, o.Rpx);
+        }
+      }
       for (const t of state.towns) {
         const x = grid.cx(t.cell), y = grid.cy(t.cell);
         if (!inVp(vp, x, y, m)) continue;
-        drawTown(ctx, x, y, R, t.pop, s, o.Rpx, t.cell);
+        drawTown(ctx, x, y, R, t.pop, s, o.Rpx, t.cell, mine.flag);
       }
       for (const p of state.parties) {
         const x = grid.cx(p.cell), y = grid.cy(p.cell);
@@ -453,7 +541,8 @@ export function townsLayer(model) {
         ctx.textBaseline = "middle";
         const fs = o.Rpx < 8 ? 10 : 11.5;
         ctx.font = `600 ${fs}px "Palatino Linotype", Palatino, Georgia, serif`;
-        for (const t of state.towns) {
+        const labelled = [...state.towns.map((t) => [t, mine]), ...rivals.flatMap((r) => r.state.towns.map((t) => [t, NATIONS[r.p] || NATIONS[1]]))];
+        for (const [t, st] of labelled) {
           const wx = grid.cx(t.cell), wy = grid.cy(t.cell);
           if (!inVp(vp, wx, wy, m)) continue;
           const [sx, sy0] = o.toScreen(wx, wy);
@@ -466,10 +555,10 @@ export function townsLayer(model) {
           ctx.fillStyle = "rgba(8,22,24,.86)";
           roundRect(ctx, x0, y0, W, H, 4);
           ctx.fill();
-          ctx.strokeStyle = COLORS.border;
+          ctx.strokeStyle = st.border;
           ctx.lineWidth = 1;
           ctx.stroke();
-          ctx.fillStyle = COLORS.flag;
+          ctx.fillStyle = st.flag;
           roundRect(ctx, x0 + 2, y0 + 2, pw, H - 4, 3);
           ctx.fill();
           ctx.fillStyle = "#04201e";
@@ -502,7 +591,7 @@ function roundRect(ctx, x, y, w, h, r) {
 }
 
 const HOUSES = [[0.28, 0.12], [-0.3, 0.16], [0.05, 0.36], [-0.12, -0.3], [0.36, -0.22], [-0.42, -0.1], [0.3, 0.42], [-0.32, 0.44], [0.48, 0.08]];
-export function drawTown(ctx, x, y, R, pop, s, Rpx, seed = 0) {
+export function drawTown(ctx, x, y, R, pop, s, Rpx, seed = 0, flag = COLORS.flag) {
   if (Rpx < 5) {
     const r = Math.max(3.2 / s, R * (0.32 + Math.min(0.3, pop * 0.02)));
     ctx.beginPath();
@@ -510,7 +599,7 @@ export function drawTown(ctx, x, y, R, pop, s, Rpx, seed = 0) {
     ctx.fillStyle = COLORS.wall;
     ctx.fill();
     ctx.lineWidth = 2 / s;
-    ctx.strokeStyle = COLORS.flag;
+    ctx.strokeStyle = flag;
     ctx.stroke();
     return;
   }
@@ -520,7 +609,7 @@ export function drawTown(ctx, x, y, R, pop, s, Rpx, seed = 0) {
   ctx.fillStyle = "rgba(196,170,120,.85)";
   ctx.fill();
   ctx.lineWidth = Math.max(1.4 / s, 0.04 * R);
-  ctx.strokeStyle = COLORS.flag;
+  ctx.strokeStyle = flag;
   ctx.stroke();
   const n = Math.min(HOUSES.length, 1 + Math.floor(pop / 2));
   const hw = 0.21 * R, hh = 0.15 * R;
@@ -539,7 +628,7 @@ export function drawTown(ctx, x, y, R, pop, s, Rpx, seed = 0) {
   ctx.lineTo(x + 0.3 * R, y - 0.54 * R);
   ctx.lineTo(x + 0.02 * R, y - 0.45 * R);
   ctx.closePath();
-  ctx.fillStyle = COLORS.flag;
+  ctx.fillStyle = flag;
   ctx.fill();
 }
 
@@ -621,6 +710,10 @@ export function hexTooltip(model, cell) {
   const e = explainHex(T, cell);
   const lines = [];
   const town = state ? townAt(state, cell) : null;
+  for (const r of rivalsOf(model)) {
+    const rt = townAt(r.state, cell);
+    if (rt) return `<b>${esc(rt.name)}</b> <span class="muted">· population ${rt.pop}</span><br><span class="muted">A town of ${esc(r.name)}</span>`;
+  }
   if (town) {
     const o = townOutput(env, state, town);
     lines.push(`<b>${esc(town.name)}</b> <span class="muted">· population ${town.pop}</span>`);
@@ -634,6 +727,8 @@ export function hexTooltip(model, cell) {
   lines.push(`<b>${esc(coverName)}</b> <span class="muted">· ${RELIEF_NAME[T.relief[cell]]} · ${T.elev[cell]} m</span>`);
   const own = state && state.phase !== "setup" ? owners(env, state)[cell] : 0;
   if (own) lines.push(`<span class="muted">Inside ${esc(state.towns.find((t) => t.id === own)?.name || "your")}'s border</span>`);
+  const held = model.mp?.m && state?.phase !== "setup" ? foreignOwners(env, state)[cell] : 0;
+  if (held) lines.push(`<span class="fd-warn">Held by ${esc(model.mp.m.players[held - 1]?.name || "a rival")}</span>`);
   for (const p of e.parts) lines.push(fmtPart(p));
   const imp = state?.improvements?.[cell];
   if (imp) {

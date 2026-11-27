@@ -1,4 +1,4 @@
-// Mainline versus room (worker/vs.js): the pure helpers, plus VersusRoom driven with a fake Durable Object context
+// Mainline versus room (worker/vs.js with the Mainline adapter in worker/games.js): the pure helpers, plus VersusRoom driven with a fake Durable Object context
 // (node:sqlite for ctx.storage.sql, fake sockets). node --test tests/js/*.test.mjs, no Workers runtime needed.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -20,6 +20,7 @@ registerHooks({
   },
 });
 const V = await import("../../worker/vs.js");
+const G = await import("../../worker/games.js");
 
 const dataUrl = (n) => new URL(`../../web/data/${n}.json`, import.meta.url);
 const data = Object.fromEntries(REQUIRED_DATA.map((n) => [n, JSON.parse(readFileSync(dataUrl(n)))]));
@@ -66,7 +67,7 @@ test("joining, seats and starting", () => {
   assert.equal(V.statusView(r).seats, 3);
   assert.equal(V.startError(r, "b"), "Only the host can start");
   assert.equal(V.startError(r, "a"), null);
-  r.players = V.seatPlayers(r.players, r.bots);
+  r.players = V.seatPlayers(r);
   assert.deepEqual(r.players.map((p) => [p.id, p.name, !!p.bot]), [["a", "Ann", false], ["b", "Bo", false], ["c", "Cy", false], [null, BOT_NAMES[0], true]]);
   r.status = "live";
   assert.equal(V.seatOf(r, "c"), 2);
@@ -84,10 +85,11 @@ test("seeds, entry room and the act rate window", () => {
     const s = V.newSeed(u);
     assert.ok(Number.isInteger(s) && s >= 1 && s <= 0x7fffffff, `${u} → ${s}`);
   }
-  assert.equal(V.entryRoom(0, 2026, 10), V.VS_MAX_ENTRIES - 10, "one slot kept per resolve to come");
-  assert.equal(V.entryRoom(100, 2035, 10), V.VS_MAX_ENTRIES - 101);
-  assert.equal(V.entryRoom(V.VS_MAX_ENTRIES - 1, 2035, 10), 0, "the last resolve still fits");
-  assert.equal(V.entryRoom(V.VS_MAX_ENTRIES, 2036, 10), 0, "after the game nothing is reserved");
+  const left = (year, years) => G.mainline.resolvesLeft({ year, years });
+  assert.equal(V.entryRoom(0, left(2026, 10)), V.VS_MAX_ENTRIES - 10, "one slot kept per resolve to come");
+  assert.equal(V.entryRoom(100, left(2035, 10)), V.VS_MAX_ENTRIES - 101);
+  assert.equal(V.entryRoom(V.VS_MAX_ENTRIES - 1, left(2035, 10)), 0, "the last resolve still fits");
+  assert.equal(V.entryRoom(V.VS_MAX_ENTRIES, left(2036, 10)), 0, "after the game nothing is reserved");
 
   const b = { t: 0, n: 0 };
   let ok = 0;
@@ -98,7 +100,7 @@ test("seeds, entry room and the act rate window", () => {
 
 test("ready, deadline and when a year resolves", () => {
   const r = lobby({ status: "live" });
-  r.players = V.seatPlayers([...r.players, { id: "b", name: "Bo" }], 1);
+  r.players = V.seatPlayers({ ...r, players: [...r.players, { id: "b", name: "Bo" }], bots: 1 });
   const [a, b] = r.players;
   const both = new Set(["a", "b"]);
   assert.equal(V.shouldResolve(r, both, 0), false);
@@ -131,20 +133,21 @@ test("room view: seed hidden in the lobby, bots always online and ready", () => 
   const r = lobby({ seed: 77 });
   assert.equal(V.roomView(r, new Set(["a"])).seed, null);
   r.status = "live";
-  r.players = V.seatPlayers(r.players, 1);
+  r.players = V.seatPlayers(r);
   const v = V.roomView(r, new Set());
   assert.equal(v.seed, 77);
   assert.deepEqual(v.players, [
     { id: "a", name: "Ann", bot: false, online: false, ready: false },
     { id: null, name: BOT_NAMES[0], bot: true, online: true, ready: true },
   ]);
-  for (const k of ["code", "status", "scenario", "home", "years", "bots", "seed", "host", "year", "deadline", "players"]) assert.ok(k in v, k);
+  assert.equal(v.game, "mainline");
+  for (const k of ["code", "game", "status", "scenario", "home", "years", "bots", "seed", "host", "year", "deadline", "players"]) assert.ok(k in v, k);
 });
 
 test("resolveEntries: bot actions in seat order, then {r: 1}; the entries replay to the same game", () => {
   const init = { seed: 9, years: 10, players: [{ name: "Ann", bot: false }, { name: BOT_NAMES[0], bot: true }, { name: BOT_NAMES[1], bot: true }] };
   const vs0 = newVersus(texas, init);
-  const { vs, es } = V.resolveEntries(texas, vs0);
+  const { g: vs, es } = V.resolveEntries(G.mainline, texas, vs0);
   assert.deepEqual(es.at(-1), { r: 1 });
   assert.equal(vs.year, 2027);
   const seats = es.slice(0, -1).map((e) => e.p);
@@ -154,9 +157,8 @@ test("resolveEntries: bot actions in seat order, then {r: 1}; the entries replay
   const rep = replay(texas, init, JSON.parse(JSON.stringify(es)));
   assert.equal(rep.error, null);
   assert.equal(vsHash(rep.vs), vsHash(vs));
-  assert.equal(V.yearOf(es), 2027);
   // with no room for bot entries only the resolve is logged
-  const tight = V.resolveEntries(texas, vs0, 0);
+  const tight = V.resolveEntries(G.mainline, texas, vs0, 0);
   assert.deepEqual(tight.es, [{ r: 1 }]);
 });
 
@@ -205,7 +207,7 @@ test("VersusRoom: lobby → live → resolve, rejects, late joiners, rehydration
   const room = new V.VersusRoom(ctx, assets);
   assert.equal(await room.init({ code: "ABCDEF", scenario: "texas", home: null, years: 10, bots: 1, host: { id: "a", name: "Ann" } }), true);
   assert.equal(await room.init({ code: "ABCDEF", scenario: "texas", home: null, years: 10, bots: 1, host: { id: "x", name: "X" } }), false);
-  assert.deepEqual(await room.status(), { code: "ABCDEF", status: "lobby", scenario: "texas", home: null, years: 10, players: 1, seats: 3 });
+  assert.deepEqual(await room.status(), { code: "ABCDEF", game: "mainline", status: "lobby", scenario: "texas", home: null, years: 10, players: 1, seats: 3 });
 
   const A = await join(room, ctx, "a", "Ann");
   const B = await join(room, ctx, "b", "Bo");

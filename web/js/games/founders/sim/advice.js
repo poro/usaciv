@@ -114,11 +114,12 @@ export function nextHint(env, state) {
 }
 
 /** One bot turn: found, settle, build, link, spend what is left on people and culture, then end the turn. */
-export function botTurn(env, state) {
+export function botTurn(env, state, { log = null, end = true } = {}) {
   let s = state;
   const act = (a) => {
+    if (a.type === "end" && !end) return true;
     const r = apply(env, s, a);
-    if (r.ok) s = r.state;
+    if (r.ok) { s = r.state; log?.push(a); }
     return r.ok;
   };
   if (s.phase === "setup") act({ type: "start", cell: s.starts[0].cell });

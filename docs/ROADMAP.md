@@ -121,6 +121,15 @@ Apple) attached to the same player rows, then Mainline versus and Founders hotse
 - **Online rooms** (by link, AI seats optional) are lockstep: a `VersusRoom` Durable Object checks every action with
   the same rules and broadcasts the entry log, and each browser replays it.
 
+**Founders multiplayer shipped 2026-11-26** (sim/match.js; protocol in [MULTIPLAYER.md](MULTIPLAYER.md)):
+- **Nations and land:** 2–4 nations settle the same empty country at once, each from a different region. Where
+  borders meet, the oldest town holds the land. Rival land can't be settled, worked or improved.
+- **Close towns:** two towns founded within 3 hexes in the same turn can't both stand. The nation with that turn's
+  priority (it rotates) keeps its town; the other party is sent back.
+- **Modes:** against AI nations (the solo bot), hotseat on one device with a hand-off screen between players, or an
+  online room. Online rooms use the same `VersusRoom` Durable Object through a per-game adapter.
+- **Length:** 30 or 60 turns. The highest prosperity score wins.
+
 The static site stays static. Multiplayer is added as a small backend next to it.
 
 - **Hosting:** Cloudflare Workers + Durable Objects (one object per game room) + D1 for accounts and leaderboards.

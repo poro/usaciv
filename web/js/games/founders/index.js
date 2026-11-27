@@ -18,7 +18,9 @@
 // How to play.
 import { loadCss } from "../shared/css.js";
 import * as S from "./sim/index.js";
-import { prepareCover, prepareLand, coverLayer, landLayer, yieldsLayer, townsLayer, makeOverlay, COLORS } from "./render.js";
+import { prepareCover, prepareLand, coverLayer, landLayer, rivalsLayer, yieldsLayer, townsLayer, makeOverlay, COLORS } from "./render.js";
+import { net } from "../shared/net.js";
+import { mpSetupHtml, mpLobbyHtml, mpHandoffHtml, mpStandingsHtml, mpNewsHtml, mpEndButton, mpEndHtml, mpShareText } from "./mppanel.js";
 import { esc, int, popShort, compact } from "../../format.js";
 import { shareImage } from "./share.js";
 
@@ -44,6 +46,11 @@ export async function start(ctx) {
     showHow: false, warnedTurn: null, tut: null,
     cover: prepareCover(app.w, ctx.cities, env.T),
   };
+
+  // debugging handle (like app.mainline): the live model and act(), removed on exit
+  app.founders = model;
+  model.act = (a) => act(a);
+  ctx.onCleanup(() => { if (app.founders === model) delete app.founders; });
 
   // First run: the tutorial; afterwards the How-to-play card shows until it has been dismissed once.
   if (!ctx.storage.get(TUT_KEY)?.done) model.tut = { step: 0, base: null };
@@ -75,6 +82,7 @@ export async function start(ctx) {
   ctx.onCleanup(() => document.body.classList.remove("fd-revealed"));
 
   ctx.addLayer(coverLayer(model));
+  ctx.addLayer(rivalsLayer(model));
   ctx.addLayer(landLayer(model));
   ctx.addLayer(yieldsLayer(model));
   ctx.addLayer(townsLayer(model));
@@ -84,18 +92,21 @@ export async function start(ctx) {
   const randomSeed = () => Math.random().toString(36).slice(2, 8);
   const saved = ctx.storage.get(SAVE_KEY);
   const savedState = saved && saved.v === SAVE_V && saved.state && saved.state.v === 1 ? saved.state : null;
-  const seed = ctx.param || savedState?.seed || randomSeed();
+  const mpParam = /^(ai|hot)\.|^mp-/.test(ctx.param || "");
+  const seed = (!mpParam && ctx.param) || savedState?.seed || randomSeed();
   setState(savedState && savedState.seed === seed ? savedState : S.newGame(env, seed), false);
-  ctx.setParam(model.state.seed);
+  if (!mpParam) ctx.setParam(model.state.seed);
+  const online = { avail: false };
 
   function setState(s, save = true) {
     model.state = s;
     model.ver++;
     model.land = s.phase === "setup" ? null : prepareLand(env, s);
-    if (save) ctx.storage.set(SAVE_KEY, { v: SAVE_V, state: s });
+    if (save && !model.mp) ctx.storage.set(SAVE_KEY, { v: SAVE_V, state: s }); // a match never touches the solo save
   }
 
   function act(action, { quiet = false } = {}) {
+    if (model.mp) return mpAction(action, { quiet });
     const r = S.apply(env, model.state, action);
     if (!r.ok) {
       if (!quiet) ctx.toast(r.error);
@@ -116,6 +127,334 @@ export async function start(ctx) {
     refresh();
   }
 
+  // --- multiplayer (sim/match.js; protocol in docs/MULTIPLAYER.md) ------------------------------------------------
+  // model.mp is set while a match runs; model.state is always the seat being played (yours, or in hotseat the
+  // person at the keyboard), so every panel, key and map tool works unchanged.
+  //   local (vs AI or hotseat): #play=founders~ai.<seed>.<bots>.<turns> or hot.<seed>.<people>.<bots>.<turns>;
+  //          saved in storage "mpsave" = {mode, init, log, me, done} and replayed on resume
+  //   online: #play=founders~mp-<CODE>; the room holds the log; your own actions apply at once (mp.pending)
+  const MPSAVE = "mpsave";
+  const cloneA = (a) => JSON.parse(JSON.stringify(a));
+  function parseMp(p) {
+    let m = /^ai\.([a-z0-9]{1,12})\.([1-3])\.(\d+)$/.exec(p || "");
+    if (m && S.MATCH_TURNS.includes(+m[3])) return { mode: "ai", seed: m[1], people: 1, bots: +m[2], turns: +m[3] };
+    m = /^hot\.([a-z0-9]{1,12})\.([2-4])\.([0-2])\.(\d+)$/.exec(p || "");
+    if (m && S.MATCH_TURNS.includes(+m[4]) && +m[2] + +m[3] <= S.MATCH_MAX) return { mode: "hot", seed: m[1], people: +m[2], bots: +m[3], turns: +m[4] };
+    return null;
+  }
+  const localParam = (o) => (o.mode === "ai" ? `ai.${o.seed}.${o.bots}.${o.turns}` : `hot.${o.seed}.${o.people}.${o.bots}.${o.turns}`);
+  function mpOpts() {
+    const v = (f, d) => { const x = Number(body.querySelector(`[data-field="${f}"]`)?.value); return Number.isFinite(x) ? x : d; };
+    let people = v("mpPeople", 1), bots = v("mpBots", 1);
+    const turns = S.MATCH_TURNS.includes(v("mpTurns", 30)) ? v("mpTurns", 30) : 30;
+    ctx.storage.set("mpprefs", { people, bots, turns });
+    return { people, bots, turns };
+  }
+  function loadMpSave() {
+    const sv = ctx.storage.get(MPSAVE, null);
+    return sv && sv.init && Array.isArray(sv.log) && (sv.mode === "ai" || sv.mode === "hot") ? sv : null;
+  }
+  function mpResumeLabel() {
+    const sv = loadMpSave();
+    if (!sv || sv.over) return null;
+    const people = sv.init.players.filter((p) => !p.bot).length, bots = sv.init.players.length - people;
+    return `Resume: ${people > 1 ? `${people} players` : "you"}${bots ? ` vs ${bots} AI` : ""}, turn ${sv.turn || 1}`;
+  }
+  function mpSetup() {
+    return mpSetupHtml({ online: online.avail, player: net.player(), prefs: ctx.storage.get("mpprefs", {}) || {}, resume: mpResumeLabel() });
+  }
+  /** Show the match's current seat (or the lobby / hand-off). */
+  function mpSync() {
+    const mp = model.mp;
+    if (!mp.m) { model.state = null; refresh(); return; }
+    setState(mp.m.players[mp.me].state, false);
+    refresh();
+  }
+  function mpSave() {
+    const mp = model.mp;
+    if (!mp || mp.mode === "online" || !mp.m) return;
+    ctx.storage.set(MPSAVE, { mode: mp.mode, init: mp.init, log: mp.log, me: mp.me, done: mp.done, turn: mp.m.turn, over: mp.m.over, param: mp.param });
+  }
+  function enterMp(mp) {
+    if (model.revealed) reveal(false);
+    model.history = null;
+    model.mp = mp;
+    model.tut = null;
+    model.showHow = false;
+    model.selTown = model.selParty = model.selCell = null;
+    mpSync();
+    if (mp.m) {
+      const st = mp.m.players[mp.me].state;
+      const c = st.towns[0]?.cell ?? st.parties[0]?.cell;
+      if (c != null) flyToCell(c, true);
+      if (!st.towns.length && st.parties.length) model.selParty = st.parties[0].id;
+      if (mp.m.over) finish();
+      refresh();
+    }
+  }
+  function beginLocal(o, saved = null) {
+    let init, m, log, me = 0, done = [];
+    if (saved) {
+      init = saved.init;
+      const r = S.replay(env, init, saved.log);
+      if (r.error) ctx.toast(`The saved game stopped replaying at move ${r.at + 1}: ${r.error}`);
+      m = r.m;
+      log = saved.log.slice(0, r.at);
+      me = Number.isInteger(saved.me) && m.players[saved.me] && !m.players[saved.me].bot ? saved.me : 0;
+      done = Array.isArray(saved.done) ? saved.done : [];
+    } else {
+      const people = o.mode === "ai" ? 1 : o.people;
+      const nick = net.player()?.name;
+      const humans = Array.from({ length: people }, (_, k) => ({ name: people === 1 ? nick || "Your nation" : `Player ${k + 1}` }));
+      const bots = Array.from({ length: o.bots }, (_, k) => ({ name: S.BOT_NATIONS[k], bot: true }));
+      init = { seed: o.seed, turns: o.turns, players: [...humans, ...bots] };
+      m = S.newMatch(env, init);
+      log = [];
+    }
+    const param = saved?.param || localParam(o);
+    enterMp({ mode: o.mode, m, init, log, me, done, param, screen: o.mode === "hot" && !m.over ? "handoff" : "game" });
+    ctx.setParam(param);
+    mpSave();
+  }
+  function startLocal() {
+    const o = mpOpts();
+    if (o.people + o.bots < 2) { ctx.toast("Pick at least two nations: more people here, or an AI nation"); return; }
+    if (o.people + o.bots > S.MATCH_MAX) { ctx.toast(`At most ${S.MATCH_MAX} nations`); return; }
+    beginLocal({ mode: o.people > 1 ? "hot" : "ai", seed: randomSeed(), ...o });
+  }
+  /** A seat's action in the match. */
+  function mpAction(action, { quiet = false } = {}) {
+    const mp = model.mp;
+    if (!mp.m || mp.m.over) return { ok: false, error: "The game is over" };
+    if (action.type === "end") { mpEndTurn(); return { ok: true }; }
+    if (mp.mode === "online" && mp.ready) {
+      if (!quiet) ctx.toast("You're ready: press the Ready button again to keep playing this turn");
+      return { ok: false, error: "ready" };
+    }
+    const r = S.matchAct(env, mp.m, mp.me, action);
+    if (r.error) { if (!quiet) ctx.toast(r.error); return { ok: false, error: r.error }; }
+    mp.m = r.m;
+    if (mp.mode === "online") { mp.pending.push(cloneA(action)); mpSend({ t: "act", a: action }); }
+    else { mp.log.push({ p: mp.me, a: cloneA(action) }); mpSave(); }
+    setState(mp.m.players[mp.me].state, false);
+    if (r.msg && !quiet) ctx.toast(r.msg);
+    return { ok: true, state: model.state, msg: r.msg };
+  }
+  function mpEndTurn() {
+    const mp = model.mp;
+    if (mp.mode === "online") {
+      mpSend({ t: "ready", on: !mp.ready });
+      mp.ready = !mp.ready;
+      refresh();
+      return;
+    }
+    if (mp.mode === "hot") {
+      mp.done = [...new Set([...(mp.done || []), mp.me])];
+      const next = mp.m.players.findIndex((pl, p) => !pl.bot && !mp.done.includes(p));
+      if (next >= 0) {
+        mp.me = next;
+        mp.screen = "handoff";
+        model.selTown = model.selParty = model.selCell = null;
+        mpSave();
+        mpSync();
+        return;
+      }
+    }
+    const before = mp.m;
+    let m = mp.m;
+    m.players.forEach((pl, p) => {
+      if (!pl.bot) return;
+      for (const a of S.botActions(env, m, p)) {
+        const r = S.matchAct(env, m, p, a);
+        if (r.error) continue;
+        m = r.m;
+        mp.log.push({ p, a });
+      }
+    });
+    m = S.resolve(env, m);
+    mp.log.push({ r: 1 });
+    mp.m = m;
+    mp.done = [];
+    if (mp.mode === "hot") {
+      mp.me = m.players.findIndex((pl) => !pl.bot);
+      mp.screen = m.over ? "game" : "handoff";
+    }
+    mpSave();
+    mpAfterTurn(before);
+  }
+  /** After a resolve: the seat's own report as toasts, then the end screen when the game is over. */
+  function mpAfterTurn(before) {
+    const mp = model.mp;
+    model.selTown = model.selParty = model.selCell = null;
+    mpSync();
+    const rep = model.state?.lastTurn;
+    if (mp.mode !== "hot") {
+      if (rep?.auto?.length) ctx.toast(`Auto: ${rep.auto.length} order${rep.auto.length > 1 ? "s" : ""}`);
+      for (const e of rep?.events || []) ctx.toast(`${e.icon} ${e.text}`);
+      for (const n of mp.m.news) if (n.kind === "turnedBack" && n.seat === mp.me) ctx.toast(`${n.name} could not be founded: ${mp.m.players[n.by].name} settled nearby first`);
+    } else ctx.toast(`${S.yearOf(before.turn)} is over`);
+    if (mp.m.over) finish();
+    refresh();
+  }
+
+  // --- online rooms ---
+  let mpTimer = 0;
+  function mpSend(msg) {
+    const ws = model.mp?.ws;
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
+  }
+  function mpTick() {
+    clearInterval(mpTimer);
+    mpTimer = 0;
+    if (!model.mp?.deadline) return;
+    mpTimer = setInterval(() => {
+      const el = body.querySelector(".fd-mp-endbtn");
+      if (!model.mp?.deadline || !el) { clearInterval(mpTimer); mpTimer = 0; return; }
+      model.mp.now = Date.now();
+      el.innerHTML = mpEndButton(model.mp);
+    }, 1000);
+  }
+  ctx.onCleanup(() => { clearInterval(mpTimer); mpLeave({ quietly: true }); });
+  async function mpNick() {
+    if (net.player()) return true;
+    const name = (body.querySelector('[data-field="nick"]')?.value || "").trim();
+    if (!name) { ctx.toast("Pick a nickname first (2–20 letters, digits or spaces)"); body.querySelector('[data-field="nick"]')?.focus(); return false; }
+    try { await net.ensurePlayer(name); return true; } catch (err) { ctx.toast(`Could not create your player: ${err.message}`); return false; }
+  }
+  async function mpCreate(opts = null) {
+    const o = opts || mpOpts();
+    if (!(await mpNick())) return;
+    const r = await net.post("/api/fd/match", { turns: o.turns, bots: Math.min(o.bots, S.MATCH_MAX - 1) });
+    if (!r.ok) { ctx.toast(`Could not make a room: ${r.error}`); return; }
+    mpJoin(r.data.code);
+  }
+  function mpJoin(code) {
+    mpLeave({ quietly: true });
+    if (model.revealed) reveal(false);
+    model.history = null;
+    model.tut = null;
+    model.mp = { mode: "online", code, param: `mp-${code}`, room: null, conf: null, m: null, pending: [], log: [], me: -1, ready: false, waiting: [], deadline: null, now: Date.now(), error: null, player: net.player(), ws: null, tries: 0, left: false, init: null, screen: "lobby" };
+    model.state = null;
+    ctx.setParam(model.mp.param);
+    refresh();
+    mpConnect();
+  }
+  async function mpConnect() {
+    const mp = model.mp;
+    if (!mp || mp.left) return;
+    if (!(await net.available())) { mp.error = "This copy of the site has no online play."; refresh(); return; }
+    if (!net.player()) { mp.screen = "nick"; refresh(); return; }
+    mp.player = net.player();
+    const ws = net.socket(`/api/fd/match/${encodeURIComponent(mp.code)}/ws`);
+    mp.ws = ws;
+    ws.onopen = () => { mp.tries = 0; };
+    ws.onmessage = (e) => { if (model.mp === mp) { try { mpOnMessage(mp, JSON.parse(e.data)); } catch (err) { console.error("founders mp: bad message", err); } } };
+    ws.onclose = (e) => {
+      if (model.mp !== mp || mp.left || mp.ws !== ws) return;
+      if (e.code === 4001) { mp.error = mp.room?.status === "live" ? "This game has already started, and you are not in it." : "This room is full."; mp.left = true; }
+      else if (mp.room?.status === "done") return;
+      else if (++mp.tries <= 6) { mp.error = "Connection lost; reconnecting…"; setTimeout(mpConnect, Math.min(8000, 800 * 2 ** mp.tries)); }
+      else mp.error = "Lost the connection to the room. Reload to try again.";
+      if (!mp.m) refresh(); else ctx.toast(mp.error);
+    };
+  }
+  function mpInitFromRoom(mp) {
+    const r = mp.room;
+    mp.init = { seed: String(r.seed), turns: r.turns, players: r.players.map((p) => ({ name: p.name, bot: !!p.bot })) };
+    mp.me = r.players.findIndex((p) => p.id === mp.player?.id);
+  }
+  /** Displayed match = the room's confirmed log + my actions it has not echoed yet. */
+  function mpView(mp) {
+    let d = mp.conf;
+    const keep = [];
+    for (const a of mp.pending) {
+      const r = S.matchAct(env, d, mp.me, a);
+      if (!r.error) { d = r.m; keep.push(a); }
+    }
+    mp.pending = keep;
+    mp.m = d;
+  }
+  function mpOnMessage(mp, msg) {
+    if (msg.t === "room") {
+      const r = msg.room;
+      mp.room = r;
+      mp.error = null;
+      if (r.status !== "lobby" && !mp.init) mpInitFromRoom(mp);
+      mp.ready = !!r.players[mp.me]?.ready;
+      mp.waiting = r.players.filter((p, k) => !p.bot && p.online && !p.ready && k !== mp.me).map((p) => p.name);
+      mp.deadline = r.deadline || null;
+      mp.now = Date.now();
+      if (r.status === "lobby") { refresh(); return; }
+      if (!mp.conf) { if (mp.stash) { const st = mp.stash; mp.stash = null; mpOnMessage(mp, st); } return; }
+      refresh();
+      mpTick();
+      return;
+    }
+    if (msg.t === "log") {
+      if (!mp.room || mp.room.status === "lobby") { mp.stash = msg; return; }
+      if (!mp.init) mpInitFromRoom(mp);
+      if (mp.me < 0) { mp.error = "You are not seated in this game."; refresh(); return; }
+      const r = S.replay(env, mp.init, msg.es);
+      if (r.error) console.error(`founders mp: the room's log did not replay (move ${r.at + 1}: ${r.error})`);
+      const first = !mp.conf;
+      mp.conf = r.m;
+      mp.log = msg.es.slice(0, r.at);
+      mp.pending = [];
+      mpView(mp);
+      mp.screen = "game";
+      if (first) enterMp(mp); else mpSync();
+      mpTick();
+      return;
+    }
+    if (msg.t === "entries") {
+      if (!mp.conf || msg.i !== mp.log.length) { mpSend({ t: "sync" }); return; }
+      const before = mp.conf;
+      let resolved = false;
+      for (const e of msg.es) {
+        const r = S.applyEntry(env, mp.conf, e);
+        if (r.error) { console.error("founders mp: entry refused locally", e, r.error); mpSend({ t: "sync" }); return; }
+        mp.conf = r.m;
+        mp.log.push(e);
+        if (e.p === mp.me && mp.pending.length) mp.pending.shift();
+        if (e.r === 1) resolved = true;
+      }
+      mpView(mp);
+      if (resolved) { mp.ready = false; mpAfterTurn(before); } else mpSync();
+      mpTick();
+      return;
+    }
+    if (msg.t === "reject") {
+      ctx.toast(`The room refused that: ${msg.error}`);
+      mp.pending = [];
+      mpView(mp);
+      mpSync();
+      return;
+    }
+    if (msg.t === "error") {
+      mp.error = msg.error;
+      if (!mp.m) refresh(); else ctx.toast(msg.error);
+    }
+  }
+  function mpLeave({ quietly = false } = {}) {
+    const mp = model.mp;
+    if (!mp) return;
+    mp.left = true;
+    try { mp.ws?.close(1000, "left"); } catch { /* already closed */ }
+    clearInterval(mpTimer);
+    mpTimer = 0;
+    model.mp = null;
+    model.history = null;
+    if (model.revealed) reveal(false);
+    model.selTown = model.selParty = model.selCell = null;
+    if (quietly) return;
+    // back to a fresh solo setup (the solo save is untouched)
+    const sv = ctx.storage.get(SAVE_KEY);
+    const st = sv && sv.v === SAVE_V && sv.state?.v === 1 ? sv.state : null;
+    setState(st && st.phase !== "over" ? st : S.newGame(env, randomSeed()), false);
+    ctx.setParam(model.state.seed);
+    refresh();
+  }
+
   // --- turn ------------------------------------------------------------------------------------------------------
   function endTurn() {
     const s = model.state;
@@ -130,6 +469,7 @@ export async function start(ctx) {
       refresh();
       return;
     }
+    if (model.mp) { mpEndTurn(); return; }
     const r = act({ type: "end" });
     if (!r.ok) return;
     const rep = model.state.lastTurn;
@@ -181,6 +521,7 @@ export async function start(ctx) {
   // --- input -----------------------------------------------------------------------------------------------------
   ctx.on("mapclick", (ev) => {
     const s = model.state;
+    if (!s || (model.mp && model.mp.screen !== "game")) return true; // lobby or hand-off: the map waits
     if (s.phase === "over") return false; // the real map is back: let clicks open real cities
     const c = ev.cell;
     if (c == null || c < 0 || !env.T.land[c]) {
@@ -315,6 +656,7 @@ export async function start(ctx) {
   // Keys (ctx.onKey runs before the map's own shortcuts; true = handled, so the map ignores it).
   ctx.onKey((e, k) => {
     const onButton = e.target?.tagName === "BUTTON";
+    if (!model.state || (model.mp && model.mp.screen !== "game")) return !model.revealed && (k === "r" || k === "l" || k === "/");
     if (k === "Enter" || k === "e") {
       if (k === "Enter" && onButton) return false; // the button handles its own Enter
       endTurn();
@@ -347,6 +689,24 @@ export async function start(ctx) {
     const s = model.state;
     switch (d.act) {
       case "end": endTurn(); return;
+      case "mpLocal": startLocal(); return;
+      case "mpResume": { const sv = loadMpSave(); if (sv) beginLocal({ mode: sv.mode }, sv); return; }
+      case "mpAgain": {
+        const mp = model.mp, i = mp?.init;
+        if (!i) return;
+        const people = i.players.filter((p) => !p.bot).length;
+        beginLocal({ mode: mp.mode, seed: randomSeed(), people, bots: i.players.length - people, turns: i.turns });
+        return;
+      }
+      case "mpCreate": mpCreate(); return;
+      case "mpNewRoom": { const r = model.mp?.room; if (r) mpCreate({ turns: r.turns, bots: r.bots }); return; }
+      case "mpJoinNick": mpNick().then((ok) => { if (ok && model.mp) { model.mp.screen = "lobby"; refresh(); mpConnect(); } }); return;
+      case "mpStart": mpSend({ t: "start" }); return;
+      case "mpUnready": mpEndTurn(); return;
+      case "mpGo": if (model.mp) { model.mp.screen = "game"; mpSync(); const st = model.state; const c = st.towns[0]?.cell ?? st.parties[0]?.cell; if (c != null) flyToCell(c, true); } return;
+      case "mpLeave": mpLeave(); return;
+      case "mpCopy": navigator.clipboard?.writeText(d.link).then(() => ctx.toast("Link copied"), () => ctx.toast("Could not copy")); return;
+      case "mpShare": navigator.clipboard?.writeText(`${mpShareText(env, model.mp)}\n${location.origin}${location.pathname}#play=founders`).then(() => ctx.toast("Result copied"), () => ctx.toast("Could not copy")); return;
       case "start": beginAt(+d.cell); return;
       case "found": found(); return;
       case "nextparty": nextParty(); return;
@@ -396,9 +756,10 @@ export async function start(ctx) {
           return;
         }
         model.confirmNew = false;
+        if (model.mp) mpLeave({ quietly: true });
         newGame(randomSeed());
         return;
-      case "replay": newGame(s.seed); return;
+      case "replay": if (model.mp) mpLeave({ quietly: true }); newGame(s.seed); return;
       case "deselect": model.selTown = model.selParty = model.selCell = null; break;
       default: return;
     }
@@ -415,9 +776,21 @@ export async function start(ctx) {
   const yl = (y) => `<span class="fd-food" title="Food">🌾 ${y.food}</span> <span class="fd-mat" title="Materials">🪵 ${y.materials}</span> <span class="fd-trade" title="Trade">⚖️ ${y.trade}</span>`;
 
   function render() {
+    const mp = model.mp;
+    if (mp && !mp.m) {
+      body.classList.remove("fd-setup");
+      body.innerHTML = mp.screen === "nick" ? `<div class="fd-mp-lobby"><h3 class="fd-verdict">Join Founders room <b class="fd-mp-code">${esc(mp.code)}</b></h3>
+        <label class="fd-mp-nick">Your nickname <input data-field="nick" maxlength="20" autocomplete="nickname" placeholder="2–20 letters"></label>
+        <div class="g-row"><button class="g-btn primary" data-act="mpJoinNick">Join</button><button class="g-btn" data-act="mpLeave">Back</button></div></div>` : mpLobbyHtml(mp);
+      return;
+    }
+    if (mp?.screen === "handoff") { body.classList.remove("fd-setup"); body.innerHTML = mpHandoffHtml(mp); return; }
     const s = model.state;
     body.classList.toggle("fd-setup", s.phase === "setup");
-    if (s.phase === "over" && model.history) { body.innerHTML = endScreen(); return; }
+    if (s.phase === "over" && model.history) {
+      body.innerHTML = mp ? `${mpEndHtml(env, mp)}${mp.mode === "hot" ? "" : `<details class="fd-mp-hist"><summary>Your nation vs. history</summary>${endScreen()}</details>`}` : endScreen();
+      return;
+    }
     const n = S.nationOutput(env, s);
     const score = S.prosperity(env, s).score;
     const hint = S.nextHint(env, s);
@@ -428,7 +801,7 @@ export async function start(ctx) {
     const idleWarn = warned ? `<p class="fd-idle" role="status">${esc(warned.text)} <b>End turn</b> again to end anyway.</p>` : "";
     body.innerHTML = `
       <div class="fd-top">
-        <div class="fd-year"><b>${year}</b><span>Turn ${s.turn} of ${s.maxTurns}</span></div>
+        <div class="fd-year"><b>${year}</b><span>Turn ${s.turn} of ${s.maxTurns}${mp ? ` · ${esc(mp.m.players[mp.me].name)}` : ""}</span></div>
         <div class="fd-stats">
           <div class="g-stat" title="Materials in store. Per turn: +${n.gross} (town materials plus a quarter of trade) − ${n.upkeep} upkeep (1 per 2 people, 1 per rail line)"><b class="fd-mat">${int(s.materials)}</b><span>Materials ${n.income >= 0 ? "+" : ""}${n.income}</span></div>
           <div class="g-stat" title="Population across your towns"><b>${n.pop}</b><span>People</span></div>
@@ -436,11 +809,12 @@ export async function start(ctx) {
           <div class="g-stat" title="Prosperity score"><b>${int(score)}</b><span>Score</span></div>
         </div>
       </div>
+      ${mp ? `${mpStandingsHtml(env, { ...mp, now: Date.now() })}${mpNewsHtml(mp)}` : ""}
       ${model.showHow ? howToPlay() : ""}
       ${model.tut ? tutorialCard() : `<div class="fd-hint" role="status"><span class="fd-hint-k">Next</span> ${esc(hint)}</div>`}
       ${idleWarn}
       <div class="g-row fd-actions">
-        <button class="g-btn primary fd-end" data-act="end" ${s.phase !== "play" ? "disabled" : ""} title="End the turn (Enter or E)">End turn <kbd>⏎</kbd></button>
+        ${mp ? `<span class="fd-mp-endbtn">${mpEndButton({ ...mp, now: Date.now() })}</span>` : `<button class="g-btn primary fd-end" data-act="end" ${s.phase !== "play" ? "disabled" : ""} title="End the turn (Enter or E)">End turn <kbd>⏎</kbd></button>`}
         <button class="g-btn" data-act="nextorder" ${needs.length ? "" : "disabled"} title="Next party or town that needs orders (N)">Next${needs.length ? ` · ${needs.length}` : ""} <kbd>N</kbd></button>
         <button class="g-btn fd-toggle${model.showYields ? " on" : ""}" data-act="yields" title="Show yields on the map when zoomed in (Y)" aria-pressed="${model.showYields}">Yields</button>
       </div>
@@ -452,8 +826,8 @@ export async function start(ctx) {
       <div class="fd-foot g-row">
         <span class="g-note">Seed <code>${esc(s.seed)}</code></span>
         <button class="g-btn" data-act="how" title="How to play (H)">How to play</button>
-        <button class="g-btn" data-act="replay" title="Restart with the same seed">Restart</button>
-        <button class="g-btn" data-act="new">New game</button>
+        ${mp ? `<button class="g-btn" data-act="mpLeave" title="${mp.mode === "online" ? "Leave the room (rejoin with its link)" : "Back to a solo game (this match is saved)"}">Leave</button>` : `<button class="g-btn" data-act="replay" title="Restart with the same seed">Restart</button>
+        <button class="g-btn" data-act="new">New game</button>`}
       </div>`;
   }
 
@@ -470,7 +844,7 @@ export async function start(ctx) {
           <button class="g-btn primary" data-act="start" data-cell="${model.selCell}" ${T.relief[model.selCell] >= 3 ? "disabled" : ""}>Begin here</button></div>` : "";
       return `<h3 class="g-section">Choose where to begin</h3>
         <p class="g-note">An empty country on the real terrain of the lower 48. Four fair starts on a coast or river (gold rings), or click any land hex to look and begin there.</p>
-        <div class="fd-starts">${starts}</div>${sel}`;
+        <div class="fd-starts">${starts}</div>${sel}<div class="fd-mp-slot">${mpSetup()}</div>`;
     }
     const party = model.selParty != null ? S.partyById(s, model.selParty) : null;
     if (party) {
@@ -858,16 +1232,27 @@ export async function start(ctx) {
     </div>`;
   }
 
-  // Resume a finished game straight to its end screen.
-  if (model.state.phase === "over") finish();
+  // Resume a finished game straight to its end screen (a match link goes to the match instead).
+  const wantLocal = parseMp(ctx.param), wantRoom = /^mp-([A-Za-z0-9]{6})$/.exec(ctx.param || "")?.[1]?.toUpperCase();
+  if (wantRoom) mpJoin(wantRoom);
+  else if (wantLocal) {
+    const sv = loadMpSave();
+    beginLocal(wantLocal, sv && sv.param === localParam(wantLocal) ? sv : null);
+  } else if (model.state.phase === "over") finish();
   else if (model.state.phase === "play") {
     const c = model.state.towns[0]?.cell ?? model.state.parties[0]?.cell;
     // After the host has framed the docked map.
     if (c != null) { const t = setTimeout(() => flyToCell(c, true), 1000); ctx.onCleanup(() => clearTimeout(t)); }
     if (model.state.parties.length && !model.state.towns.length) model.selParty = model.state.parties[0].id;
   }
-  refresh();
+  if (!model.mp) refresh();
   void COLORS;
+  // online play: only when this site has the backend (never on the static dev server)
+  net.available().then((ok) => {
+    online.avail = !!ok;
+    const slot = ok && body.querySelector(".fd-mp-slot");
+    if (slot) slot.innerHTML = mpSetup();
+  });
 
   return {
     stop() {},
@@ -878,6 +1263,6 @@ export async function start(ctx) {
       }
       return true; // stay in the game; leave with the ✕ in the panel
     },
-    param: () => model.state?.seed || null,
+    param: () => (model.mp ? model.mp.param : model.state?.seed || null),
   };
 }

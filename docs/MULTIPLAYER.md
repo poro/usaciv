@@ -214,6 +214,41 @@ name, bot, online, ready}]}`
   - The entry cap keeps one slot for each resolve still to come, so a game can always finish. Over it, acts are
     refused and bot actions are cut short.
 
+## Founders multiplayer (real time)
+
+2–4 nations settle one map at once. Seats can be people or AI nations. The rules engine is
+`web/js/games/founders/sim/match.js` (its header has the full rules). In short:
+
+- Each nation starts with a founding party in a different region: the seed shuffles the four regional starts.
+- Every nation's towns claim land together, oldest first. Towns founded in the same turn claim in a seat order that
+  rotates each turn.
+- Rival land can't be settled, worked or improved. Parties and roads may cross it.
+- Close towns: a town founded within 3 hexes of an earlier-ranked rival town in the same turn is turned back, and its
+  party waits on the hex.
+- The highest prosperity score after the last turn wins. Games are 30 turns (1790–1906) or 60 (to 2026).
+
+**Room:** the same `VersusRoom` Durable Object and the same lockstep protocol as Mainline versus, with
+`room.game = "founders"`. The room loads its game through a per-game adapter (`worker/games.js`).
+- Entries: `{p, a}` (a Founders action, never `start` or `end`) and `{r: 1}`, the turn resolved.
+- Checks: `matchShapeError`, then `matchAct`.
+- AI moves: `botActions`.
+- Replay init: `{seed, turns, players: [{name, bot}]}`, with `seed` a string.
+- Env: `makeEnv({world, resources, hazards: buildHazards(disasters, world)})` from `world.json`, `resources.json` and
+  `disasters.json`, exactly as the browser builds it. Events depend on the hazards.
+
+| Method and path | Auth | Body → response |
+|---|---|---|
+| `POST /api/fd/match` | ✓ | `{turns, bots}` → `{code}` (201). `turns` is 30 or 60; `bots` 0–3. Counts as a write |
+| `GET /api/fd/match/:code` | | → `{code, game, status, turns, players, seats}` (404 if unknown) |
+| `GET /api/fd/match/:code/ws?token=…` | token | WebSocket upgrade |
+
+- **The room object:** `room = {code, game, status, turns, bots, seed, host, turn, deadline, players: [{id, name, bot,
+  online, ready}]}`. AI seats are named `BOT_NATIONS`.
+- **Messages, seats and timing:** the same as Mainline versus. A turn resolves when every online person is ready, or
+  90 s after the first one. The AI nations append their actions, then `{r: 1}`.
+- **Codes:** room codes are shared across games, so either game's status endpoint answers with the room's own
+  `game`.
+
 ## Local development
 
 - `npx wrangler@4 dev --port 8788` runs the Worker, local D1 and the Durable Object together, serving
