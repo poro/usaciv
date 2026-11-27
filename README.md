@@ -11,6 +11,7 @@ GitHub Action ([.github/workflows/refresh-data.yml](.github/workflows/refresh-da
 | **Metro Duel** | Higher or lower on real metro statistics; keep the streak alive | Daily board, races |
 | **Road Trip** | Visit six real metros by the shortest loop | Daily board, races |
 | **Lens Detective** | Name the hidden data lens colouring the map | Daily board, races |
+| **Metro Ranking** | Put five real metros in order by one statistic | Daily board, races |
 | **Mainline** | Lay rail (plus power lines and fibre) across the real map, 2026–2050 | Scenario boards, daily challenge, versus |
 | **Founders** | Settle an empty America with its real terrain and resources | Daily challenge, hotseat and online matches |
 

@@ -51,3 +51,9 @@
 .race-nick input { font: inherit; padding: 4px 6px; background: #0d1520; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; }
 .race-err { color: #ff9c8a; }
 .games-day { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+
+/* End screens: the next short daily (shared/nextdaily.js) */
+.g-nextdaily { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0 6px; }
+.g-nextdaily a.g-btn { text-decoration: none; }
+/* Games whose answers a data lens would give away (Metro Duel, Metro Ranking) hide the lens bar while they run. */
+body.g-hide-lens #lens-area, body.g-hide-lens #legend, body.g-hide-lens #lens-picker { display: none !important; }

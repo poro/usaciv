@@ -49,6 +49,15 @@ export const GAMES = [
     load: () => import("./lens/index.js"),
   },
   {
+    id: "rank",
+    title: "Metro Ranking",
+    tagline: "Five real metros, one statistic: put them in order, highest first. Ten pairs, ten points each.",
+    players: "Single player · daily",
+    minutes: "2 min",
+    icon: "📊",
+    load: () => import("./rank/index.js"),
+  },
+  {
     id: "mainline",
     title: "Mainline",
     tagline: "Lay rail across the real map from 2026 to 2050. Real freight is your demand, real disaster risk your enemy.",

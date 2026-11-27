@@ -3,6 +3,7 @@ import { dailyAnswers, isDateKey, puzzleNumber, newPracticeSeed } from "../web/j
 import { json, error, readJson, requirePlayer, optionalPlayer, limitWrite, playerForToken, sameOrigin, HttpError } from "./http.js";
 import { wmPool } from "./data.js";
 import { cleanRounds, replayRounds, keyInWindow, utcToday, histogram, isRoomCode, newRoomCode } from "./rules.js";
+import { RACE_GAMES } from "./racegames.js";
 
 const rank = async (env, key, score) => {
   const r = await env.DB.prepare(
@@ -80,11 +81,11 @@ export async function createRace(request, env) {
   return error(503, "Could not make a room, try again");
 }
 
-/** POST /api/race {game: "pinpoint"|"duel"|"trip"} → {code}: a race on a practice seed of that game (worker/racegames.js). */
+/** POST /api/race {game: "pinpoint"|"duel"|"trip"|"lens"|"rank"} → {code}: a race on a practice seed of that game (worker/racegames.js). */
 export async function createGameRace(request, env) {
   const me = await requirePlayer(env, request);
   const game = (await readJson(request))?.game;
-  if (!["pinpoint", "duel", "trip", "lens"].includes(game)) return error(400, "game must be pinpoint, duel, trip or lens");
+  if (!Object.hasOwn(RACE_GAMES, game)) return error(400, `game must be one of ${Object.keys(RACE_GAMES).join(", ")}`);
   await limitWrite(env, me.id);
   for (let tries = 0; tries < 5; tries++) {
     const code = newRoomCode(randomByte);

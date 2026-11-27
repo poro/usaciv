@@ -11,6 +11,7 @@ import { fitVisible } from "../shared/frame.js";
 import { makeRace } from "../shared/race.js";
 import { mapImage, downloadBlob } from "../shared/shareimg.js";
 import { net } from "../shared/net.js";
+import { nextDailyHtml } from "../shared/nextdaily.js";
 import { esc } from "../../format.js";
 import * as P from "./sim/rounds.js";
 
@@ -271,7 +272,7 @@ export async function start(ctx) {
         <ul class="pp-list">${rows}</ul>
         <div class="g-row"><button class="g-btn primary" data-act="share">Copy result</button><button class="g-btn" data-act="practice">Practice round</button><button class="g-btn" data-act="race-create" title="Race friends on the same eight places">Race friends</button><button class="g-btn" data-act="image" title="A PNG of the map with your eight guesses">Download image</button>
           ${g.mode === "practice" ? `<button class="g-btn" data-act="daily">Today's game</button>` : ""}</div>
-        ${boardHtml()}
+        ${g.mode === "daily" ? nextDailyHtml("pinpoint") : ""}${boardHtml()}
         ${st && g.mode === "daily" ? `<p class="g-note">Days played ${st.played} · best ${st.best.toLocaleString("en-US")} · streak ${st.streak}</p>` : ""}
         ${how()}`;
       return;

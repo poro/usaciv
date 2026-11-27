@@ -13,6 +13,7 @@ import { submitDuelDaily, duelDailyBoard } from "./duel.js";
 import { today } from "./today.js";
 import { submitTripDaily, tripDailyBoard } from "./trip.js";
 import { submitLensDaily, lensDailyBoard } from "./lens.js";
+import { submitRankDaily, rankDailyBoard } from "./rank.js";
 
 export { RaceRoom } from "./race.js";
 export { VersusRoom } from "./vs.js"; // Mainline versus and Founders multiplayer rooms
@@ -78,6 +79,8 @@ const ROUTES = [
   ["POST", /^\/api\/ml\/vs$/, createVs],
   ["GET", /^\/api\/ml\/vs\/([A-Za-z0-9]{6})$/, (req, env, code) => vsStatus(req, env, code.toUpperCase())],
   ["GET", /^\/api\/ml\/vs\/([A-Za-z0-9]{6})\/ws$/, (req, env, code) => vsSocket(req, env, code.toUpperCase(), "mainline")],
+  ["POST", /^\/api\/rank\/daily$/, submitRankDaily],
+  ["GET", /^\/api\/rank\/daily\/([0-9-]{10})$/, rankDailyBoard],
   ["POST", /^\/api\/lens\/daily$/, submitLensDaily],
   ["GET", /^\/api\/lens\/daily\/([0-9-]{10})$/, lensDailyBoard],
   ["POST", /^\/api\/trip\/daily$/, submitTripDaily],

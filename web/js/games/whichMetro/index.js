@@ -20,6 +20,7 @@ import { guessHint } from "./sim/hint.js";
 import { net } from "../shared/net.js";
 import { parseRaceParam, raceParam } from "./online.js";
 import { createOnline } from "./onlineUi.js";
+import { nextDailyHtml } from "../shared/nextdaily.js";
 
 const HL_COLOR = "#ecd08e";
 
@@ -529,6 +530,7 @@ export async function start(ctx) {
         <pre class="wm-share" aria-label="Share text">${esc(text)}</pre>
         <div class="g-row"><button class="g-btn primary" data-act="share" type="button">Copy result</button></div>
         <div class="wm-next" role="timer" aria-live="off">Next daily puzzle in <b class="wm-count">${untilMidnight()}</b></div>
+        ${meta.mode === "daily" ? nextDailyHtml("whichMetro") : ""}
       </div>
       ${online.slot("board")}
       <h3 class="g-section">Round by round</h3>

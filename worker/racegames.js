@@ -4,6 +4,7 @@
 //   duel      finish {answers: [bool…]}  → the streak (correct answers before the first wrong one)
 //   trip      finish {order: [id…]}      → 0–1000 (an unfinished route scores 0)
 //   lens      finish {picks: [lensId…]}  → right answers among the rounds played (1–6)
+//   rank      finish {orders: [[id×5]…]} → points of the rankings played (1–5 rounds, 0–100 each)
 import { roundsFor, scoreGuess, ROUNDS as PP_ROUNDS, MAX_POINTS as PP_MAX } from "../web/js/games/pinpoint/sim/rounds.js";
 import { duelSequence, streakOf } from "../web/js/games/duel/sim/duel.js";
 import { tripFor, scoreTrip, STOPS } from "../web/js/games/trip/sim/trip.js";
@@ -12,10 +13,19 @@ import { duelPoolFor } from "./duel.js";
 import { tripPoolFor } from "./trip.js";
 import { lensRounds, ROUNDS as LENS_ROUNDS } from "../web/js/games/lens/sim/lens.js";
 import { lensPoolFor } from "./lens.js";
+import { rankRounds, scoreRank, practiceSeed as rankPractice, ROUNDS as RANK_ROUNDS, MAX_SCORE as RANK_MAX } from "../web/js/games/rank/sim/rank.js";
+import { rankPoolFor } from "./rank.js";
 
 export const DUEL_RACE_LEN = 400;
 
 export const RACE_GAMES = {
+  rank: {
+    maxRound: RANK_ROUNDS, maxScore: RANK_MAX,
+    async score(env, seed, m) {
+      const r = scoreRank(rankRounds(await rankPoolFor(env), rankPractice(seed)), m?.orders, { partial: true });
+      return r.error ? r : { score: r.score, round: r.points.length };
+    },
+  },
   lens: {
     maxRound: LENS_ROUNDS, maxScore: LENS_ROUNDS,
     async score(env, seed, m) {

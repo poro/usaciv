@@ -6,6 +6,7 @@
 import { loadCss } from "../shared/css.js";
 import { makeRace } from "../shared/race.js";
 import { net } from "../shared/net.js";
+import { nextDailyHtml } from "../shared/nextdaily.js";
 import { esc } from "../../format.js";
 import * as L from "./sim/lens.js";
 
@@ -118,7 +119,7 @@ export async function start(ctx) {
       body.innerHTML = `${head}<h3 class="ld-final">${sc.score} <small>of ${g.rounds.length}</small></h3>
         <ul class="ld-list">${g.rounds.map((r, i) => `<li class="${sc.results[i] ? "ok" : "bad"}">${sc.results[i] ? "✓" : "✗"} <b>${esc(nameOf(r.answer))}</b>${sc.results[i] ? "" : ` <span class="muted">(you said ${esc(nameOf(g.picks[i]))})</span>`}</li>`).join("")}</ul>
         <div class="g-row"><button class="g-btn primary" data-act="share">Copy result</button><button class="g-btn" data-act="practice">Practice round</button><button class="g-btn" data-act="race-create" title="Race friends on the same six lenses">Race friends</button>${g.mode === "practice" ? `<button class="g-btn" data-act="daily">Today's game</button>` : ""}</div>
-        ${boardHtml()}${st && g.mode === "daily" ? `<p class="g-note">Days played ${st.played} · best ${st.best}/6</p>` : ""}${how()}`;
+        ${g.mode === "daily" ? nextDailyHtml("lens") : ""}${boardHtml()}${st && g.mode === "daily" ? `<p class="g-note">Days played ${st.played} · best ${st.best}/6</p>` : ""}${how()}`;
       return;
     }
     const r = cur();

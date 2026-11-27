@@ -8,6 +8,7 @@ import { loadCss } from "../shared/css.js";
 import { fitVisible } from "../shared/frame.js";
 import { makeRace } from "../shared/race.js";
 import { net } from "../shared/net.js";
+import { nextDailyHtml } from "../shared/nextdaily.js";
 import { esc } from "../../format.js";
 import * as D from "./sim/duel.js";
 
@@ -19,6 +20,10 @@ export async function start(ctx) {
   loadCss(ctx, "css/games/duel.css");
   const body = ctx.dock("left", { width: 340, title: "Metro Duel" });
   body.classList.add("dl");
+  // A lens (population, income, home value…) would give the answers away: hide the lens bar while playing.
+  app.setLens?.(null);
+  document.body.classList.add("g-hide-lens");
+  ctx.onCleanup(() => document.body.classList.remove("g-hide-lens"));
   const pool = D.duelPool(ctx.cities);
   const byId = new Map(pool.map((c) => [c.id, c]));
   ctx.onCleanup(() => app.setHighlight?.(null));
@@ -181,7 +186,7 @@ export async function start(ctx) {
         ${missed ? `<p class="g-note">Ended on ${esc(s.label)}: ${esc(byId.get(missed.b).name)} ${esc(s.fmt(s.value(byId.get(missed.b))))} vs ${esc(byId.get(missed.a).name)} ${esc(s.fmt(s.value(byId.get(missed.a))))}.</p>` : `<p>A perfect day: all ${g.seq.length}!</p>`}
         <div class="g-row"><button class="g-btn primary" data-act="share">Copy result</button><button class="g-btn" data-act="practice">${g.mode === "practice" ? "Play again" : "Practice run"}</button><button class="g-btn" data-act="race-create" title="Race friends on the same duels">Race friends</button>
           ${g.mode === "practice" ? `<button class="g-btn" data-act="daily">Today's run</button>` : ""}</div>
-        ${boardHtml()}
+        ${g.mode === "daily" ? nextDailyHtml("duel") : ""}${boardHtml()}
         ${st && g.mode === "daily" ? `<p class="g-note">Days played ${st.played} · best daily streak ${st.best}</p>` : ""}
         ${how()}`;
       return;

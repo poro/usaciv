@@ -11,6 +11,7 @@ const BOARDS = {
   duel: ["duel_daily", "streak"],
   trip: ["trip_daily", "score"],
   lens: ["lens_daily", "score"],
+  rank: ["rank_daily", "score"],
   founders: ["fd_daily", "score"],
   mainline: ["ml_daily", "uplift"],
 };

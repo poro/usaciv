@@ -9,6 +9,7 @@ import { fitVisible } from "../shared/frame.js";
 import { makeRace } from "../shared/race.js";
 import { mapImage, downloadBlob } from "../shared/shareimg.js";
 import { net } from "../shared/net.js";
+import { nextDailyHtml } from "../shared/nextdaily.js";
 import { esc } from "../../format.js";
 import * as T from "./sim/trip.js";
 
@@ -230,7 +231,7 @@ export async function start(ctx) {
         <ol class="tr-order">${[...g.order.map(stopById)].map((p) => `<li>${esc(p.name)}</li>`).join("")}</ol>
         <div class="g-row"><button class="g-btn primary" data-act="share">Copy result</button><button class="g-btn" data-act="practice">${g.mode === "practice" ? "Another trip" : "Practice trip"}</button><button class="g-btn" data-act="race-create" title="Race friends on the same trip">Race friends</button><button class="g-btn" data-act="image" title="A PNG of your route and the best one">Download image</button>
           ${g.mode === "practice" ? `<button class="g-btn" data-act="daily">Today's trip</button>` : ""}</div>
-        ${boardHtml()}
+        ${g.mode === "daily" ? nextDailyHtml("trip") : ""}${boardHtml()}
         ${s && g.mode === "daily" ? `<p class="g-note">Days played ${s.played} · best ${s.best}</p>` : ""}${how()}`;
       return;
     }

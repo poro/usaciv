@@ -12,6 +12,7 @@ the map, lenses, City View and Advisors. On top of it sit **game modes** that pl
 | **Metro Duel** | Higher or lower on real metro statistics; keep the streak alive | Single player, daily run of 30 + endless practice; daily board | Head-to-head |
 | **Road Trip** | Visit six real metros and come home by the shortest loop | Single player, daily trip + practice; daily board | Head-to-head |
 | **Lens Detective** | Name the hidden data lens colouring the map, from four choices | Single player, daily 6 + practice; daily board | |
+| **Metro Ranking** | Five real metros, one statistic: put them in order, highest first | Single player, daily 5 + practice; daily board, races | |
 | **Mainline** | Lay rail across the real map, 2026→2050. Real freight is demand and real disaster risk is the enemy | Single player vs. "baseline America" | AI rival companies; online versus; co-op with one region each |
 | **Founders** | An empty America with real terrain and resources: found cities, grow, compare with the real country | Single player | Hotseat, then online 2–4 players |
 
@@ -126,9 +127,20 @@ labels the answer and each wrong guess on the map.
   family). Six rounds a day for everyone, practice by seed, keys 1–4; the server rebuilds the rounds from
   lenses.json and scores the picks (`/api/lens/daily`). It doubles as a tour of what the lenses show.
 
+## New mode: Metro Ranking (2026-11-27)
+
+- `web/js/games/rank/`: five real metros and one of Metro Duel's statistics (population, income, rent, home value,
+  unemployment, GDP per person, growth, job mix). Click them highest first, in the panel or on the map (keys A–E or
+  1–5, Backspace to undo, Enter to lock in); the last one fills itself in. Every two metros in a round are at least 8%
+  apart, so there is one right order. 10 points for each of the 10 pairs in the right order; five rounds a day
+  (500 max), practice by seed, races. The server rebuilds the rounds and scores the orders (`/api/rank/daily`).
+- Duel and Ranking hide the lens bar while they run: a population or income lens would give the answer away.
+- **Next daily:** every short daily's end screen links to the next one you haven't finished today
+  (`shared/nextdaily.js`), so the day's games run one after another.
+
 ## Races for the short games (2026-11-27)
 
-- Pinpoint, Metro Duel, Road Trip and Lens Detective have **Race friends**: a room by link (up to 8), the host starts it, everyone plays
+- Pinpoint, Metro Duel, Road Trip, Lens Detective and Metro Ranking have **Race friends**: a room by link (up to 8), the host starts it, everyone plays
   the same practice puzzle at once with live standings, and the room scores each finish itself. It is the Which
   Metro? race room (`RaceRoom`), now game-aware, with scorers in `worker/racegames.js` and one shared browser
   controller (`web/js/games/shared/race.js`).
