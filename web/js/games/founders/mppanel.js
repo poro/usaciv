@@ -10,7 +10,9 @@ import * as S from "./sim/index.js";
 const dot = (p) => `<i class="fd-mp-dot" style="--c:${S.NATION_COLORS[p] || "#999"}"></i>`;
 
 export const MP_HOW = `<ul class="fd-mp-how">
-  <li>Two to four nations settle the same empty country at once, each from a different region.</li>
+  <li>Two to four nations settle the same empty country at once. <b>Neighbours</b> (the default) starts every nation
+  in one part of the country, 8–18 hexes apart, so borders meet early; <b>Whole country</b> gives each a region of
+  its own.</li>
   <li><b>Land goes to the oldest town.</b> Where borders meet, the town founded first holds the hex; you cannot settle,
   work or improve a rival's land. Parties and roads may cross it.</li>
   <li>If two nations found towns within ${S.RULES.minTownDist} hexes of each other in the same turn, the nation with
@@ -20,8 +22,9 @@ export const MP_HOW = `<ul class="fd-mp-how">
 </ul>`;
 
 /** The setup panel's multiplayer section. */
+export const MAP_LABEL = { near: "Neighbours", far: "Whole country" };
 export function mpSetupHtml({ online, player, prefs = {}, resume = null }) {
-  const people = prefs.people ?? 1, bots = prefs.bots ?? 1, turns = prefs.turns ?? 30;
+  const people = prefs.people ?? 1, bots = prefs.bots ?? 1, turns = prefs.turns ?? 30, map = S.MATCH_MAPS.includes(prefs.map) ? prefs.map : "near";
   const sel = (name, vals, cur, label) => `<select data-field="${name}">${vals.map((v) => `<option value="${v}"${v === cur ? " selected" : ""}>${label(v)}</option>`).join("")}</select>`;
   return `<div class="fd-mp-pick">
     <h3 class="g-section">Multiplayer <span class="g-note">rival nations race for the same land</span></h3>
@@ -30,6 +33,7 @@ export function mpSetupHtml({ online, player, prefs = {}, resume = null }) {
       <label>Turns ${sel("mpTurns", S.MATCH_TURNS, turns, (v) => (v === 60 ? "60 (to 2026)" : `${v} (to ${S.yearOf(v) + S.RULES.yearsPerTurn})`))}</label>
       <label>People here ${sel("mpPeople", [1, 2, 3, 4], people, String)}</label>
       <label>AI nations ${sel("mpBots", [0, 1, 2, 3], bots, String)}</label>
+      <label title="Neighbours: every nation starts in one part of the country, close enough to meet. Whole country: one region each.">Starts ${sel("mpMap", S.MATCH_MAPS, map, (v) => MAP_LABEL[v])}</label>
     </div>
     <div class="g-row">
       <button class="g-btn" data-act="mpLocal" type="button" title="On this device: you against AI nations, or friends taking turns at the keyboard (hotseat)">Play on this device</button>
@@ -56,7 +60,7 @@ export function mpLobbyHtml(mp) {
   const can = people.length + r.bots >= 2;
   return `<div class="fd-mp-lobby">
     <h3 class="fd-verdict">Founders room <b class="fd-mp-code">${esc(mp.code)}</b></h3>
-    <p>${r.turns} turns, 1790–${S.yearOf(r.turns) + S.RULES.yearsPerTurn}</p>
+    <p>${r.turns} turns, 1790–${S.yearOf(r.turns) + S.RULES.yearsPerTurn} · starts: ${MAP_LABEL[r.map === "near" ? "near" : "far"]}</p>
     <div class="g-row"><input class="fd-mp-link" readonly value="${esc(link)}" aria-label="Room link"><button class="g-btn" data-act="mpCopy" data-link="${esc(link)}">Copy link</button></div>
     <p class="g-note">Send the link to up to ${seats - 1} friend${seats - 1 === 1 ? "" : "s"}. Joining closes when the host starts.</p>
     <ul class="fd-mp-people">${rows}</ul>

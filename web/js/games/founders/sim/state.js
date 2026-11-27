@@ -164,12 +164,14 @@ export function siteScore(env, cell) {
 const REGION_LABEL = ["Western", "Mountain and Plains", "Heartland", "Eastern"];
 
 /**
- * Four fair starts, one per west→east quarter of the country: coastal or river hexes, not on peaks, from the
- * 65th–92nd percentile of all such sites (good, never the very best), picked with the seed.
+ * Where a start may go: coastal or river hexes, not on peaks, scored by siteScore; lo/hi = the 65th and 92nd
+ * percentile scores (good, never the very best); q = the west→east quarter lines. Cached per env.
  */
-export function startOptions(env, seed) {
+const candCache = new WeakMap();
+export function startCandidates(env) {
+  let c = candCache.get(env);
+  if (c) return c;
   const { T, map } = env;
-  const rng = makeRng(`founders-starts:${seed}`);
   const xs = T.landCells.map((c) => map.grid.cx(c)).sort((a, b) => a - b);
   const q = [0.25, 0.5, 0.75].map((f) => xs[Math.floor(xs.length * f)]);
   const cands = [];
@@ -180,17 +182,30 @@ export function startOptions(env, seed) {
   }
   const sorted = cands.map((c) => c.score).sort((a, b) => a - b);
   const lo = sorted[Math.floor(sorted.length * 0.65)], hi = sorted[Math.floor(sorted.length * 0.92)];
+  c = { cands, lo, hi, q };
+  candCache.set(env, c);
+  return c;
+}
+/** Which west→east quarter a cell is in (0..3). */
+export function regionOf(env, cell) {
+  const { q } = startCandidates(env);
+  const x = env.map.grid.cx(cell);
+  return x < q[0] ? 0 : x < q[1] ? 1 : x < q[2] ? 2 : 3;
+}
+export const startLabel = (env, cell) => `${REGION_LABEL[regionOf(env, cell)]} ${describeSite(env.T, cell)}`;
+
+/** Four fair starts, one per west→east quarter of the country (startCandidates), picked with the seed. */
+export function startOptions(env, seed) {
+  const rng = makeRng(`founders-starts:${seed}`);
+  const { cands, lo, hi } = startCandidates(env);
   const out = [];
   for (let r = 0; r < 4; r++) {
-    const inRegion = cands.filter((c) => {
-      const x = map.grid.cx(c.cell);
-      return (r === 0 || x >= q[r - 1]) && (r === 3 || x < q[r]);
-    });
+    const inRegion = cands.filter((c) => regionOf(env, c.cell) === r);
     let pool = inRegion.filter((c) => c.score >= lo && c.score <= hi);
     if (!pool.length) pool = inRegion.slice().sort((a, b) => Math.abs(a.score - hi) - Math.abs(b.score - hi)).slice(0, 10);
     if (!pool.length) continue;
     const pick = pool[Math.floor(rng.next() * pool.length)];
-    out.push({ cell: pick.cell, label: `${REGION_LABEL[r]} ${describeSite(T, pick.cell)}`, score: Math.round(pick.score) });
+    out.push({ cell: pick.cell, label: startLabel(env, pick.cell), score: Math.round(pick.score) });
   }
   return out;
 }

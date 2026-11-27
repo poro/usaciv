@@ -135,20 +135,26 @@ export async function start(ctx) {
   //   online: #play=founders~mp-<CODE>; the room holds the log; your own actions apply at once (mp.pending)
   const MPSAVE = "mpsave";
   const cloneA = (a) => JSON.parse(JSON.stringify(a));
+  // a trailing ".far" = map "far" (one region each); without it, "near"
   function parseMp(p) {
-    let m = /^ai\.([a-z0-9]{1,12})\.([1-3])\.(\d+)$/.exec(p || "");
-    if (m && S.MATCH_TURNS.includes(+m[3])) return { mode: "ai", seed: m[1], people: 1, bots: +m[2], turns: +m[3] };
-    m = /^hot\.([a-z0-9]{1,12})\.([2-4])\.([0-2])\.(\d+)$/.exec(p || "");
-    if (m && S.MATCH_TURNS.includes(+m[4]) && +m[2] + +m[3] <= S.MATCH_MAX) return { mode: "hot", seed: m[1], people: +m[2], bots: +m[3], turns: +m[4] };
+    const far = /\.far$/.test(p || "");
+    const q = far ? p.slice(0, -4) : p || "";
+    const map = far ? "far" : "near";
+    let m = /^ai\.([a-z0-9]{1,12})\.([1-3])\.(\d+)$/.exec(q);
+    if (m && S.MATCH_TURNS.includes(+m[3])) return { mode: "ai", seed: m[1], people: 1, bots: +m[2], turns: +m[3], map };
+    m = /^hot\.([a-z0-9]{1,12})\.([2-4])\.([0-2])\.(\d+)$/.exec(q);
+    if (m && S.MATCH_TURNS.includes(+m[4]) && +m[2] + +m[3] <= S.MATCH_MAX) return { mode: "hot", seed: m[1], people: +m[2], bots: +m[3], turns: +m[4], map };
     return null;
   }
-  const localParam = (o) => (o.mode === "ai" ? `ai.${o.seed}.${o.bots}.${o.turns}` : `hot.${o.seed}.${o.people}.${o.bots}.${o.turns}`);
+  const localParam = (o) => (o.mode === "ai" ? `ai.${o.seed}.${o.bots}.${o.turns}` : `hot.${o.seed}.${o.people}.${o.bots}.${o.turns}`) + (o.map === "far" ? ".far" : "");
   function mpOpts() {
     const v = (f, d) => { const x = Number(body.querySelector(`[data-field="${f}"]`)?.value); return Number.isFinite(x) ? x : d; };
     let people = v("mpPeople", 1), bots = v("mpBots", 1);
     const turns = S.MATCH_TURNS.includes(v("mpTurns", 30)) ? v("mpTurns", 30) : 30;
-    ctx.storage.set("mpprefs", { people, bots, turns });
-    return { people, bots, turns };
+    const pick = body.querySelector('[data-field="mpMap"]')?.value;
+    const map = S.MATCH_MAPS.includes(pick) ? pick : "near";
+    ctx.storage.set("mpprefs", { people, bots, turns, map });
+    return { people, bots, turns, map };
   }
   function loadMpSave() {
     const sv = ctx.storage.get(MPSAVE, null);
@@ -207,7 +213,7 @@ export async function start(ctx) {
       const nick = net.player()?.name;
       const humans = Array.from({ length: people }, (_, k) => ({ name: people === 1 ? nick || "Your nation" : `Player ${k + 1}` }));
       const bots = Array.from({ length: o.bots }, (_, k) => ({ name: S.BOT_NATIONS[k], bot: true }));
-      init = { seed: o.seed, turns: o.turns, players: [...humans, ...bots] };
+      init = { seed: o.seed, turns: o.turns, map: o.map === "far" ? "far" : "near", players: [...humans, ...bots] };
       m = S.newMatch(env, init);
       log = [];
     }
@@ -324,7 +330,7 @@ export async function start(ctx) {
   async function mpCreate(opts = null) {
     const o = opts || mpOpts();
     if (!(await mpNick())) return;
-    const r = await net.post("/api/fd/match", { turns: o.turns, bots: Math.min(o.bots, S.MATCH_MAX - 1) });
+    const r = await net.post("/api/fd/match", { turns: o.turns, bots: Math.min(o.bots, S.MATCH_MAX - 1), map: o.map === "far" ? "far" : "near" });
     if (!r.ok) { ctx.toast(`Could not make a room: ${r.error}`); return; }
     mpJoin(r.data.code);
   }
@@ -360,7 +366,7 @@ export async function start(ctx) {
   }
   function mpInitFromRoom(mp) {
     const r = mp.room;
-    mp.init = { seed: String(r.seed), turns: r.turns, players: r.players.map((p) => ({ name: p.name, bot: !!p.bot })) };
+    mp.init = { seed: String(r.seed), turns: r.turns, map: r.map === "near" ? "near" : "far", players: r.players.map((p) => ({ name: p.name, bot: !!p.bot })) };
     mp.me = r.players.findIndex((p) => p.id === mp.player?.id);
   }
   /** Displayed match = the room's confirmed log + my actions it has not echoed yet. */
@@ -695,11 +701,11 @@ export async function start(ctx) {
         const mp = model.mp, i = mp?.init;
         if (!i) return;
         const people = i.players.filter((p) => !p.bot).length;
-        beginLocal({ mode: mp.mode, seed: randomSeed(), people, bots: i.players.length - people, turns: i.turns });
+        beginLocal({ mode: mp.mode, seed: randomSeed(), people, bots: i.players.length - people, turns: i.turns, map: i.map === "far" ? "far" : "near" });
         return;
       }
       case "mpCreate": mpCreate(); return;
-      case "mpNewRoom": { const r = model.mp?.room; if (r) mpCreate({ turns: r.turns, bots: r.bots }); return; }
+      case "mpNewRoom": { const r = model.mp?.room; if (r) mpCreate({ turns: r.turns, bots: r.bots, map: r.map === "far" ? "far" : "near" }); return; }
       case "mpJoinNick": mpNick().then((ok) => { if (ok && model.mp) { model.mp.screen = "lobby"; refresh(); mpConnect(); } }); return;
       case "mpStart": mpSend({ t: "start" }); return;
       case "mpUnready": mpEndTurn(); return;

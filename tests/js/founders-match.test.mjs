@@ -42,6 +42,41 @@ test("newMatch: distinct regional starts, seats, rivals, turns; own random strea
   assert.throws(() => S.newMatch(env, { players: [{ name: "solo" }] }));
 });
 
+test("near starts: every seat close to every other, fair, deterministic; far is the old layout", () => {
+  for (const seed of ["m1", "x9", "q7", "abc", "z3"]) {
+    for (const n of [2, 3, 4]) {
+      const players = Array.from({ length: n }, (_, k) => ({ name: `P${k}` }));
+      const m = S.newMatch(env, { seed, turns: 30, map: "near", players });
+      assert.equal(m.map, "near");
+      const cells = m.players.map((p) => p.start.cell);
+      assert.equal(new Set(cells).size, n);
+      const [lo, hi] = S.NEAR_GAP[n];
+      for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) {
+        const d = env.map.dist(cells[a], cells[b]);
+        assert.ok(d >= lo && d <= hi + 8, `${seed}/${n}: seats ${a},${b} are ${d} hexes apart`);
+      }
+      for (const c of cells) assert.ok(env.T.land[c] && env.T.relief[c] < 2, "a start is on open land");
+      const sc = m.players.map((p) => p.start.score);
+      assert.ok(Math.min(...sc) >= 0.75 * Math.max(...sc), `${seed}/${n}: site values ${sc} are close`);
+      assert.deepEqual(S.matchStarts(env, seed, n, "near"), m.players.map((p) => p.start), "same seed, same near starts");
+      for (const pl of m.players) assert.equal(S.foundBlocker(env, pl.state, pl.start.cell), null, "every first town can be founded where it starts");
+    }
+  }
+  const far = S.newMatch(env, { seed: "m1", turns: 30, players: [{ name: "A" }, { name: "B" }] });
+  assert.equal(far.map, "far", "no map = far (matches saved before the choice)");
+  assert.deepEqual(far.players.map((p) => p.start), S.matchStarts(env, "m1", 2));
+  assert.equal(S.newMatch(env, { seed: "m1", players: [{ name: "A" }, { name: "B" }], map: "bogus" }).map, "far");
+  // a near match replays like any other
+  let m = S.newMatch(env, { seed: "m1", turns: 30, map: "near", players: [{ name: "A" }, { name: "B", bot: true }] });
+  const log = [];
+  for (const a of S.botActions(env, m, 1)) { log.push({ p: 1, a }); m = act(m, 1, a); }
+  log.push({ r: 1 });
+  m = S.resolve(env, m);
+  const r = S.replay(env, { seed: "m1", turns: 30, map: "near", players: [{ name: "A" }, { name: "B", bot: true }] }, log);
+  assert.equal(r.error, null);
+  assert.equal(S.matchHash(r.m), S.matchHash(m));
+});
+
 test("matchAct: no start or end; ordinary actions otherwise", () => {
   let m = two();
   assert.match(S.matchAct(env, m, 0, { type: "end" }).error, /ready/);
@@ -165,6 +200,10 @@ test("multiplayer panels render and escape names", () => {
   assert.match(mpShareText(env, { ...mp, m: done }), /Founders multiplayer/);
   assert.match(mpSetupHtml({ online: true, player: null }), /Online room/);
   assert.doesNotMatch(mpSetupHtml({ online: false, player: null }), /Online room/);
+  assert.match(mpSetupHtml({ online: false, player: null }), /<option value="near" selected>Neighbours/, "near starts by default");
+  assert.match(mpSetupHtml({ online: false, player: null, prefs: { map: "far" } }), /<option value="far" selected>Whole country/);
   const room = { code: "ABCDEF", status: "lobby", turns: 30, bots: 1, host: "p1", players: [{ id: "p1", name: "Host", online: true }] };
   assert.match(mpLobbyHtml({ code: "ABCDEF", room, player: { id: "p1" } }), /data-act="mpStart"/);
+  assert.match(mpLobbyHtml({ code: "ABCDEF", room, player: { id: "p1" } }), /starts: Whole country/);
+  assert.match(mpLobbyHtml({ code: "ABCDEF", room: { ...room, map: "near" }, player: { id: "p1" } }), /starts: Neighbours/);
 });

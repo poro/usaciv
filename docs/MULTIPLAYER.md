@@ -219,7 +219,12 @@ name, bot, online, ready}]}`
 2–4 nations settle one map at once. Seats can be people or AI nations. The rules engine is
 `web/js/games/founders/sim/match.js` (its header has the full rules). In short:
 
-- Each nation starts with a founding party in a different region: the seed shuffles the four regional starts.
+- Each nation starts with a founding party at a good coast or river site. The match's `map` picks the layout:
+  - `"near"` (the default for new games): every nation in one part of the country, close enough that borders meet
+    in the first half of a 30-turn game. Every two starts are 8–12 hexes apart with 2 nations, 9–14 with 3 and 11–18
+    with 4 (`NEAR_GAP`; widened a little for the rare seed with no fit). Site values within about 10%.
+  - `"far"`: one start per west→east quarter of the country (the solo starts, shuffled by the seed). A match or room
+    with no `map` is `"far"`, so games saved before the choice existed replay unchanged.
 - Every nation's towns claim land together, oldest first. Towns founded in the same turn claim in a seat order that
   rotates each turn.
 - Rival land can't be settled, worked or improved. Parties and roads may cross it.
@@ -238,11 +243,11 @@ name, bot, online, ready}]}`
 
 | Method and path | Auth | Body → response |
 |---|---|---|
-| `POST /api/fd/match` | ✓ | `{turns, bots}` → `{code}` (201). `turns` is 30 or 60; `bots` 0–3. Counts as a write |
-| `GET /api/fd/match/:code` | | → `{code, game, status, turns, players, seats}` (404 if unknown) |
+| `POST /api/fd/match` | ✓ | `{turns, bots, map?}` → `{code}` (201). `turns` is 30 or 60; `bots` 0–3; `map` `"near"` or `"far"` (missing = `"far"`, what clients from before the choice replay). Counts as a write |
+| `GET /api/fd/match/:code` | | → `{code, game, status, turns, map, players, seats}` (404 if unknown) |
 | `GET /api/fd/match/:code/ws?token=…` | token | WebSocket upgrade |
 
-- **The room object:** `room = {code, game, status, turns, bots, seed, host, turn, deadline, players: [{id, name, bot,
+- **The room object:** `room = {code, game, status, turns, map, bots, seed, host, turn, deadline, players: [{id, name, bot,
   online, ready}]}`. AI seats are named `BOT_NATIONS`.
 - **Messages, seats and timing:** the same as Mainline versus. A turn resolves when every online person is ready, or
   90 s after the first one. The AI nations append their actions, then `{r: 1}`.

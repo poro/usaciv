@@ -2,14 +2,15 @@
 // the online room (worker/vs.js, game "founders"), hotseat and games against AI replay the same entry log to the
 // same match.
 //
-//   m = { v, game: "founders", seed, turns, turn, over,
+//   m = { v, game: "founders", seed, map, turns, turn, over,
 //         players: [{name, bot, start: {cell, label}, state}],   one ordinary Founders state each (state.js) plus
 //                                                                 state.seat, state.nations and state.rivals
 //         news: [{kind: "turnedBack"|"founded", seat, name, by?}],   what last turn's resolve did between nations
 //         hist: [[prosperity score per player], …] }               one row per turn played
 //
 // Rules (docs/MULTIPLAYER.md, "Founders multiplayer"):
-// * Each nation starts with a founding party in a different region: the seed shuffles the four regional starts
+// * Each nation starts with a founding party at a good site. map "near" (the default for new games): all nations
+//   in one part of the country, 8–18 hexes apart by nation count (nearStarts). map "far": the seed shuffles the four regional starts
 //   (startOptions) and seat k takes the k-th. Same money, same rules; each nation has its own random stream (town
 //   names, events), seeded from the match seed and its seat.
 // * Turns are simultaneous: every nation acts on its own state (the ordinary actions; never "start" or "end"). Rival
@@ -24,7 +25,7 @@
 //   stand. The highest prosperity score after the last turn wins.
 //
 // Entry log: {p, a} = seat p applied action a; {r: 1} = the turn resolved. replay(env, init, entries) rebuilds it.
-import { RULES, newGame, startOptions, clone, claimRank } from "./state.js";
+import { RULES, newGame, startOptions, startCandidates, startLabel, clone, claimRank } from "./state.js";
 import { apply } from "./actions.js";
 import { botTurn } from "./advice.js";
 import { prosperity } from "./score.js";
@@ -39,8 +40,17 @@ export const NATION_COLORS = ["#8ff3ec", "#f3d27a", "#ff8f8f", "#d9a6ff"]; // se
 export const BOT_NATIONS = ["Republic of Cascadia AI", "Lakes Confederacy AI", "Gulf Union AI"];
 export const BLOCKED = new Set(["start", "end", "noop"]); // actions a nation may not send in a match
 
-/** The seats' starts: the seed's shuffle of the four regional starts. */
-export function matchStarts(env, seed, n) {
+export const MATCH_MAPS = ["near", "far"]; // "near" = neighbours in one part of the country; "far" = one per quarter
+// "near": every two starts this many hexes apart [min, max], by nation count. Fewer nations sit closer: with room on
+// every side, two AI nations 11–20 apart often never meet in 30 turns.
+export const NEAR_GAP = { 2: [8, 12], 3: [9, 14], 4: [11, 18] };
+
+/** The seats' starts. map "far": the seed's shuffle of the four regional starts (startOptions). map "near": see nearStarts. */
+export function matchStarts(env, seed, n, map = "far") {
+  if (map === "near") {
+    const near = nearStarts(env, seed, n);
+    if (near.length === n) return near;
+  }
   const starts = startOptions(env, seed);
   const rng = makeRng(`founders-match:${seed}`);
   const order = starts.map((_, k) => k);
@@ -51,6 +61,36 @@ export function matchStarts(env, seed, n) {
   return order.slice(0, n).map((k) => starts[k]);
 }
 
+/**
+ * n starts in one part of the country, every two NEAR_GAP[n] hexes apart, so borders meet in the first half of a 30-turn game:
+ * good sites (the same pool as solo starts), as even as the seed allows. Tries seeded anchors and keeps the set whose
+ * site values are closest together; [] if none fits (then matchStarts falls back to "far").
+ */
+export function nearStarts(env, seed, n) {
+  const { map } = env;
+  const { cands, lo, hi } = startCandidates(env);
+  const pool = cands.filter((c) => c.score >= lo && c.score <= hi);
+  const rng = makeRng(`founders-near:${seed}`);
+  const [gMin, gMax] = NEAR_GAP[n] || NEAR_GAP[MATCH_MAX];
+  let best = null;
+  // a few seeds have no fit at the target gap: widen the upper bound a little at a time
+  for (let widen = 0; widen <= 8 && !best; widen += 2) {
+    for (let tries = 0; tries < 40 && !(best && best.spread <= 0.1); tries++) {
+      const set = [pool[Math.floor(rng.next() * pool.length)]];
+      while (set.length < n) {
+        const fit = pool.filter((c) => set.every((s) => { const d = map.dist(s.cell, c.cell); return d >= gMin && d <= gMax + widen; }));
+        if (!fit.length) break;
+        set.push(fit[Math.floor(rng.next() * fit.length)]);
+      }
+      if (set.length < n) continue;
+      const sc = set.map((c) => c.score);
+      const spread = (Math.max(...sc) - Math.min(...sc)) / Math.max(1, Math.max(...sc));
+      if (!best || spread < best.spread) best = { set, spread };
+    }
+  }
+  return best ? best.set.map((c) => ({ cell: c.cell, label: startLabel(env, c.cell), score: Math.round(c.score) })) : [];
+}
+
 const rivalView = (state) => ({ seat: state.seat, towns: state.towns.map((t) => ({ id: t.id, cell: t.cell, radius: t.radius, founded: t.founded, name: t.name })) });
 /** Give every nation the others' towns as they stand now. */
 function inform(players) {
@@ -58,12 +98,16 @@ function inform(players) {
   return players.map((pl, p) => ({ ...pl, state: { ...pl.state, rivals: views.filter((_, k) => k !== p) } }));
 }
 
-/** A new match. players = [{name, bot?}] in seat order (2..MATCH_MAX); turns = one of MATCH_TURNS (clamped 5..60). */
-export function newMatch(env, { seed = 1, players, turns = 30 } = {}) {
+/**
+ * A new match. players = [{name, bot?}] in seat order (2..MATCH_MAX); turns = one of MATCH_TURNS (clamped 5..60);
+ * map = one of MATCH_MAPS. A missing map is "far" (matches saved before "near" existed replay as they were made).
+ */
+export function newMatch(env, { seed = 1, players, turns = 30, map = "far" } = {}) {
   if (!Array.isArray(players) || players.length < 2 || players.length > MATCH_MAX) throw new Error(`a match needs 2–${MATCH_MAX} nations`);
   const n = players.length;
   const max = Math.max(5, Math.min(RULES.maxTurns, Math.floor(turns) || 30));
-  const starts = matchStarts(env, seed, n);
+  const layout = map === "near" ? "near" : "far";
+  const starts = matchStarts(env, seed, n, layout);
   if (starts.length < n) throw new Error("not enough starts on this map");
   const ps = players.map((pl, k) => {
     const s = newGame(env, seed, { start: starts[k].cell });
@@ -71,7 +115,7 @@ export function newMatch(env, { seed = 1, players, turns = 30 } = {}) {
     const rng = k ? makeRng(`founders:${seed}:seat${k}`).state : s.rng;
     return { name: String(pl.name || `Nation ${k + 1}`), bot: !!pl.bot, start: starts[k], state: { ...s, rng, maxTurns: max, seat: k, nations: n, rivals: [] } };
   });
-  return { v: MATCH_VERSION, game: "founders", seed: String(seed), turns: max, turn: 1, over: false, players: inform(ps), news: [], hist: [] };
+  return { v: MATCH_VERSION, game: "founders", seed: String(seed), map: layout, turns: max, turn: 1, over: false, players: inform(ps), news: [], hist: [] };
 }
 
 const withPlayer = (m, p, state) => ({ ...m, players: m.players.map((pl, k) => (k === p ? { ...pl, state } : pl)) });

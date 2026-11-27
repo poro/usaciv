@@ -129,6 +129,10 @@ Apple) attached to the same player rows, then Mainline versus and Founders hotse
 - **Modes:** against AI nations (the solo bot), hotseat on one device with a hand-off screen between players, or an
   online room. Online rooms use the same `VersusRoom` Durable Object through a per-game adapter.
 - **Length:** 30 or 60 turns. The highest prosperity score wins.
+- **Closer starts (2026-11-26):** a "Starts" choice. "Neighbours" (the default) puts every nation in one part of the
+  country, 8–18 hexes apart by nation count, so borders meet early: in 4-AI test games by turn 9–17, where the old
+  one-region-each starts met in only 3 of 6 games. "Whole country" keeps the old layout. Local URLs mark it with a
+  trailing `.far`; old saves and rooms replay as "far".
 
 The static site stays static. Multiplayer is added as a small backend next to it.
 

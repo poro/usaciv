@@ -29,9 +29,11 @@ const env = S.makeEnv({ world, resources: D("resources"), hazards: S.buildHazard
 const lobby = (over = {}) => ({ ...V.newRoom({ code: "FDFDFD", game: "founders", turns: 30, bots: 1, host: { id: "a", name: "Ann" } }, 1000), ...over });
 
 test("founders body validation", () => {
-  assert.deepEqual(V.cleanFdBody({ turns: 30, bots: 1 }), { turns: 30, bots: 1 });
-  assert.deepEqual(V.cleanFdBody({ turns: 60, bots: 0 }), { turns: 60, bots: 0 });
-  assert.deepEqual(V.cleanFdBody({ turns: 30, bots: 3, scenario: "texas" }), { turns: 30, bots: 3 }, "other fields are dropped");
+  assert.deepEqual(V.cleanFdBody({ turns: 30, bots: 1, map: "near" }), { turns: 30, bots: 1, map: "near" });
+  assert.deepEqual(V.cleanFdBody({ turns: 60, bots: 0, map: "far" }), { turns: 60, bots: 0, map: "far" });
+  assert.deepEqual(V.cleanFdBody({ turns: 30, bots: 1 }), { turns: 30, bots: 1, map: "far" }, "a client from before the choice replays far starts");
+  assert.match(V.cleanFdBody({ turns: 30, bots: 1, map: "close" }).error, /map must be near or far/);
+  assert.deepEqual(V.cleanFdBody({ turns: 30, bots: 3, map: "near", scenario: "texas" }), { turns: 30, bots: 3, map: "near" }, "other fields are dropped");
   assert.match(V.cleanFdBody({ turns: 45, bots: 1 }).error, /turns must be 30 or 60/);
   assert.ok(V.cleanFdBody({ turns: "30", bots: 1 }).error);
   assert.ok(V.cleanFdBody({ bots: 1 }).error);
@@ -50,7 +52,7 @@ test("founders seats, start rules, room and status views", () => {
   assert.equal(r.game, "founders");
   assert.equal(r.turn, 1);
   assert.ok(!("year" in r) && !("scenario" in r));
-  assert.deepEqual(V.statusView(r), { code: "FDFDFD", game: "founders", status: "lobby", turns: 30, players: 1, seats: 3 });
+  assert.deepEqual(V.statusView(r), { code: "FDFDFD", game: "founders", status: "lobby", turns: 30, map: "far", players: 1, seats: 3 });
   assert.match(V.startError(lobby({ bots: 0 }), "a"), /at least 2 nations: wait for someone or add an AI nation/);
   assert.equal(V.startError(r, "a"), null, "one person plus one AI nation");
 
@@ -62,10 +64,14 @@ test("founders seats, start rules, room and status views", () => {
   r.status = "live";
   r.seed = "77";
   const v = V.roomView(r, new Set(["b"]));
-  assert.deepEqual(Object.keys(v), ["code", "game", "status", "turns", "bots", "seed", "host", "turn", "deadline", "players"]);
+  assert.deepEqual(Object.keys(v), ["code", "game", "status", "turns", "map", "bots", "seed", "host", "turn", "deadline", "players"]);
   assert.equal(v.seed, "77");
   assert.deepEqual(v.players.map((p) => [p.online, p.ready]), [[false, false], [true, false], [true, true], [true, true]]);
   assert.equal(G.founders.init(r).seed, "77");
+  assert.equal(G.founders.init(r).map, "far", "a room stored before the choice keeps far starts");
+  assert.equal(G.founders.init({ ...r, map: "near" }).map, "near");
+  assert.equal(lobby({ map: "near" }).map, "near");
+  assert.equal(V.newRoom({ code: "FDFDFD", game: "founders", turns: 30, bots: 1, map: "near", host: { id: "a", name: "Ann" } }, 1000).map, "near");
   assert.deepEqual(G.founders.init(r).players.map((p) => p.name), ["Ann", "Bo", S.BOT_NATIONS[0], S.BOT_NATIONS[1]]);
 
   assert.equal(typeof G.founders.newSeed(5), "string");
@@ -129,8 +135,8 @@ const say = (room, ws, m) => room.webSocketMessage(ws, JSON.stringify(m));
 test("VersusRoom hosts a Founders game: start, acts, rejects, resolve with the AI nation, replay, rehydration, done", async () => {
   const ctx = fakeCtx(new DatabaseSync(":memory:"));
   const room = new V.VersusRoom(ctx, assets);
-  assert.equal(await room.init({ code: "FDFDFD", game: "founders", turns: 30, bots: 1, host: { id: "a", name: "Ann" } }), true);
-  assert.deepEqual(await room.status(), { code: "FDFDFD", game: "founders", status: "lobby", turns: 30, players: 1, seats: 3 });
+  assert.equal(await room.init({ code: "FDFDFD", game: "founders", turns: 30, bots: 1, map: "near", host: { id: "a", name: "Ann" } }), true);
+  assert.deepEqual(await room.status(), { code: "FDFDFD", game: "founders", status: "lobby", turns: 30, map: "near", players: 1, seats: 3 });
 
   const A = await join(room, ctx, "a", "Ann");
   const lob = A.take("room").at(-1).room;
@@ -146,7 +152,8 @@ test("VersusRoom hosts a Founders game: start, acts, rejects, resolve with the A
   assert.deepEqual(A.take("log"), [{ t: "log", es: [] }]);
 
   // the "client": the same init the browser builds from the room
-  const init = { seed: r0.seed, turns: r0.turns, players: r0.players.map(({ name, bot }) => ({ name, bot })) };
+  assert.equal(r0.map, "near");
+  const init = { seed: r0.seed, turns: r0.turns, map: r0.map, players: r0.players.map(({ name, bot }) => ({ name, bot })) };
   let mine = S.newMatch(env, init);
   const log = [];
   const found = { type: "found", party: mine.players[0].state.parties[0].id };

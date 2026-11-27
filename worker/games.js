@@ -117,14 +117,20 @@ export const mainline = {
 
 // --- Founders multiplayer --------------------------------------------------------------------------------------
 
-/** Shape check of POST /api/fd/match → {turns, bots} or {error}. */
+/**
+ * Shape check of POST /api/fd/match → {turns, bots, map} or {error}. map is optional: a body without it (a client from
+ * before "near" starts) gets "far", the layout that client will replay.
+ */
 export function cleanFdBody(b) {
   if (!isObject(b)) return { error: "body must be an object" };
   if (!FD.MATCH_TURNS.includes(b.turns)) return { error: `turns must be ${FD.MATCH_TURNS.join(" or ")}` };
   const be = botsError(b, FD.MATCH_MAX);
   if (be) return { error: be };
-  return { turns: b.turns, bots: b.bots };
+  if (b.map !== undefined && !FD.MATCH_MAPS.includes(b.map)) return { error: `map must be ${FD.MATCH_MAPS.join(" or ")}` };
+  return { turns: b.turns, bots: b.bots, map: b.map ?? "far" };
 }
+/** A room's start layout (rooms made before the choice existed are "far"). */
+const fdMap = (room) => (room.map === "near" ? "near" : "far");
 
 let fdEnvPromise = null; // one Founders env per isolate serves every room
 
@@ -166,7 +172,7 @@ export const founders = {
   checkBody: async () => null,
   newSeed: (u32) => String(newSeed(u32)),
   resolvesLeft: (room) => Math.max(0, room.turns + 1 - room.turn),
-  init: (room) => ({ seed: room.seed, turns: room.turns, players: room.players.map(({ name, bot }) => ({ name, bot })) }),
+  init: (room) => ({ seed: room.seed, turns: room.turns, map: fdMap(room), players: room.players.map(({ name, bot }) => ({ name, bot })) }),
   env: (env) => fdEnv(env),
   shapeError: (env, a) => FD.matchShapeError(a, env.T.size),
   act: (env, g, p, a) => { const r = FD.matchAct(env, g, p, a); return { g: r.m, error: r.error }; },
@@ -175,7 +181,7 @@ export const founders = {
   replay: (env, init, es) => { const r = FD.replay(env, init, es); return { g: r.m, error: r.error, at: r.at }; },
   period: (g) => g.turn,
   over: (g) => !!g.over,
-  fields: (room) => ({ turns: room.turns }),
+  fields: (room) => ({ turns: room.turns, map: fdMap(room) }),
 };
 
 export const GAMES = { mainline, founders };
