@@ -13,6 +13,7 @@ the map, lenses, City View and Advisors. On top of it sit **game modes** that pl
 | **Road Trip** | Visit six real metros and come home by the shortest loop | Single player, daily trip + practice; daily board | Head-to-head |
 | **Lens Detective** | Name the hidden data lens colouring the map, from four choices | Single player, daily 6 + practice; daily board | |
 | **Metro Ranking** | Five real metros, one statistic: put them in order, highest first | Single player, daily 5 + practice; daily board, races | |
+| **State Shapes** | A state's outline on the hex map, alone: which one is it? | Single player, daily 8 + practice; daily board, races | |
 | **Mainline** | Lay rail across the real map, 2026→2050. Real freight is demand and real disaster risk is the enemy | Single player vs. "baseline America" | AI rival companies; online versus; co-op with one region each |
 | **Founders** | An empty America with real terrain and resources: found cities, grow, compare with the real country | Single player | Hotseat, then online 2–4 players |
 
@@ -138,9 +139,18 @@ labels the answer and each wrong guess on the map.
 - **Next daily:** every short daily's end screen links to the next one you haven't finished today
   (`shared/nextdaily.js`), so the day's games run one after another.
 
+## New mode: State Shapes (2026-11-27)
+
+- `web/js/games/shapes/`: one state's 25 km hexes drawn alone in the panel; pick its name from four states close to it
+  in size (keys 1–4). The map is covered while you choose (every border is on it) and shows the state at the reveal;
+  the end screen lights the day's eight together. Rounds 1–3 upright, 4–6 upside down, 7–8 turned by any multiple of
+  60° (a cube-coordinate rotation, exact on the hex lattice). States under 38 hexes (the small New England states,
+  NJ, MD, DE) are left out. Eight rounds a day, practice, races; the server rebuilds the rounds from world.json
+  (`/api/shapes/daily`).
+
 ## Races for the short games (2026-11-27)
 
-- Pinpoint, Metro Duel, Road Trip, Lens Detective and Metro Ranking have **Race friends**: a room by link (up to 8), the host starts it, everyone plays
+- Pinpoint, Metro Duel, Road Trip, Lens Detective, Metro Ranking and State Shapes have **Race friends**: a room by link (up to 8), the host starts it, everyone plays
   the same practice puzzle at once with live standings, and the room scores each finish itself. It is the Which
   Metro? race room (`RaceRoom`), now game-aware, with scorers in `worker/racegames.js` and one shared browser
   controller (`web/js/games/shared/race.js`).

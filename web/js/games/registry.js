@@ -58,6 +58,15 @@ export const GAMES = [
     load: () => import("./rank/index.js"),
   },
   {
+    id: "shapes",
+    title: "State Shapes",
+    tagline: "A state's outline on the hex map, alone. Which one is it? Later rounds turn the shape.",
+    players: "Single player · daily",
+    minutes: "2 min",
+    icon: "🧩",
+    load: () => import("./shapes/index.js"),
+  },
+  {
     id: "mainline",
     title: "Mainline",
     tagline: "Lay rail across the real map from 2026 to 2050. Real freight is your demand, real disaster risk your enemy.",

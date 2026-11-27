@@ -185,13 +185,13 @@ per IP per hour. Over the limit → 429 with `Retry-After`. A daily resubmission
 
 ### Races for the short games
 
-- `POST /api/race {game: "pinpoint"|"duel"|"trip"|"lens"|"rank"}` → `{code}` (a write). `GET /api/race/:code` → `{code, game, status,
+- `POST /api/race {game: "pinpoint"|"duel"|"trip"|"lens"|"rank"|"shapes"}` → `{code}` (a write). `GET /api/race/:code` → `{code, game, status,
   players}`; `GET /api/race/:code/ws?token=…` → the room's socket. Same `RaceRoom` Durable Object and protocol as Which
   Metro? races (`start`, `progress`, `finish`, `room` broadcasts; 8 players; lobby-only joining; closes 30 minutes after
   the start), with `room.game` set. Which Metro? rooms keep `game: "whichMetro"` and their own endpoints.
 - The race plays the game's **practice** seed (`room.seed`). `progress {round, score}` is bounded per game. `finish`
   carries `{guesses}` (Pinpoint: 1–8 hexes, scored round by round), `{answers}` (Duel: the streak over a 400-duel
-  practice run) `{order}` (Road Trip: 0–1000; an unfinished route scores 0) `{picks}` (Lens Detective: right picks among the rounds played) or `{orders}` (Metro Ranking: points of the rankings played, 1–5). The room scores it
+  practice run) `{order}` (Road Trip: 0–1000; an unfinished route scores 0) `{picks}` (Lens Detective: right picks among the rounds played) `{orders}` (Metro Ranking: points of the rankings played, 1–5) or `{picks}` (State Shapes: right picks among the rounds played). The room scores it
   (`worker/racegames.js`) and places players by score, then finish time.
 - Browser: `web/js/games/shared/race.js` (`makeRace`): create/join by `#play=<game>~race-<CODE>`, lobby with the
   link and the host's Start button, live standings at the top of the game's panel.
@@ -210,6 +210,15 @@ per IP per hour. Over the limit → 429 with `Retry-After`. A daily resubmission
   orders, 10 points per pair in the right order (0–500). `POST /api/rank/daily {key, orders: [[cityId × 5] × 5]}` →
   `{score, rank, total}`; `GET /api/rank/daily/:key`. Stats `rk`; merge (open days excepted) and delete include
   `rank_daily` (migration 0009).
+- Metro Ranking and State Shapes use `worker/daily.js` (`makeDaily`): one helper for a verified daily board (submit,
+  first game counts, board with rank), given how to rebuild the day's puzzle and how to score a submission.
+
+### State Shapes daily
+
+- `web/js/games/shapes/sim/shapes.js` builds eight rounds from `shapes:<YYYY-MM-DD>` (UTC) over world.json's state
+  hexes (states with at least 38). `worker/shapes.js` rebuilds them and scores the picks. `POST /api/shapes/daily
+  {key, picks: [stateAbbr × 8]}` → `{score, rank, total}`; `GET /api/shapes/daily/:key`. Stats `sh`; merge (open days
+  excepted) and delete include `shapes_daily` (migration 0010).
 
 ## Mainline versus (real time)
 

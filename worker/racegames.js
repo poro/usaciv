@@ -5,6 +5,7 @@
 //   trip      finish {order: [id…]}      → 0–1000 (an unfinished route scores 0)
 //   lens      finish {picks: [lensId…]}  → right answers among the rounds played (1–6)
 //   rank      finish {orders: [[id×5]…]} → points of the rankings played (1–5 rounds, 0–100 each)
+//   shapes    finish {picks: [abbr…]}    → right answers among the rounds played (1–8)
 import { roundsFor, scoreGuess, ROUNDS as PP_ROUNDS, MAX_POINTS as PP_MAX } from "../web/js/games/pinpoint/sim/rounds.js";
 import { duelSequence, streakOf } from "../web/js/games/duel/sim/duel.js";
 import { tripFor, scoreTrip, STOPS } from "../web/js/games/trip/sim/trip.js";
@@ -15,10 +16,19 @@ import { lensRounds, ROUNDS as LENS_ROUNDS } from "../web/js/games/lens/sim/lens
 import { lensPoolFor } from "./lens.js";
 import { rankRounds, scoreRank, practiceSeed as rankPractice, ROUNDS as RANK_ROUNDS, MAX_SCORE as RANK_MAX } from "../web/js/games/rank/sim/rank.js";
 import { rankPoolFor } from "./rank.js";
+import { shapeRounds, scoreShapes, practiceSeed as shapesPractice, ROUNDS as SHAPES_ROUNDS } from "../web/js/games/shapes/sim/shapes.js";
+import { shapesPoolFor } from "./shapes.js";
 
 export const DUEL_RACE_LEN = 400;
 
 export const RACE_GAMES = {
+  shapes: {
+    maxRound: SHAPES_ROUNDS, maxScore: SHAPES_ROUNDS,
+    async score(env, seed, m) {
+      const r = scoreShapes(shapeRounds(await shapesPoolFor(env), shapesPractice(seed)), m?.picks, { partial: true });
+      return r.error ? r : { score: r.score, round: r.results.length };
+    },
+  },
   rank: {
     maxRound: RANK_ROUNDS, maxScore: RANK_MAX,
     async score(env, seed, m) {

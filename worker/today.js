@@ -12,6 +12,7 @@ const BOARDS = {
   trip: ["trip_daily", "score"],
   lens: ["lens_daily", "score"],
   rank: ["rank_daily", "score"],
+  shapes: ["shapes_daily", "score"],
   founders: ["fd_daily", "score"],
   mainline: ["ml_daily", "uplift"],
 };
